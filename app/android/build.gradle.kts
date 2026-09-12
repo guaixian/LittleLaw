@@ -1,9 +1,11 @@
 allprojects {
     repositories {
-        // 国内镜像优先,官方源兜底(直连 google 超时环境)
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        // 国内网络环境用阿里云镜像加速;CI 直连官方源(见 settings.gradle.kts)。
+        if (System.getenv("CI") == null) {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        }
         google()
         mavenCentral()
     }

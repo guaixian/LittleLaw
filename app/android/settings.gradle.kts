@@ -11,10 +11,13 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
-        // 国内镜像优先,官方源兜底(直连 google 超时环境)
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        // 国内网络环境用阿里云镜像加速;CI(GitHub 自动构建)直连官方源,
+        // 阿里云代理对缺失构件返回 502 会导致 Gradle 中止解析。
+        if (System.getenv("CI") == null) {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        }
         google()
         mavenCentral()
         gradlePluginPortal()
