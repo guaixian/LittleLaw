@@ -35,6 +35,12 @@ app/linux/flutter/ephemeral/
 # 下载的二进制(按需重新获取,见 README)
 core/sqlite3.dll
 
+# Go 服务端构建产物与本地数据库
+server/rendezvous.exe
+server/rendezvous
+server/*.db
+core/test/debug_*.dart
+
 # OS
 .DS_Store
 Thumbs.db
