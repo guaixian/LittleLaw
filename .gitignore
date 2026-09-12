@@ -9,6 +9,7 @@ build/
 # Android
 app/android/local.properties
 app/android/key.properties
+app/android/*.keystore
 app/android/.gradle/
 app/android/app/.cxx/
 

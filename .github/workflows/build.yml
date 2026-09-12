@@ -140,7 +140,15 @@ jobs:
       - uses: android-actions/setup-android@v3
       - run: flutter pub get
         working-directory: app
-      - run: flutter build apk --release --split-per-abi
+      - name: 解码发布签名密钥
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/littlelaw-release.keystore"
+      - name: 构建签名 APK
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/littlelaw-release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build apk --release --split-per-abi
         working-directory: app
       - uses: actions/upload-artifact@v4
         with:
