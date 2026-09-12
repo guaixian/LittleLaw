@@ -1,0 +1,39 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.ephemeral/
+
+# Android
+app/android/local.properties
+app/android/key.properties
+app/android/.gradle/
+app/android/app/.cxx/
+
+# iOS / macOS
+app/ios/Pods/
+app/ios/.symlinks/
+app/ios/Flutter/Flutter.framework
+app/ios/Flutter/Flutter.podspec
+app/ios/Flutter/ephemeral/
+app/ios/Runner.xcworkspace/xcuserdata/
+app/macos/Flutter/ephemeral/
+app/macos/Pods/
+
+# Windows / Linux ephemeral
+app/windows/flutter/ephemeral/
+app/linux/flutter/ephemeral/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 下载的二进制(按需重新获取,见 README)
+core/sqlite3.dll
+
+# OS
+.DS_Store
+Thumbs.db

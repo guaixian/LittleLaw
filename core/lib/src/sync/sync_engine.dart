@@ -1,0 +1,634 @@
+import 'dart:async';
+
+import 'package:fixnum/fixnum.dart';
+import 'package:grpc/grpc.dart';
+import 'package:uuid/uuid.dart';
+
+import '../generated/littlelaw.pb.dart' as pb;
+import '../generated/littlelaw.pbgrpc.dart' as pbg;
+import '../identity/identity.dart';
+import '../store/store.dart';
+import '../transport/auth.dart';
+import '../transport/transport.dart';
+import '../util.dart';
+
+// ---------------------------------------------------------------------------
+// 引擎事件(UI 与传输层共用)
+// ---------------------------------------------------------------------------
+
+sealed class EngineEvent {}
+
+class MessageAdded extends EngineEvent {
+  MessageAdded(this.peerId, this.message);
+  final String peerId;
+  final Message message;
+}
+
+class MessagesDeleted extends EngineEvent {
+  MessagesDeleted(this.peerId, this.msgIds, this.clearAll);
+  final String peerId;
+  final List<String> msgIds;
+  final bool clearAll;
+}
+
+class ClipboardReceived extends EngineEvent {
+  ClipboardReceived(this.peerId, this.text);
+  final String peerId;
+  final String text;
+}
+
+class PeerStatusChanged extends EngineEvent {
+  PeerStatusChanged(this.peerId, this.online);
+  final String peerId;
+  final bool online;
+}
+
+/// 文件消息到达(供传输层决定是否自动拉取)。
+class FileMessageArrived extends EngineEvent {
+  FileMessageArrived(this.peerId, this.message);
+  final String peerId;
+  final Message message;
+}
+
+class FileCancelled extends EngineEvent {
+  FileCancelled(this.peerId, this.fileId);
+  final String peerId;
+  final String fileId;
+}
+
+/// 对端请求拉取文件(信封式,传输层无关,WebRTC 链路等场景使用)。
+class FileFetchRequested extends EngineEvent {
+  FileFetchRequested(this.peerId, this.fileId, this.offset);
+  final String peerId;
+  final String fileId;
+  final int offset;
+}
+
+/// 收到信封式文件数据帧。
+class FileDataReceived extends EngineEvent {
+  FileDataReceived(this.peerId, this.data);
+  final String peerId;
+  final pb.FileData data;
+}
+
+// ---------------------------------------------------------------------------
+// 同步引擎:1:1 会话的端到端一致同步。
+//
+// 一致性模型:
+//  - 本端变更(发消息/删消息)先落库 + 追加 ops,再尝试在线推送;
+//  - 对端不在线时 ops 留表,重连后按对方 Hello 携带的游标补发;
+//  - 所有 op 幂等(msg_id 主键 / 删除可重入),双通道重复投递无害;
+//  - 删除即墓碑:ChatDeleted 到达后两端都硬删除,Telegram 模式。
+// ---------------------------------------------------------------------------
+
+class SyncEngine extends pbg.SyncServiceBase {
+  SyncEngine({
+    required this.identity,
+    required this.store,
+    this.heartbeatInterval = const Duration(seconds: 15),
+  });
+
+  final Identity identity;
+  final Store store;
+  final Duration heartbeatInterval;
+
+  static const _maxBackoff = Duration(seconds: 30);
+
+  final _events = StreamController<EngineEvent>.broadcast();
+  Stream<EngineEvent> get events => _events.stream;
+
+  /// peerId → 该设备所有开放中的信封流(我方连出的 + 对方连入的)。
+  final _sinks = <String, Set<StreamController<pb.Envelope>>>{};
+  final _sessions = <String, _OutgoingSession>{};
+
+  // ------------------------------------------------------------ 公共 API
+
+  bool isOnline(String peerId) => (_sinks[peerId]?.isNotEmpty) ?? false;
+
+  /// 发送文本消息。
+  Future<Message> sendText(String peerId, String text) async {
+    final convId = Store.convIdFor(identity.deviceId, peerId);
+    store.ensureConversation(convId, peerId);
+    final msg = Message(
+      msgId: const Uuid().v4(),
+      convId: convId,
+      senderId: identity.deviceId,
+      lamport: store.nextLamport(convId),
+      createdAtMs: DateTime.now().millisecondsSinceEpoch,
+      kind: Message.kindText,
+      text: text,
+    );
+    store.insertMessage(msg);
+    final seq = store.appendOp(peerId, Op.typeMsg, _chatToProto(msg).writeToBuffer());
+    _push(peerId, pb.Envelope(
+      id: const Uuid().v4(),
+      chat: _chatToProto(msg, opSeq: seq),
+    ));
+    _events.add(MessageAdded(peerId, msg));
+    return msg;
+  }
+
+  /// 记录一条文件消息(由传输层调用,文件元数据已就绪)。
+  Future<Message> commitFileMessage(String peerId, pb.ChatMessage fileMsg) async {
+    final convId = Store.convIdFor(identity.deviceId, peerId);
+    store.ensureConversation(convId, peerId);
+    final msg = Message(
+      msgId: fileMsg.msgId,
+      convId: convId,
+      senderId: identity.deviceId,
+      lamport: store.nextLamport(convId),
+      createdAtMs: DateTime.now().millisecondsSinceEpoch,
+      kind: fileMsg.kind,
+      fileId: fileMsg.fileId,
+      fileName: fileMsg.fileName,
+      fileSize: fileMsg.fileSize.toInt(),
+      fileSha256: fileMsg.fileSha256.isEmpty ? null : fileMsg.fileSha256,
+      fileState: Message.fileStatePending,
+    );
+    store.insertMessage(msg);
+    final seq = store.appendOp(peerId, Op.typeMsg, fileMsg.writeToBuffer());
+    _push(peerId, pb.Envelope(
+      id: const Uuid().v4(),
+      chat: _chatToProto(msg, opSeq: seq),
+    ));
+    _events.add(MessageAdded(peerId, msg));
+    return msg;
+  }
+
+  /// 删除消息(Telegram 模式):本端硬删除 + 墓碑 op,对端在线即推、
+  /// 不在线则重连补发。
+  Future<void> deleteMessages(String peerId, List<String> msgIds,
+      {bool clearAll = false}) async {
+    final convId = Store.convIdFor(identity.deviceId, peerId);
+    if (clearAll) {
+      store.clearConversation(convId);
+    } else {
+      store.deleteMessages(convId, msgIds);
+    }
+    final deleted = pb.ChatDeleted(msgIds: msgIds, clearAll: clearAll);
+    final seq = store.appendOp(peerId, Op.typeDelete, deleted.writeToBuffer());
+    _push(peerId, pb.Envelope(
+      id: const Uuid().v4(),
+      chatDeleted: pb.ChatDeleted(
+          opSeq: Int64(seq), msgIds: msgIds, clearAll: clearAll),
+    ));
+    _events.add(MessagesDeleted(peerId, msgIds, clearAll));
+  }
+
+  /// 剪贴板同步(瞬态,不落库不补发)。
+  void sendClipboard(String peerId, String text) {
+    _push(peerId, pb.Envelope(
+      id: const Uuid().v4(),
+      clipboard: pb.ClipboardSync(
+          text: text, atMs: Int64(DateTime.now().millisecondsSinceEpoch)),
+    ));
+  }
+
+  /// 取消文件传输信号。
+  void sendFileCancel(String peerId, String fileId) {
+    _push(peerId, pb.Envelope(
+      id: const Uuid().v4(),
+      fileCancel: pb.FileCancel(fileId: fileId),
+    ));
+  }
+
+  /// 对端上线(被发现在线/已知地址变化)时调用,确保连出会话存在。
+  void ensureSession(Peer peer, {String? host, int? port}) {
+    final existing = _sessions[peer.deviceId];
+    if (existing != null && existing.isOpen) return;
+    final targetHost = host ?? peer.lastHost;
+    final targetPort = port ?? peer.lastPort;
+    if (targetHost == null || targetHost.isEmpty || targetPort == null) return;
+    _sessions[peer.deviceId]?.dispose();
+    final session = _OutgoingSession(
+      engine: this,
+      peer: peer,
+      host: targetHost,
+      port: targetPort,
+    );
+    _sessions[peer.deviceId] = session;
+    session.start();
+  }
+
+  /// 对端地址刷新(发现层回调)。
+  void notePeerAddress(Peer peer, String host, int port) {
+    store.updatePeerSeen(
+        peer.deviceId, host, port, DateTime.now().millisecondsSinceEpoch);
+    peer.lastHost = host;
+    peer.lastPort = port;
+    ensureSession(peer, host: host, port: port);
+  }
+
+  /// 启动时已配对设备逐个尝试建连。
+  void bootstrapSessions() {
+    for (final peer in store.allPeers()) {
+      ensureSession(peer);
+    }
+  }
+
+  /// 对端从局域网消失(发现层超时未再出现):立即断开全部链路并标记离线。
+  ///
+  /// 解决的场景:对方离开后 TCP 处于半开状态,gRPC 不会立刻报错,
+  /// 若不主动断开,在线状态将长期失真。对方再次出现时由发现层
+  /// 回调重新建连(见 notePeerAddress)。
+  void forceDisconnect(String peerId) {
+    // 1) 连出会话(其 dispose 会注销 sink、关闭通道、取消重连定时器)。
+    _sessions[peerId]?.dispose();
+    _sessions.remove(peerId);
+    // 2) 对端连入的服务端 sink:关闭即触发 handler 的 yield* 收尾与注销。
+    final set = _sinks[peerId];
+    final wasOnline = set != null && set.isNotEmpty;
+    if (set != null) {
+      for (final sink in Set.of(set)) {
+        unawaited(sink.close());
+      }
+      _sinks.remove(peerId);
+    }
+    if (wasOnline) {
+      _events.add(PeerStatusChanged(peerId, false));
+    }
+  }
+
+  // ------------------------------------------------------------ 服务端
+
+  @override
+  Stream<pb.Envelope> channel(
+      ServiceCall call, Stream<pb.Envelope> requestStream) async* {
+    final peer = Auth.verify(call, store);
+    final peerId = peer.deviceId;
+
+    final out = StreamController<pb.Envelope>();
+    _registerSink(peerId, out);
+
+    final sub = requestStream.listen(
+      (env) => _handleIncoming(peer, env),
+      onError: (_) {},
+      onDone: () => out.close(),
+    );
+
+    try {
+      yield* out.stream;
+    } finally {
+      await sub.cancel();
+      _unregisterSink(peerId, out);
+    }
+  }
+
+  // ------------------------------------------------------------ 内部
+
+  void _registerSink(String peerId, StreamController<pb.Envelope> sink) {
+    final wasOffline = !isOnline(peerId);
+    _sinks.putIfAbsent(peerId, () => {}).add(sink);
+    if (wasOffline) _events.add(PeerStatusChanged(peerId, true));
+  }
+
+  void _unregisterSink(String peerId, StreamController<pb.Envelope> sink) {
+    final set = _sinks[peerId];
+    if (set == null) return;
+    set.remove(sink);
+    if (set.isEmpty) {
+      _sinks.remove(peerId);
+      _events.add(PeerStatusChanged(peerId, false));
+    }
+  }
+
+  void _push(String peerId, pb.Envelope env) {
+    final set = _sinks[peerId];
+    if (set == null || set.isEmpty) return;
+    for (final sink in Set.of(set)) {
+      try {
+        sink.add(env);
+      } catch (_) {}
+    }
+  }
+
+  /// 处理来自对端的信封(两个方向共用)。
+  void _handleIncoming(Peer peer, pb.Envelope env) {
+    final peerId = peer.deviceId;
+    switch (env.whichPayload()) {
+      case pb.Envelope_Payload.hello:
+        // 对端告知"已应用我的 op 到第 N 条":补发 (N, +∞) 并压缩。
+        final cursor = env.hello.appliedPeerSeq.toInt();
+        store.setPeerAppliedSeq(peerId, cursor);
+        store.compactOps(peerId, cursor);
+        _replayOps(peer, cursor);
+      case pb.Envelope_Payload.chat:
+        _applyChat(peer, env.chat);
+      case pb.Envelope_Payload.chatDeleted:
+        _applyDelete(peer, env.chatDeleted);
+      case pb.Envelope_Payload.clipboard:
+        _events.add(ClipboardReceived(peerId, env.clipboard.text));
+      case pb.Envelope_Payload.fileCancel:
+        _events.add(FileCancelled(peerId, env.fileCancel.fileId));
+      case pb.Envelope_Payload.syncAck:
+        final cursor = env.syncAck.appliedPeerSeq.toInt();
+        store.setPeerAppliedSeq(peerId, cursor);
+        store.compactOps(peerId, cursor);
+      case pb.Envelope_Payload.fileFetch:
+        _events.add(FileFetchRequested(
+            peerId, env.fileFetch.fileId, env.fileFetch.offset.toInt()));
+      case pb.Envelope_Payload.fileData:
+        _events.add(FileDataReceived(peerId, env.fileData));
+      case pb.Envelope_Payload.linkAuth:
+        break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
+      case pb.Envelope_Payload.heartbeat:
+      case pb.Envelope_Payload.fileOffer:
+      case pb.Envelope_Payload.fileAnswer:
+      case pb.Envelope_Payload.notSet:
+        break; // 文件拉取走 TransferService,此处无需处理
+    }
+  }
+
+  // ---------------------------------------------------- 外部传输链路
+
+  /// 已 attach 的外部链路 sink → 其入向订阅(清理用)。
+  final _externalSubs =
+      <StreamController<pb.Envelope>, StreamSubscription<pb.Envelope>>{};
+
+  /// 外部传输层(WebRTC DataChannel 等)注册一条到 [peerId] 的信封链路。
+  ///
+  /// 前置条件(调用方保证):链路已加密且对端 LinkAuth 已校验通过。
+  /// 返回的 sink 用于向对端【发送】信封;[incoming] 为对端来的信封流。
+  /// 注册后自动发送 Hello 触发双向 op 补发。
+  StreamController<pb.Envelope> attachExternalTransport(
+      String peerId, Stream<pb.Envelope> incoming) {
+    final peer = store.getPeer(peerId);
+    if (peer == null) {
+      throw StateError('attachExternalTransport: unknown peer $peerId');
+    }
+    final sink = StreamController<pb.Envelope>();
+    final sub = incoming.listen(
+      (env) => _handleIncoming(peer, env),
+      onError: (_) => detachExternalTransport(peerId, sink),
+      onDone: () => detachExternalTransport(peerId, sink),
+    );
+    _externalSubs[sink] = sub;
+    _registerSink(peerId, sink);
+    sink.add(buildHello(peerId));
+    return sink;
+  }
+
+  /// 断开并注销外部链路。
+  void detachExternalTransport(
+      String peerId, StreamController<pb.Envelope> sink) {
+    final sub = _externalSubs.remove(sink);
+    unawaited(sub?.cancel() ?? Future.value());
+    _unregisterSink(peerId, sink);
+    unawaited(sink.close());
+  }
+
+  /// 向指定对端发送信封(供 TransferManager 等内部模块使用)。
+  void sendEnvelope(String peerId, pb.Envelope env) => _push(peerId, env);
+
+  /// 重放本端 ops(对端重连补发)。入库时 op_seq 未知,此处按分配的
+  /// seq 回填,保证对端游标能推进、ACK 能回流、ops 能压缩。
+  void _replayOps(Peer peer, int sinceSeq) {
+    final ops = store.opsSince(peer.deviceId, sinceSeq);
+    for (final op in ops) {
+      pb.Envelope env;
+      if (op.type == Op.typeMsg) {
+        final chat = pb.ChatMessage.fromBuffer(op.payload);
+        chat.opSeq = Int64(op.seq);
+        env = pb.Envelope(id: const Uuid().v4(), chat: chat);
+      } else {
+        final del = pb.ChatDeleted.fromBuffer(op.payload);
+        env = pb.Envelope(
+            id: const Uuid().v4(),
+            chatDeleted: pb.ChatDeleted(
+              opSeq: Int64(op.seq),
+              msgIds: del.msgIds,
+              clearAll: del.clearAll,
+            ));
+      }
+      _push(peer.deviceId, env);
+    }
+  }
+
+  void _applyChat(Peer peer, pb.ChatMessage chat) {
+    final peerId = peer.deviceId;
+    final convId = Store.convIdFor(identity.deviceId, peerId);
+    store.ensureConversation(convId, peerId);
+    final msg = Message(
+      msgId: chat.msgId,
+      convId: convId,
+      senderId: peerId,
+      lamport: chat.lamport.toInt(),
+      createdAtMs: chat.createdAtMs.toInt(),
+      kind: chat.kind,
+      text: chat.text,
+      fileId: chat.fileId.isEmpty ? null : chat.fileId,
+      fileName: chat.fileName.isEmpty ? null : chat.fileName,
+      fileSize: chat.fileSize == Int64.ZERO ? null : chat.fileSize.toInt(),
+      fileSha256: chat.fileSha256.isEmpty ? null : chat.fileSha256,
+      fileState: Message.hasFilePayload(chat.kind) ? Message.fileStatePending : 0,
+    );
+    final isNew = store.insertMessage(msg);
+    _advanceCursor(peerId, chat.opSeq);
+    if (isNew) {
+      _events.add(MessageAdded(peerId, msg));
+      if (Message.hasFilePayload(msg.kind)) {
+        _events.add(FileMessageArrived(peerId, msg));
+      }
+    }
+  }
+
+  void _applyDelete(Peer peer, pb.ChatDeleted del) {
+    final peerId = peer.deviceId;
+    final convId = Store.convIdFor(identity.deviceId, peerId);
+    if (del.clearAll) {
+      store.clearConversation(convId);
+    } else {
+      store.deleteMessages(convId, del.msgIds);
+    }
+    _advanceCursor(peerId, del.opSeq);
+    _events.add(MessagesDeleted(peerId, del.msgIds, del.clearAll));
+  }
+
+  /// 推进"我已应用对方 op"游标并回 ACK(供对端压缩 ops)。
+  void _advanceCursor(String peerId, Int64 opSeq) {
+    if (opSeq == Int64.ZERO) return;
+    final seq = opSeq.toInt();
+    final peer = store.getPeer(peerId);
+    if (peer == null || seq <= peer.myAppliedSeq) return;
+    store.setMyAppliedSeq(peerId, seq);
+    _push(peerId, pb.Envelope(
+      id: const Uuid().v4(),
+      syncAck: pb.SyncAck(appliedPeerSeq: Int64(seq)),
+    ));
+  }
+
+  pb.ChatMessage _chatToProto(Message m, {int? opSeq}) => pb.ChatMessage(
+        msgId: m.msgId,
+        opSeq: Int64(opSeq ?? 0),
+        lamport: Int64(m.lamport),
+        createdAtMs: Int64(m.createdAtMs),
+        kind: m.kind,
+        text: m.text,
+        fileId: m.fileId ?? '',
+        fileName: m.fileName ?? '',
+        fileSize: Int64(m.fileSize ?? 0),
+        fileSha256: m.fileSha256 ?? '',
+      );
+
+  /// 供会话内部使用:连出通道打开时发送 Hello。
+  pb.Envelope buildHello(String peerId) {
+    final peer = store.getPeer(peerId);
+    return pb.Envelope(
+      id: const Uuid().v4(),
+      hello: pb.Hello(appliedPeerSeq: Int64(peer?.myAppliedSeq ?? 0)),
+    );
+  }
+
+  void registerSessionSink(String peerId, StreamController<pb.Envelope> sink) =>
+      _registerSink(peerId, sink);
+
+  void unregisterSessionSink(String peerId, StreamController<pb.Envelope> sink) =>
+      _unregisterSink(peerId, sink);
+
+  Future<void> dispose() async {
+    // 1) 关闭所有连出会话(客户端侧)。
+    for (final s in _sessions.values) {
+      s.dispose();
+    }
+    _sessions.clear();
+    // 2) 外部链路订阅清理。
+    for (final sub in _externalSubs.values) {
+      unawaited(sub.cancel());
+    }
+    _externalSubs.clear();
+    // 3) 关闭所有服务端入向 sink,让 channel handler 的 yield* 收尾,
+    //    连接才能 finish,server.shutdown() 才不会挂起。
+    for (final set in _sinks.values) {
+      for (final sink in Set.of(set)) {
+        unawaited(sink.close());
+      }
+    }
+    _sinks.clear();
+    await _events.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 连出会话:维持到某个可信设备的 Channel 长连接,断线指数退避重连。
+// ---------------------------------------------------------------------------
+
+class _OutgoingSession {
+  _OutgoingSession({
+    required this.engine,
+    required this.peer,
+    required this.host,
+    required this.port,
+  });
+
+  final SyncEngine engine;
+  final Peer peer;
+  final String host;
+  final int port;
+
+  PeerChannel? _channel;
+  StreamController<pb.Envelope>? _out;
+  StreamSubscription<pb.Envelope>? _inSub;
+  Timer? _heartbeat;
+  Timer? _reconnect;
+  Duration _backoff = const Duration(seconds: 1);
+  bool _disposed = false;
+  bool _open = false;
+
+  bool get isOpen => _open;
+
+  void start() => unawaited(_connect());
+
+  Future<void> _connect() async {
+    if (_disposed) return;
+    _channel = PeerChannel.connect(
+      host: host,
+      port: port,
+      pinnedFingerprint: peer.certFingerprint,
+    );
+    final out = StreamController<pb.Envelope>();
+    _out = out;
+
+    try {
+      final client = pbg.SyncServiceClient(_channel!.channel);
+      final responses = client.channel(
+        out.stream,
+        options: CallOptions(
+          metadata: Auth.metadata(engine.identity.deviceId, peer.token),
+        ),
+      );
+      _inSub = responses.listen(
+        (env) => engine._handleIncoming(peer, env),
+        onError: (Object e) => _onClosed(
+            fatal: e is GrpcError && e.code == StatusCode.unauthenticated),
+        onDone: () => _onClosed(),
+        cancelOnError: true,
+      );
+      engine.registerSessionSink(peer.deviceId, out);
+      out.add(engine.buildHello(peer.deviceId));
+      _open = true;
+      _backoff = const Duration(seconds: 1);
+      _heartbeat?.cancel();
+      _heartbeat = Timer.periodic(engine.heartbeatInterval, (_) {
+        if (!out.isClosed) {
+          out.add(pb.Envelope(
+            id: const Uuid().v4(),
+            heartbeat: pb.Heartbeat(
+                atMs: Int64(DateTime.now().millisecondsSinceEpoch)),
+          ));
+        }
+      });
+    } catch (_) {
+      _onClosed();
+    }
+  }
+
+  /// 通道关闭清理。幂等。[fatal] 为 true 时(如对端已解绑)不再重连。
+  void _onClosed({bool fatal = false}) {
+    if (_disposed) return;
+    if (fatal) _disposed = true;
+    final wasOpen = _open;
+    _open = false;
+    _heartbeat?.cancel();
+    _heartbeat = null;
+    final out = _out;
+    _out = null;
+    if (out != null) {
+      engine.unregisterSessionSink(peer.deviceId, out);
+      unawaited(out.close());
+    }
+    unawaited(_inSub?.cancel() ?? Future.value());
+    _inSub = null;
+    unawaited(_channel?.shutdown() ?? Future.value());
+    _channel = null;
+    if (wasOpen || !fatal) {
+      _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed || (_reconnect?.isActive ?? false)) return;
+    _reconnect = Timer(_backoff, () {
+      _backoff = _backoff * 2 > SyncEngine._maxBackoff
+          ? SyncEngine._maxBackoff
+          : _backoff * 2;
+      unawaited(_connect());
+    });
+  }
+
+  void dispose() {
+    _disposed = true;
+    _reconnect?.cancel();
+    _heartbeat?.cancel();
+    _open = false;
+    final out = _out;
+    _out = null;
+    if (out != null) {
+      engine.unregisterSessionSink(peer.deviceId, out);
+      unawaited(out.close());
+    }
+    unawaited(_inSub?.cancel() ?? Future.value());
+    _inSub = null;
+    unawaited(_channel?.shutdown() ?? Future.value());
+    _channel = null;
+  }
+}

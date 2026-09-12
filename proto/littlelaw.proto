@@ -1,0 +1,247 @@
+syntax = "proto3";
+
+package littlelaw.v1;
+
+// ============================================================================
+// LittleLaw 局域网端到端加密通讯协议
+//
+// 拓扑: NoServer 对等网络,每个设备同时是 gRPC Server 和 Client。
+// 端口: 固定 TCP 端口(gRPC over TLS) + 固定 UDP 端口(发现)。
+// 信任模型: TOFU + PIN 短认证串(SAS)。配对后服务端证书指纹 + 会话令牌
+//           双重校验,未配对设备只能调用 PairingService。
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// 通用
+// ---------------------------------------------------------------------------
+
+// 设备身份信息。device_id 与证书在首次启动时生成,终身不变。
+message DeviceInfo {
+  string device_id = 1;         // UUID v4
+  string device_name = 2;       // 用户可自定义;缺省为 "平台-型号" 自动生成
+  string platform = 3;          // android / ios / windows / macos / linux
+  string cert_fingerprint = 4;  // 自签证书 DER 的 SHA-256,hex 小写
+  int32  port = 5;              // 对端 gRPC 服务端口(固定,但携带便于校验)
+  string protocol_version = 6;  // 协议版本,不兼容即丢弃
+  string device_model = 7;      // 机型,如 "Xiaomi 13" / "iPhone 17 Pro Max" / "Windows 10 Pro"
+}
+
+// ---------------------------------------------------------------------------
+// 发现层(UDP 组播 / 子网扫描,不走 gRPC)
+// ---------------------------------------------------------------------------
+
+// UDP 发现报文。序列化后作为 UDP payload 直接发送。
+message DiscoveryPacket {
+  fixed32 magic = 1;        // 协议指纹 "LLAW" = 0x4C4C4157,不匹配直接丢弃
+  DeviceInfo device = 2;
+  int64 timestamp_ms = 3;
+}
+
+// 局域网 OOB 引导内容(二维码/NFC NDEF 文本载荷,JSON 编码):
+//   { "v":1, "tap":"<一次性令牌hex>", "addr":["192.168.1.5:47520",...],
+//     "id":"<deviceId>", "name":"<名称>", "fpr":"<证书指纹>" }
+// 读取方连接 addr 候选并调用 PairWithTap 完成免 PIN 配对。
+// (远程 WebRTC 引导包使用 app 层 OobBlob 格式,与此不同。)
+
+// ---------------------------------------------------------------------------
+// 配对服务(未信任设备唯一可调用的服务)
+// ---------------------------------------------------------------------------
+
+service PairingService {
+  // 请求配对。双方各自用对方证书指纹计算相同 PIN 并肉眼核对,
+  // 被请求方用户点击同意后返回一次性会话令牌,双方写入 trusted_peers。
+  rpc RequestPair(PairRequest) returns (PairResponse);
+
+  // 一碰/一扫配对(免 PIN):请求方携带通过物理通道(NFC 触碰 /
+  // 当面扫码)获得的一次性令牌,证明物理在场;服务端比对有效窗口内的
+  // tap_token 后签发会话令牌并双端入账。
+  rpc PairWithTap(TapPairRequest) returns (TapPairResponse);
+
+  // 解除配对:双端同时删除对方信任记录(需要有效会话令牌)。
+  rpc Unpair(UnpairRequest) returns (UnpairResponse);
+}
+
+message TapPairRequest {
+  DeviceInfo requester = 1;
+  string tap_token = 2;  // 一次性物理通道令牌
+}
+
+message TapPairResponse {
+  bool accepted = 1;
+  DeviceInfo responder = 2;
+  bytes session_token = 3;
+  string message = 4;
+}
+
+message PairRequest {
+  DeviceInfo requester = 1;
+}
+
+message PairResponse {
+  bool accepted = 1;
+  DeviceInfo responder = 2;
+  bytes session_token = 3;  // 32 字节随机令牌,之后所有 RPC 的元数据凭证
+  string message = 4;       // 拒绝原因等
+}
+
+message UnpairRequest {
+  string device_id = 1;     // 要解除的设备(必须等于调用方)
+}
+
+message UnpairResponse {
+  bool ok = 1;
+}
+
+// ---------------------------------------------------------------------------
+// 同步服务(聊天 / 删除 / 剪贴板 / 文件协商,双向长连接)
+// ---------------------------------------------------------------------------
+
+service SyncService {
+  // 双向流。连接建立后双方互发 Hello 交换同步游标,
+  // 随后按需推送各类事件。对端不在线的事件本地落 ops 表,重连补发。
+  rpc Channel(stream Envelope) returns (stream Envelope);
+}
+
+message Envelope {
+  string id = 1;  // 信封 UUID,用于 ACK 去重
+  oneof payload {
+    Hello hello = 2;
+    ChatMessage chat = 3;
+    ChatDeleted chat_deleted = 4;
+    ClipboardSync clipboard = 5;
+    FileOffer file_offer = 6;
+    FileAnswer file_answer = 7;
+    FileCancel file_cancel = 8;
+    SyncAck sync_ack = 9;
+    Heartbeat heartbeat = 10;
+    LinkAuth link_auth = 11;              // 外部传输链路(WebRTC)建连鉴权
+    FileFetchRequest file_fetch = 12;     // 信封式文件拉取(传输层无关)
+    FileData file_data = 13;              // 信封式文件数据帧
+  }
+}
+
+// 外部传输链路(WebRTC DataChannel 等)的第一个信封:
+// 携带设备 ID + 配对令牌,等价于 gRPC 元数据鉴权。校验不过立即断链。
+message LinkAuth {
+  string device_id = 1;
+  string token = 2;
+}
+
+// 信封式文件拉取请求(当对端无 gRPC 可达地址时使用,如 WebRTC 链路)。
+message FileFetchRequest {
+  string file_id = 1;
+  int64 offset = 2;  // 断点续传起始字节
+}
+
+// 信封式文件数据帧。单帧 ≤ 64 KiB(WebRTC DataChannel 安全消息尺寸)。
+message FileData {
+  string file_id = 1;
+  int64 offset = 2;
+  bytes data = 3;
+  bool last = 4;  // 最后一帧
+}
+
+// 连接建立后的第一个信封:告知对方"我已经应用到你的第 N 条 op",
+// 对方据此从 ops 表补发 (N, +∞) 的全部操作,实现断线重连最终一致。
+message Hello {
+  int64 applied_peer_seq = 1;
+}
+
+// 聊天消息。两端以 msg_id 为准各自落库,内容字节级一致。
+message ChatMessage {
+  string msg_id = 1;        // 消息 UUID,发送方生成,全局唯一
+  int64  op_seq = 2;        // 发送方 ops 表序列号(同步游标的基本单位)
+  int64  lamport = 3;       // Lamport 逻辑时钟,两端排序一致性的依据
+  int64  created_at_ms = 4;
+  int32  kind = 5;          // 0=text 1=image 2=file
+  string text = 6;          // kind=0/1 时的文本内容
+  string file_id = 7;       // kind=2 时关联的文件
+  string file_name = 8;
+  int64  file_size = 9;
+  string file_sha256 = 10;  // kind=2 时整包 SHA-256 hex,接收方校验依据
+}
+
+// 删除操作(墓碑)。Telegram 模式:一端删除,另一端同步硬删除。
+// 对端不在线时本操作留在 ops 表,重连后补发。
+message ChatDeleted {
+  int64 op_seq = 1;
+  repeated string msg_ids = 2;  // 要删除的消息 UUID 集合
+  bool clear_all = 3;           // true 时清空整个会话
+}
+
+// 剪贴板同步(小文本直接走消息通道;图片等大内容走文件通道)。
+message ClipboardSync {
+  string text = 1;
+  int64 at_ms = 2;
+}
+
+// 文件传输协商:先发 Offer,对端回应 Answer(可带 offset 实现断点续传),
+// 同意后发送方另起 TransferService.SendFile 流传输数据。
+message FileOffer {
+  string file_id = 1;
+  string name = 2;
+  int64 size = 3;
+  string sha256_hex = 4;    // 整包校验
+  string mime = 5;
+}
+
+message FileAnswer {
+  string file_id = 1;
+  bool accept = 2;
+  int64 offset = 3;         // 已接收字节数,发送方从此处续传
+}
+
+message FileCancel {
+  string file_id = 1;
+  string reason = 2;
+}
+
+// 应用回执:告知对方哪些信封已落库、对方 op 已应用到第几条(用于 ops 表压缩)。
+message SyncAck {
+  repeated string envelope_ids = 1;
+  int64 applied_peer_seq = 2;
+}
+
+message Heartbeat {
+  int64 at_ms = 1;
+}
+
+// ---------------------------------------------------------------------------
+// 文件传输服务(数据面,客户端流)
+// ---------------------------------------------------------------------------
+
+service TransferService {
+  // 客户端流上传。首帧必须是 FileHead,后续为数据帧。
+  // 接收方落盘到 <inbox>/<file_id>.part,完成后校验 SHA-256 并重命名。
+  rpc SendFile(stream FileChunk) returns (FileResult);
+
+  // 主动拉取(用于接收方在中断后重新拉取剩余部分)。
+  rpc FetchFile(FetchRequest) returns (stream FileChunk);
+}
+
+message FileChunk {
+  oneof part {
+    FileHead head = 1;
+    bytes data = 2;  // 单帧 1 MiB
+  }
+}
+
+message FileHead {
+  string file_id = 1;
+  string name = 2;
+  int64 offset = 3;       // 断点续传起始字节
+  int64 total_size = 4;
+  string sha256_hex = 5;
+}
+
+message FetchRequest {
+  string file_id = 1;
+  int64 offset = 2;
+}
+
+message FileResult {
+  bool ok = 1;
+  int64 received_bytes = 2;
+  bool sha256_ok = 3;
+  string message = 4;
+}

@@ -1,0 +1,121 @@
+name: build-all-platforms
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ------------------------------------------------ 核心引擎测试
+  core-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"
+      - run: dart pub get
+        working-directory: core
+      # Linux 下 sqlite3 包加载系统 libsqlite3
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-0
+      - run: dart test
+        working-directory: core
+
+  # ------------------------------------------------ Windows
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: app
+      - run: flutter build windows --release
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: app/build/windows/x64/runner/Release/
+
+  # ------------------------------------------------ Linux
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - run: flutter pub get
+        working-directory: app
+      - run: flutter build linux --release
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: app/build/linux/x64/release/bundle/
+
+  # ------------------------------------------------ macOS
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: app
+      - run: flutter build macos --release
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: app/build/macos/Build/Products/Release/
+
+  # ------------------------------------------------ Android
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+      - uses: android-actions/setup-android@v3
+      - run: flutter pub get
+        working-directory: app
+      - run: flutter build apk --release --split-per-abi
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: app/build/app/outputs/flutter-apk/*.apk
+
+  # ------------------------------------------------ iOS(未签名,需自签或开发者账号)
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: app
+      - run: flutter build ios --release --no-codesign
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned
+          path: app/build/ios/iphoneos/

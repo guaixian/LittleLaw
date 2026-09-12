@@ -1,0 +1,13 @@
+// nfc_manager 3.5.x 老插件修复:其 compileSdk=31 低于自身 androidx 依赖
+// 要求的 34+。必须在 AGP 的 finalizeDsl 钩子(构建脚本之后、DSL 锁定之前)
+// 改写,直接赋值会被插件自己的 build.gradle 覆盖。
+allprojects { project ->
+    project.plugins.withId('com.android.library') {
+        if (project.name == 'nfc_manager') {
+            project.extensions.androidComponents.finalizeDsl { ext ->
+                ext.compileSdk = 36
+                println "NFC-FIX: nfc_manager compileSdk -> 36 via finalizeDsl"
+            }
+        }
+    }
+}

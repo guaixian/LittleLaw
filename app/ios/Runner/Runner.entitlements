@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		iOS 14+ 收发 UDP 组播必须声明该 entitlement。
+		前提:付费 Apple Developer 账号,并在 App ID 中启用
+		"Multicast Networking" 能力;Xcode 中 Signing & Capabilities
+		添加 "Multicast Networking" 后会自动关联本文件。
+		若无此 entitlement,发现层会自动降级为子网扫描,功能仍可用。
+	-->
+	<key>com.apple.developer.networking.multicast</key>
+	<true/>
+	<!-- NFC 读取(一碰配对,读对方 HCE 标签);需在 App ID 启用
+	     "NFC Tag Reading" 能力 -->
+	<key>com.apple.developer.nfc.readersession.formats</key>
+	<array>
+		<string>NDEF</string>
+	</array>
+	<!-- 程序化加入热点(需在 App ID 启用 "Hotspot Configuration") -->
+	<key>com.apple.developer.networking.HotspotConfiguration</key>
+	<true/>
+</dict>
+</plist>
