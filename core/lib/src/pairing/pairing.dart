@@ -442,6 +442,12 @@ class PairingManager extends pbg.PairingServiceBase {
   final _answerDeliveries = StreamController<String>.broadcast();
   Stream<String> get answerDeliveries => _answerDeliveries.stream;
 
+  /// 当前进行中的远程邀请令牌(供中转服务器回退解密受邀方应答)。
+  String? get pendingRemoteOfferToken => _pendingOfferToken;
+
+  /// 注入一份经任意通道到达的远程应答(统一走 WebRTC 应用路径)。
+  void noteRemoteAnswer(String answerBlob) => _answerDeliveries.add(answerBlob);
+
   @override
   Future<pb.DeliverAnswerResponse> deliverAnswer(
       ServiceCall call, pb.DeliverAnswerRequest request) async {

@@ -164,6 +164,9 @@ class LittleLawEngine {
           identity: identity, store: store, url: rendezvousUrl);
       sync.attachRendezvous(rc);
       pairing.onPeersChanged = rc.subscribePeers;
+      // 受邀方应答经服务器推回:回退用邀请令牌解密,统一走 WebRTC 应用路径。
+      rc.fallbackTokenProvider = () => pairing.pendingRemoteOfferToken;
+      rc.pairAnswers.listen(pairing.noteRemoteAnswer);
       rc.start();
       engine.rendezvous = rc;
     }
@@ -275,6 +278,17 @@ class LittleLawEngine {
   /// (受邀方)把 answer 引导包自动回传给邀请方(地址可达时免手动粘贴)。
   Future<void> deliverAnswerTo(String host, int port, String answerBlob) =>
       pairing.deliverAnswerTo(host, port, answerBlob);
+
+  /// (受邀方)经指定中转服务器一次性回传配对应答(本机未配置服务器时用)。
+  Future<void> deliverPairAnswerOnce(
+          String rendezvousUrl, String toPeerId, String answerBlob) =>
+      RendezvousClient.deliverPairAnswerOnce(
+        identity: identity,
+        store: store,
+        rendezvousUrl: rendezvousUrl,
+        toPeerId: toPeerId,
+        answerBlob: answerBlob,
+      );
 
   /// 开启免 PIN 配对窗口,返回二维码/NFC 用的局域网载荷字符串(2 分钟有效)。
   /// 载荷内含本机全部局域网地址候选与一次性 tap 令牌。

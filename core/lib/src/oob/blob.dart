@@ -25,6 +25,7 @@ class OobBlob {
     this.deviceModel = '',
     this.sdp,
     this.candidates = const [],
+    this.rendezvousUrl,
     this.addresses = const [],
     int? createdAtMs,
   }) : createdAtMs = createdAtMs ?? DateTime.now().millisecondsSinceEpoch;
@@ -48,6 +49,10 @@ class OobBlob {
   // ---- WebRTC 信令(可选;近场扫码直连局域网时为空) ----
   final String? sdp;
   final List<String> candidates;
+
+  /// 邀请方使用的中转服务器地址(有值表示:应答可经该服务器信令推回,
+  /// 受邀方无需手动回传)。受邀方未配置服务器时可临时连接此地址回传。
+  final String? rendezvousUrl;
 
   /// 局域网地址候选(host:port)。近场扫码场景下可跳过 WebRTC 直连 gRPC。
   final List<String> addresses;
@@ -83,6 +88,8 @@ class OobBlob {
       },
       'token': token,
       if (sdp != null) 'rtc': {'sdp': sdp, 'candidates': compactCandidates},
+      if (rendezvousUrl != null && rendezvousUrl!.isNotEmpty)
+        'rvu': rendezvousUrl,
       if (addresses.isNotEmpty) 'addr': addresses,
       'ts': createdAtMs,
     });
@@ -143,6 +150,7 @@ class OobBlob {
           (throw const FormatException('缺少会话令牌')),
       sdp: rtc?['sdp'] as String?,
       candidates: _decodeCandidates(rtc?['candidates']),
+      rendezvousUrl: json['rvu'] as String?,
       addresses: (json['addr'] as List?)?.cast<String>() ?? const [],
       createdAtMs: json['ts'] as int? ?? 0,
     );

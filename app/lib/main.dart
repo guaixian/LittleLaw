@@ -89,8 +89,11 @@ class _BootPageState extends State<BootPage> {
         dataDir: dataDir,
         deviceName: defaultName,
         deviceModel: model,
-        rendezvousUrl: await SettingsPage.loadRendezvousUrl()
-            .then((u) => u.isEmpty ? null : u),
+        rendezvousUrl: await SettingsPage.loadRendezvousUrl().then((raw) {
+          if (raw.isEmpty) return RendezvousClient.defaultUrl; // 内置公共服务
+          if (raw.toLowerCase() == 'off') return null; // 显式关闭
+          return raw; // 自建地址
+        }),
       );
       final iceServers = await SettingsPage.loadIceServers();
       final rtc = WebRtcLinkManager(engine: engine, iceServers: iceServers)

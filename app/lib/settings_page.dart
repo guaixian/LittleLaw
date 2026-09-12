@@ -129,15 +129,16 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 4),
-          const Text('配置后:重启自动重连远程设备、离线消息经服务器暂存送达。'
-              '留空则纯 NoServer 模式,全部功能不受影响。',
+          const Text('配置后:重启自动重连远程设备、离线消息经服务器暂存送达、'
+              '远程配对一扫即成。留空 = 内置公共服务 littlelaw.joywiki.cc;'
+              '填 off = 关闭(纯 NoServer);或填自建地址。',
               style: TextStyle(fontSize: 12)),
           const SizedBox(height: 8),
           TextField(
             controller: _rendezvousCtrl,
             decoration: const InputDecoration(
               labelText: '服务器 WebSocket 地址',
-              hintText: 'ws://你的服务器IP:47600/ws 或 wss://域名/ws',
+              hintText: '留空默认 wss://littlelaw.joywiki.cc/ws',
             ),
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
           ),

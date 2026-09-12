@@ -292,6 +292,9 @@ class WebRtcLinkManager {
       deviceModel: engine.identity.deviceModel,
       sdp: _stripInlineCandidates(local.sdp!),
       candidates: _pickCandidates(candidates),
+      // 声明我方中转服务器:受邀方可经信令推回应答,一扫即成。
+      rendezvousUrl:
+          engine.rendezvous?.connected == true ? engine.rendezvous!.url : null,
       addresses: await engine.localGrpcAddresses(), // 供对方自动回传应答
     ).encode();
   }
@@ -405,7 +408,24 @@ class WebRtcLinkManager {
       candidates: _pickCandidates(candidates),
     ).encode();
 
-    // 邀请方地址可达 → 自动回传应答,免人工粘贴。
+    // 1) 邀请方声明了中转服务器:应答经信令推回(一扫即成,无需人工)。
+    final rvu = blob.rendezvousUrl;
+    if (rvu != null && rvu.isNotEmpty) {
+      try {
+        final rc = engine.rendezvous;
+        if (rc != null && rc.connected && rc.url == rvu) {
+          await rc.sendPairAnswer(blob.deviceId, answer);
+        } else {
+          // 本机未配置(或不是同一台):临时连上去推回。
+          await engine.deliverPairAnswerOnce(rvu, blob.deviceId, answer);
+        }
+        return '';
+      } catch (_) {
+        // 推回失败,继续尝试直连/人工回传
+      }
+    }
+
+    // 2) 邀请方局域网地址可达 → gRPC 直连回传。
     if (blob.addresses.isNotEmpty) {
       for (final addr in blob.addresses) {
         final idx = addr.lastIndexOf(':');

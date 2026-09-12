@@ -121,6 +121,25 @@ cd server && go build -o rendezvous .
 # 有域名证书时放 Caddy/nginx 后面用 wss://域名/ws
 ```
 
+Docker 一键(推荐,VPS 部署):
+
+```bash
+cd server
+docker build -t littlelaw-rendezvous .
+docker run -d --name rendezvous -p 47600:47600 -v rendezvous-data:/data littlelaw-rendezvous
+```
+
+域名 + 自动 HTTPS(Caddy,以公共服 littlelaw.joywiki.cc 为例):
+
+```
+# Caddyfile
+littlelaw.joywiki.cc {
+    reverse_proxy /ws 127.0.0.1:47600
+}
+```
+
+客户端留空即默认走 `wss://littlelaw.joywiki.cc/ws`;自建填自己地址;填 `off` 关闭。
+
 ## 目录
 
 ```

@@ -45,9 +45,16 @@ class RendezvousClient {
     required this.url,
   });
 
+  /// 内置公共中转服务器(默认;可在设置中改为自建地址或 off 关闭)。
+  static const defaultUrl = 'wss://littlelaw.joywiki.cc/ws';
+
   final Identity identity;
   final Store store;
   final String url; // ws://host:port/ws 或 wss://domain/ws
+
+  /// 回退令牌来源:信令来自未入账设备(远程配对的受邀方)时,
+  /// 用进行中的邀请令牌尝试解密(典型场景:一扫即成的应答推回)。
+  String? Function()? fallbackTokenProvider;
 
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
@@ -60,12 +67,43 @@ class RendezvousClient {
   final _signals = StreamController<RendezvousSignal>.broadcast();
   final _mail = StreamController<RendezvousMail>.broadcast();
   final _connected = StreamController<bool>.broadcast();
+  final _pairAnswers = StreamController<String>.broadcast();
 
   Stream<String> get peerOnline => _peerOnline.stream;
   Stream<String> get peerOffline => _peerOffline.stream;
   Stream<RendezvousSignal> get signals => _signals.stream;
   Stream<RendezvousMail> get mail => _mail.stream;
   Stream<bool> get connectionState => _connected.stream;
+
+  /// 经服务器到达的"配对应答"引导包(受邀方一扫即成的推回)。
+  Stream<String> get pairAnswers => _pairAnswers.stream;
+
+  /// 发送配对应答(受邀方把 answer 引导包推回给邀请方,密文)。
+  Future<void> sendPairAnswer(String toPeerId, String answerBlob) =>
+      sendSignal(toPeerId, {'kind': 'pair_answer', 'blob': answerBlob});
+
+  /// 一次性连接回传配对应答(受邀方未配置服务器时,
+  /// 临时连到邀请方所用的服务器完成推回)。
+  static Future<void> deliverPairAnswerOnce({
+    required Identity identity,
+    required Store store,
+    required String rendezvousUrl,
+    required String toPeerId,
+    required String answerBlob,
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    final rc =
+        RendezvousClient(identity: identity, store: store, url: rendezvousUrl);
+    try {
+      rc.start();
+      await rc.connectionState.firstWhere((up) => up).timeout(timeout);
+      await rc.sendPairAnswer(toPeerId, answerBlob);
+      // 给服务器转发留出窗口再关闭。
+      await Future.delayed(const Duration(milliseconds: 500));
+    } finally {
+      await rc.dispose();
+    }
+  }
 
   bool _up = false;
   bool get connected => _up;
@@ -226,17 +264,32 @@ class RendezvousClient {
     final from = f['from'] as String? ?? '';
     final data = f['data'] as String? ?? '';
     if (from.isEmpty || data.isEmpty) return;
-    final codec = _codecFor(from);
-    if (codec == null) return; // 未配对来源,丢弃
-    try {
-      final plain = await codec.decrypt(base64Decode(data));
-      _signals.add(RendezvousSignal(
-        fromPeerId: from,
-        payload: jsonDecode(utf8.decode(plain)) as Map<String, dynamic>,
-      ));
-    } catch (_) {
-      // 解密失败(伪造/损坏),丢弃
+
+    // 候选密钥:已配对令牌 + 进行中的邀请令牌(应对令牌轮换/未入账来源)。
+    final codecs = <SecureCodec>[
+      if (_codecFor(from) != null) _codecFor(from)!,
+      if (fallbackTokenProvider?.call() != null)
+        SecureCodec(fallbackTokenProvider!()!),
+    ];
+    if (codecs.isEmpty) return;
+
+    final packed = base64Decode(data);
+    for (final codec in codecs) {
+      try {
+        final plain = await codec.decrypt(packed);
+        final payload = jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
+        if (payload['kind'] == 'pair_answer') {
+          final blob = payload['blob'] as String? ?? '';
+          if (blob.isNotEmpty) _pairAnswers.add(blob);
+          return;
+        }
+        _signals.add(RendezvousSignal(fromPeerId: from, payload: payload));
+        return;
+      } catch (_) {
+        continue; // 换下一个候选密钥
+      }
     }
+    // 全部解密失败(伪造/损坏),丢弃
   }
 
   Future<void> _handleMailbox(Map<String, dynamic> f) async {
@@ -323,5 +376,6 @@ class RendezvousClient {
     await _signals.close();
     await _mail.close();
     await _connected.close();
+    await _pairAnswers.close();
   }
 }
