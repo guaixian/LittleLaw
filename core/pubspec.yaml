@@ -13,9 +13,11 @@ dependencies:
   cryptography: ^2.9.0
   grpc: ^5.1.0
   lzma: ^1.0.1
+  pointycastle: ^4.0.0
   protobuf: ^6.0.0
   sqlite3: ^3.5.2
   uuid: ^4.6.0
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   test: ^1.26.0

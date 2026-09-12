@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../generated/littlelaw.pb.dart' as pb;
 import '../generated/littlelaw.pbgrpc.dart' as pbg;
 import '../identity/identity.dart';
+import '../rendezvous/rendezvous.dart';
 import '../store/store.dart';
 import '../transport/auth.dart';
 import '../transport/transport.dart';
@@ -100,6 +101,25 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// peerId → 该设备所有开放中的信封流(我方连出的 + 对方连入的)。
   final _sinks = <String, Set<StreamController<pb.Envelope>>>{};
   final _sessions = <String, _OutgoingSession>{};
+
+  RendezvousClient? _rendezvous;
+  StreamSubscription<RendezvousMail>? _mailSub;
+
+  /// 挂接中转服务器(可选):离线信封经服务器邮箱兜底送达。
+  /// 不挂接时行为与之前完全一致(只留 ops 表等重连补发)。
+  void attachRendezvous(RendezvousClient rc) {
+    _rendezvous = rc;
+    // 经服务器邮箱到达的离线信封(已解密):走统一应用路径。
+    _mailSub = rc.mail.listen((mail) {
+      final peer = store.getPeer(mail.fromPeerId);
+      if (peer == null) return;
+      try {
+        _handleIncoming(peer, pb.Envelope.fromBuffer(mail.envelopeBytes));
+      } catch (_) {}
+    });
+  }
+
+  RendezvousClient? get rendezvous => _rendezvous;
 
   // ------------------------------------------------------------ 公共 API
 
@@ -294,11 +314,20 @@ class SyncEngine extends pbg.SyncServiceBase {
 
   void _push(String peerId, pb.Envelope env) {
     final set = _sinks[peerId];
-    if (set == null || set.isEmpty) return;
-    for (final sink in Set.of(set)) {
-      try {
-        sink.add(env);
-      } catch (_) {}
+    final hasLive = set != null && set.isNotEmpty;
+    if (hasLive) {
+      for (final sink in Set.of(set)) {
+        try {
+          sink.add(env);
+        } catch (_) {}
+      }
+      return;
+    }
+    // 无活通道:有中转服务器则投离线邮箱(应用层 E2E 加密);
+    // ops 表同时留存,任意通道重连后还会按游标补发(msg_id 幂等去重)。
+    final rc = _rendezvous;
+    if (rc != null && rc.connected) {
+      unawaited(rc.pushMailbox(peerId, env.writeToBuffer()));
     }
   }
 
@@ -491,6 +520,7 @@ class SyncEngine extends pbg.SyncServiceBase {
       s.dispose();
     }
     _sessions.clear();
+    await _mailSub?.cancel();
     // 2) 外部链路订阅清理。
     for (final sub in _externalSubs.values) {
       unawaited(sub.cancel());

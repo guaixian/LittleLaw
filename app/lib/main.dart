@@ -89,6 +89,8 @@ class _BootPageState extends State<BootPage> {
         dataDir: dataDir,
         deviceName: defaultName,
         deviceModel: model,
+        rendezvousUrl: await SettingsPage.loadRendezvousUrl()
+            .then((u) => u.isEmpty ? null : u),
       );
       final iceServers = await SettingsPage.loadIceServers();
       final rtc = WebRtcLinkManager(engine: engine, iceServers: iceServers)

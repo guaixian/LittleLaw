@@ -19,6 +19,7 @@ import 'src/identity/identity.dart';
 import 'src/oob/blob.dart';
 import 'src/oob/lan_oob.dart';
 import 'src/pairing/pairing.dart';
+import 'src/rendezvous/rendezvous.dart';
 import 'src/store/store.dart';
 import 'src/sync/sync_engine.dart';
 import 'src/transfer/transfer.dart';
@@ -30,6 +31,8 @@ export 'src/oob/blob.dart' show OobBlob;
 export 'src/oob/base45.dart' show Base45;
 export 'src/oob/lan_oob.dart' show LanOobPayload;
 export 'src/oob/qr_chunker.dart' show QrChunker, QrReassembler;
+export 'src/rendezvous/rendezvous.dart'
+    show RendezvousClient, RendezvousSignal, RendezvousMail;
 export 'src/pairing/pairing.dart' show PairRequestEvent, PairResult;
 export 'src/store/store.dart' show Message, Peer;
 export 'src/sync/sync_engine.dart'
@@ -74,6 +77,9 @@ class LittleLawEngine {
   final String dataDir;
   final Server _server;
 
+  /// 可选的中转服务器客户端(配置了 rendezvousUrl 才存在)。
+  RendezvousClient? rendezvous;
+
   StreamSubscription<DiscoveredDevice>? _discoverySub;
   StreamSubscription<String>? _discoveryExpiredSub;
 
@@ -91,6 +97,7 @@ class LittleLawEngine {
     List<String> discoveryTargets = const [],
     bool includeLoopbackScan = false,
     bool autoAcceptFiles = true,
+    String? rendezvousUrl,
   }) async {
     final identity = await Identity.loadOrCreate(dataDir,
         deviceName: deviceName, deviceModel: deviceModel);
@@ -151,6 +158,16 @@ class LittleLawEngine {
 
     transfer.start();
 
+    // 可选:挂接中转服务器(离线邮箱兜底 + presence + 信令)。
+    if (rendezvousUrl != null && rendezvousUrl.isNotEmpty) {
+      final rc = RendezvousClient(
+          identity: identity, store: store, url: rendezvousUrl);
+      sync.attachRendezvous(rc);
+      pairing.onPeersChanged = rc.subscribePeers;
+      rc.start();
+      engine.rendezvous = rc;
+    }
+
     // 发现到可信设备 → 刷新地址并确保会话在线。
     engine._discoverySub = discovery.devices.listen((d) {
       final peer = store.getPeer(d.deviceId);
@@ -174,6 +191,7 @@ class LittleLawEngine {
   Future<void> dispose() async {
     await _discoverySub?.cancel();
     await _discoveryExpiredSub?.cancel();
+    await rendezvous?.dispose();
     await discovery.dispose();
     // 先关闭全部通道(客户端 + 服务端流),再关停 server,避免挂起。
     await sync.dispose();

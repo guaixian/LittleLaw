@@ -67,6 +67,11 @@ class PairingManager extends pbg.PairingServiceBase {
   final int grpcPort;
   final Duration requestTimeout;
 
+  /// 配对关系变化回调(引擎用于同步中转服务器的订阅列表)。
+  void Function()? onPeersChanged;
+
+  void _notifyPeersChanged() => onPeersChanged?.call();
+
   static const _maxPending = 3;
 
   final _pending = <String, PairRequestEvent>{};
@@ -149,6 +154,7 @@ class PairingManager extends pbg.PairingServiceBase {
       lastPort: requester.port,
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     ));
+    _notifyPeersChanged();
     return pb.PairResponse(
       accepted: true,
       responder: myInfo,
@@ -237,6 +243,7 @@ class PairingManager extends pbg.PairingServiceBase {
         lastPort: port,
         pairedAtMs: DateTime.now().millisecondsSinceEpoch,
       ));
+      _notifyPeersChanged();
       return PairResult.accepted(
         peerInfo: resp.responder,
         token: token,
@@ -285,6 +292,7 @@ class PairingManager extends pbg.PairingServiceBase {
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
     store.upsertPeer(peer);
+    _notifyPeersChanged();
     return peer;
   }
 
@@ -319,6 +327,7 @@ class PairingManager extends pbg.PairingServiceBase {
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
     store.upsertPeer(peer);
+    _notifyPeersChanged();
     return peer;
   }
 
@@ -382,6 +391,7 @@ class PairingManager extends pbg.PairingServiceBase {
       lastPort: requester.port,
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     ));
+    _notifyPeersChanged();
     return pb.TapPairResponse(
       accepted: true,
       responder: myInfo,
@@ -415,6 +425,7 @@ class PairingManager extends pbg.PairingServiceBase {
         lastPort: port,
         pairedAtMs: DateTime.now().millisecondsSinceEpoch,
       ));
+      _notifyPeersChanged();
       return PairResult.accepted(
         peerInfo: resp.responder,
         token: token,

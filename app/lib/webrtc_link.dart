@@ -52,6 +52,170 @@ class WebRtcLinkManager {
         _linkEvents.add(WebRtcLinkEvent('', false, error: '$e'));
       }
     });
+
+    // 中转服务器(可选):presence 触发自动 WebRTC 重连,信令经服务器。
+    final rc = engine.rendezvous;
+    if (rc != null) {
+      _presenceSub?.cancel();
+      _presenceSub = rc.peerOnline.listen((peerId) {
+        final peer = engine.peerById(peerId);
+        if (peer == null) return;
+        if (engine.isOnline(peerId) || isLinked(peerId)) return;
+        // 防眩光:deviceId 字典序小的一方发 offer,另一方等 offer。
+        if (engine.identity.deviceId.compareTo(peerId) < 0) {
+          unawaited(_offerViaRendezvous(peerId));
+        }
+      });
+      _signalSub?.cancel();
+      _signalSub = rc.signals.listen((sig) {
+        unawaited(_onRendezvousSignal(sig));
+      });
+      _rcStateSub?.cancel();
+      _rcStateSub = rc.connectionState.listen((up) {
+        if (up) {
+          // 重连成功:快照里的在线设备由 presence 帧驱动,无需额外动作。
+        }
+      });
+    }
+  }
+
+  // ---------------------------------------------------- 服务器信令重连
+
+  StreamSubscription<String>? _presenceSub;
+  StreamSubscription<RendezvousSignal>? _signalSub;
+  StreamSubscription<bool>? _rcStateSub;
+
+  /// 我方作为 offerer 发出的待应答连接(peerId → 连接状态)。
+  final _pendingRtc = <String, _PendingOffer>{};
+
+  Future<void> _offerViaRendezvous(String peerId) async {
+    final rc = engine.rendezvous;
+    final peer = engine.peerById(peerId);
+    if (rc == null || peer == null || _pendingRtc.containsKey(peerId)) return;
+
+    try {
+      final pc = await createPeerConnection(_rtcConfig())
+          .timeout(const Duration(seconds: 10));
+      final dc = await pc
+          .createDataChannel('littlelaw', RTCDataChannelInit()..ordered = true)
+          .timeout(const Duration(seconds: 10));
+      final candidates = <String>[];
+      final gathered = Completer<void>();
+      pc.onIceCandidate = (c) {
+        if (c.candidate != null && c.candidate!.isNotEmpty) {
+          candidates.add(jsonEncode(c.toMap()));
+        }
+      };
+      pc.onIceGatheringState = (s) {
+        if (s == RTCIceGatheringState.RTCIceGatheringStateComplete &&
+            !gathered.isCompleted) {
+          gathered.complete();
+        }
+      };
+      final offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await gathered.future.timeout(_gatherWindow, onTimeout: () {});
+      final local = await pc.getLocalDescription();
+      if (local?.sdp == null) {
+        await pc.close();
+        return;
+      }
+      _pendingRtc[peerId] = _PendingOffer(pc: pc, dc: dc, token: peer.token);
+      await rc.sendSignal(peerId, {
+        'kind': 'offer',
+        'sdp': _stripInlineCandidates(local!.sdp!),
+        'candidates': [
+          for (final c in _pickCandidates(candidates)) _compactCandidate(c),
+        ],
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _onRendezvousSignal(RendezvousSignal sig) async {
+    final peerId = sig.fromPeerId;
+    final peer = engine.peerById(peerId);
+    if (peer == null) return;
+    final kind = sig.payload['kind'] as String? ?? '';
+    final sdp = sig.payload['sdp'] as String? ?? '';
+    final candidates =
+        (sig.payload['candidates'] as List? ?? const []).cast<List>();
+
+    if (kind == 'offer') {
+      // 我是 answerer(或字典序大的一方):创建应答。
+      if (engine.identity.deviceId.compareTo(peerId) < 0) {
+        // 我更小,应由我发 offer;对方重复 offer 时忽略(防眩光)。
+        return;
+      }
+      await _answerViaRendezvous(peer, sdp, candidates);
+    } else if (kind == 'answer') {
+      final pending = _pendingRtc.remove(peerId);
+      if (pending == null) return;
+      await pending.pc.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
+      for (final c in candidates) {
+        await pending.pc.addCandidate(_candidateFromCompact(c));
+      }
+      _armChannel(pending.dc, pending.pc, peer);
+    }
+  }
+
+  Future<void> _answerViaRendezvous(
+      Peer peer, String sdp, List<List<dynamic>> candidates) async {
+    final rc = engine.rendezvous;
+    if (rc == null) return;
+    try {
+      final pc = await createPeerConnection(_rtcConfig())
+          .timeout(const Duration(seconds: 10));
+      final myCandidates = <String>[];
+      final gathered = Completer<void>();
+      pc.onIceCandidate = (c) {
+        if (c.candidate != null && c.candidate!.isNotEmpty) {
+          myCandidates.add(jsonEncode(c.toMap()));
+        }
+      };
+      pc.onIceGatheringState = (s) {
+        if (s == RTCIceGatheringState.RTCIceGatheringStateComplete &&
+            !gathered.isCompleted) {
+          gathered.complete();
+        }
+      };
+      pc.onDataChannel = (dc) => _armChannel(dc, pc, peer);
+      await pc.setRemoteDescription(RTCSessionDescription(sdp, 'offer'));
+      for (final c in candidates) {
+        await pc.addCandidate(_candidateFromCompact(c));
+      }
+      final answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await gathered.future.timeout(_gatherWindow, onTimeout: () {});
+      final local = await pc.getLocalDescription();
+      if (local?.sdp == null) {
+        await pc.close();
+        return;
+      }
+      await rc.sendSignal(peer.deviceId, {
+        'kind': 'answer',
+        'sdp': _stripInlineCandidates(local!.sdp!),
+        'candidates': [
+          for (final c in _pickCandidates(myCandidates)) _compactCandidate(c),
+        ],
+      });
+    } catch (_) {}
+  }
+
+  List<dynamic> _compactCandidate(String json) {
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      return [map['candidate'] ?? '', map['sdpMid'] ?? '', map['sdpMLineIndex'] ?? 0];
+    } catch (_) {
+      return [json, '', 0];
+    }
+  }
+
+  RTCIceCandidate _candidateFromCompact(List<dynamic> c) {
+    return RTCIceCandidate(
+      c.isNotEmpty ? c[0] as String? : '',
+      c.length > 1 ? c[1] as String? : '',
+      c.length > 2 ? (c[2] as num?)?.toInt() : 0,
+    );
   }
 
   // ------------------------------------------------------------ 邀请方
@@ -418,6 +582,14 @@ class WebRtcLinkManager {
 
   Future<void> dispose() async {
     await _answerSub?.cancel();
+    await _presenceSub?.cancel();
+    await _signalSub?.cancel();
+    await _rcStateSub?.cancel();
+    for (final p in _pendingRtc.values) {
+      await p.dc.close();
+      await p.pc.close();
+    }
+    _pendingRtc.clear();
     await closePendingOffer();
     for (final id in _links.keys.toList()) {
       await disconnect(id);

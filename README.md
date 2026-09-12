@@ -90,13 +90,45 @@ NoServer 架构:没有中心服务器,**每个设备既是服务端又是客户�
 - 删除即墓碑:`ChatDeleted` 到达后两端都物理删除;对方离线时墓碑留 `ops` 表,重连补删;
 - 解除配对:双端同时清空聊天记录与信任关系。
 
+## 可选中转服务器(rendezvous)
+
+NoServer 模式功能完整,但在跨互联网场景有两个物理约束:重启后远程链路
+需要重新交换邀请、对方不在线时消息无法送达。可选的自建中转服务器
+(几十 MB 单二进制)补齐这两块,**不影响任何现有功能**:
+
+```
+┌─ 设备A ─┐   ┌─ 设备B ─┐
+│ gRPC/WebRTC P2P(优先,不经服务器) │
+└────┬───┘   └────┬───┘
+     │   rendezvous 服务器(可选)   │
+     ├── presence:对方上线即时通知 → 自动 WebRTC 重连
+     ├── signal:WebRTC 信令定向转发(密文)
+     └── mailbox:对方离线时信封暂存,上线自取
+```
+
+**服务器是"瞎子"**:不持有任何私钥;经过它的载荷一律用配对令牌派生的
+AES-256-GCM 应用层加密,服务器只见设备 ID 与密文。设备注册用身份证书
+ECDSA 挑战签名防伪。
+
+### 部署
+
+```bash
+# Release 下载对应平台二进制,或源码构建:
+cd server && go build -o rendezvous .
+
+./rendezvous -addr :47600 -db rendezvous.db
+# 应用「设置 → 中转服务器」填: ws://服务器IP:47600/ws
+# 有域名证书时放 Caddy/nginx 后面用 wss://域名/ws
+```
+
 ## 目录
 
 ```
 proto/littlelaw.proto      协议唯一事实源(改协议后运行 tool/gen_proto.ps1)
 core/                      纯 Dart 引擎包(littlelaw_core),含端到端测试
 app/                       Flutter 应用(Android/iOS/Windows/macOS/Linux)
-tool/gen_proto.ps1         protoc 代码生成脚本
+server/                    可选中转服务器(Go,rendezvous)
+tool/                      代码生成与安装包脚本
 ```
 
 ### iOS / macOS 未签名说明

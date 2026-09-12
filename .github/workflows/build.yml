@@ -15,12 +15,37 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: "3.12.2"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
       - run: dart pub get
         working-directory: core
       # Linux 下 sqlite3 包加载系统 libsqlite3
       - run: sudo apt-get update && sudo apt-get install -y libsqlite3-0
+      # rendezvous 集成测试需要服务器二进制
+      - run: cd server && go build -o rendezvous.exe .
       - run: dart test
         working-directory: core
+
+  # ------------------------------------------------ 中转服务器(可选组件)
+  go-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+      - run: |
+          cd server
+          mkdir -p ../dist-server
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist-server/littlelaw-rendezvous-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist-server/littlelaw-rendezvous-linux-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../dist-server/littlelaw-rendezvous-windows-amd64.exe .
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../dist-server/littlelaw-rendezvous-darwin-arm64 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rendezvous-server
+          path: dist-server/
 
   # ------------------------------------------------ Windows
   windows:
@@ -177,7 +202,7 @@ jobs:
   # ------------------------------------------------ 打包并发布 Release
   # 每次 main 推送滚动更新 nightly 预发布;推 v* tag 出正式版。
   release:
-    needs: [windows, linux, macos, android, ios]
+    needs: [windows, linux, macos, android, ios, go-server]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -198,6 +223,8 @@ jobs:
           cp artifacts/windows-installer/*.exe dist/ 2>/dev/null || true
           cp artifacts/linux-deb/*.deb dist/ 2>/dev/null || true
           cp artifacts/macos-dmg/*.dmg dist/ 2>/dev/null || true
+          # 中转服务器二进制
+          cp artifacts/rendezvous-server/* dist/ 2>/dev/null || true
           ls -lh dist
       - name: 发布到 Releases
         uses: softprops/action-gh-release@v2
@@ -212,5 +239,6 @@ jobs:
             - littlelaw-macos.dmg(**macOS 安装镜像**)/ macos.zip
             - android APK(arm64-v8a 为现代手机推荐)
             - littlelaw-ios-unsigned.zip(未签名,需自签安装)
+            - littlelaw-rendezvous-*(可选中转服务器:linux/windows/darwin,amd64/arm64)
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           make_latest: ${{ startsWith(github.ref, 'refs/tags/') }}
