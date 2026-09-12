@@ -298,15 +298,25 @@ class _ChatPageState extends State<ChatPage> {
           Expanded(
             child: _messages.isEmpty
                 ? _emptyState()
-                : ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                    itemCount: _messages.length,
-                    itemBuilder: (ctx, i) =>
-                        _buildItem(ctx, i, myId),
+                : Center(
+                    // 桌面宽屏限制聊天流宽度并居中。
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 860),
+                      child: ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                        itemCount: _messages.length,
+                        itemBuilder: (ctx, i) => _buildItem(ctx, i, myId),
+                      ),
+                    ),
                   ),
           ),
-          SafeArea(top: false, child: _inputBar()),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 860),
+              child: SafeArea(top: false, child: _inputBar()),
+            ),
+          ),
         ],
       ),
     );

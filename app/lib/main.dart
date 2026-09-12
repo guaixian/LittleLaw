@@ -335,9 +335,10 @@ class _DevicesPageState extends State<DevicesPage> {
     final engine = _engine!;
     final skin = themeController.skin;
     final pin = engine.pinFor(device.info.certFingerprint);
+    var cancelled = false;
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         title: Text('与 ${device.info.deviceName} 配对'),
         content: Column(
@@ -360,11 +361,22 @@ class _DevicesPageState extends State<DevicesPage> {
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              cancelled = true;
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('取消'),
+          ),
+        ],
       ),
     );
     final result = await engine.requestPair(device);
-    if (!mounted) return;
-    Navigator.of(context).pop();
+    if (!mounted || cancelled) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
     showToast(
       result.accepted
           ? '已与 ${device.info.deviceName} 完成配对'
@@ -382,50 +394,58 @@ class _DevicesPageState extends State<DevicesPage> {
     final peers = engine.peers;
     final discovered = _discovered.values.toList();
 
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(child: _header(engine)),
-        if (peers.isNotEmpty) ...[
-          const _SectionLabel('已配对'),
-          SliverList.builder(
-            itemCount: peers.length,
-            itemBuilder: (ctx, i) => _peerCard(engine, peers[i]),
-          ),
-        ],
-        const _SectionLabel('附近的设备'),
-        if (discovered.isEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Center(
-                child: Column(
-                  children: [
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text('正在搜索局域网设备…',
-                        style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
-                    const SizedBox(height: 4),
-                    Text('确保对方设备已打开 LittleLaw 并接入同一网络',
-                        style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
-                  ],
-                ),
+    return Center(
+      // 桌面宽屏下限制内容宽度并居中,避免横条拉伸。
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 920),
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _header(engine)),
+            if (peers.isNotEmpty) ...[
+              const _SectionLabel('已配对'),
+              SliverList.builder(
+                itemCount: peers.length,
+                itemBuilder: (ctx, i) => _peerCard(engine, peers[i]),
               ),
-            ),
-          )
-        else
-          SliverList.builder(
-            itemCount: discovered.length,
-            itemBuilder: (ctx, i) => _discoveredCard(discovered[i]),
-          ),
-        const SliverToBoxAdapter(child: SizedBox(height: 24)),
-      ],
+            ],
+            const _SectionLabel('附近的设备'),
+            if (discovered.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text('正在搜索局域网设备…',
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 13)),
+                        const SizedBox(height: 4),
+                        Text('确保对方设备已打开 LittleLaw 并接入同一网络',
+                            style: TextStyle(
+                                color: Colors.grey.shade400, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverList.builder(
+                itemCount: discovered.length,
+                itemBuilder: (ctx, i) => _discoveredCard(discovered[i]),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -677,40 +697,48 @@ class ConnectPage extends StatelessWidget {
       ),
     ];
 
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('连接方式',
-                    style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface)),
-                const SizedBox(height: 4),
-                Text('根据所处的网络环境选择',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
-              ],
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        // 响应式列数:手机单列 / 平板双列 / 桌面四列。
+        final w = constraints.maxWidth;
+        final cols = w > 1100 ? 4 : w > 700 ? 2 : 1;
+        return CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('连接方式',
+                        style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(ctx).colorScheme.onSurface)),
+                    const SizedBox(height: 4),
+                    Text('根据所处的网络环境选择',
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverGrid.builder(
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 480, // 手机单列,宽屏双列
-              mainAxisExtent: 132,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  mainAxisExtent: 132,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                ),
+                itemCount: items.length,
+                itemBuilder: (ctx, i) => items[i],
+              ),
             ),
-            itemCount: items.length,
-            itemBuilder: (ctx, i) => items[i],
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
