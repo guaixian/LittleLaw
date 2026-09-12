@@ -94,8 +94,8 @@ class _RemotePairPageState extends State<RemotePairPage> {
       final answer = await widget.rtc.joinInvite(text.trim());
       _pasteCtrl.clear();
       if (answer.isEmpty) {
-        _setStatus('已配对(局域网直连模式),对方上线后自动通讯');
-        showToast('已配对', type: ToastType.success);
+        _setStatus('已配对!应答已自动回传给邀请方,链路建立中…');
+        showToast('应答已自动回传,等待链路建立', type: ToastType.success);
       } else {
         setState(() {
           _answerBlob = answer;

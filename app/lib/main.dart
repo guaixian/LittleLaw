@@ -90,7 +90,8 @@ class _BootPageState extends State<BootPage> {
         deviceModel: model,
       );
       final iceServers = await SettingsPage.loadIceServers();
-      final rtc = WebRtcLinkManager(engine: engine, iceServers: iceServers);
+      final rtc = WebRtcLinkManager(engine: engine, iceServers: iceServers)
+        ..start();
       if (!mounted) return;
       setState(() {
         _engine = engine;
@@ -202,7 +203,8 @@ class _HomeShellState extends State<HomeShell> {
       const ProfilePage(),
     ];
     return Scaffold(
-      body: pages[_index],
+      // SafeArea 防止内容顶到状态栏(移动端)。
+      body: SafeArea(child: pages[_index]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
@@ -699,8 +701,8 @@ class ConnectPage extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           sliver: SliverGrid.builder(
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 320,
-              mainAxisExtent: 120,
+              maxCrossAxisExtent: 480, // 手机单列,宽屏双列
+              mainAxisExtent: 132,
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
             ),
@@ -753,12 +755,18 @@ class _ConnectItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade500)),
+                            fontSize: 12,
+                            height: 1.25,
+                            color: Colors.grey.shade500)),
                   ],
                 ),
               ),

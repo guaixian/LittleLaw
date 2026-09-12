@@ -60,6 +60,43 @@ final $typed_data.Uint8List discoveryPacketDescriptor = $convert.base64Decode(
     'IYLmxpdHRsZWxhdy52MS5EZXZpY2VJbmZvUgZkZXZpY2USIQoMdGltZXN0YW1wX21zGAMgASgD'
     'Ugt0aW1lc3RhbXBNcw==');
 
+@$core.Deprecated('Use deliverAnswerRequestDescriptor instead')
+const DeliverAnswerRequest$json = {
+  '1': 'DeliverAnswerRequest',
+  '2': [
+    {
+      '1': 'requester',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.DeviceInfo',
+      '10': 'requester'
+    },
+    {'1': 'offer_token', '3': 2, '4': 1, '5': 9, '10': 'offerToken'},
+    {'1': 'answer_blob', '3': 3, '4': 1, '5': 9, '10': 'answerBlob'},
+  ],
+};
+
+/// Descriptor for `DeliverAnswerRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List deliverAnswerRequestDescriptor = $convert.base64Decode(
+    'ChREZWxpdmVyQW5zd2VyUmVxdWVzdBI2CglyZXF1ZXN0ZXIYASABKAsyGC5saXR0bGVsYXcudj'
+    'EuRGV2aWNlSW5mb1IJcmVxdWVzdGVyEh8KC29mZmVyX3Rva2VuGAIgASgJUgpvZmZlclRva2Vu'
+    'Eh8KC2Fuc3dlcl9ibG9iGAMgASgJUgphbnN3ZXJCbG9i');
+
+@$core.Deprecated('Use deliverAnswerResponseDescriptor instead')
+const DeliverAnswerResponse$json = {
+  '1': 'DeliverAnswerResponse',
+  '2': [
+    {'1': 'ok', '3': 1, '4': 1, '5': 8, '10': 'ok'},
+    {'1': 'message', '3': 2, '4': 1, '5': 9, '10': 'message'},
+  ],
+};
+
+/// Descriptor for `DeliverAnswerResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List deliverAnswerResponseDescriptor = $convert.base64Decode(
+    'ChVEZWxpdmVyQW5zd2VyUmVzcG9uc2USDgoCb2sYASABKAhSAm9rEhgKB21lc3NhZ2UYAiABKA'
+    'lSB21lc3NhZ2U=');
+
 @$core.Deprecated('Use tapPairRequestDescriptor instead')
 const TapPairRequest$json = {
   '1': 'TapPairRequest',

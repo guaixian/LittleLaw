@@ -225,6 +225,154 @@ class DiscoveryPacket extends $pb.GeneratedMessage {
   void clearTimestampMs() => $_clearField(3);
 }
 
+class DeliverAnswerRequest extends $pb.GeneratedMessage {
+  factory DeliverAnswerRequest({
+    DeviceInfo? requester,
+    $core.String? offerToken,
+    $core.String? answerBlob,
+  }) {
+    final result = create();
+    if (requester != null) result.requester = requester;
+    if (offerToken != null) result.offerToken = offerToken;
+    if (answerBlob != null) result.answerBlob = answerBlob;
+    return result;
+  }
+
+  DeliverAnswerRequest._();
+
+  factory DeliverAnswerRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory DeliverAnswerRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'DeliverAnswerRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOM<DeviceInfo>(1, _omitFieldNames ? '' : 'requester',
+        subBuilder: DeviceInfo.create)
+    ..aOS(2, _omitFieldNames ? '' : 'offerToken')
+    ..aOS(3, _omitFieldNames ? '' : 'answerBlob')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeliverAnswerRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeliverAnswerRequest copyWith(void Function(DeliverAnswerRequest) updates) =>
+      super.copyWith((message) => updates(message as DeliverAnswerRequest))
+          as DeliverAnswerRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static DeliverAnswerRequest create() => DeliverAnswerRequest._();
+  @$core.override
+  DeliverAnswerRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static DeliverAnswerRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<DeliverAnswerRequest>(create);
+  static DeliverAnswerRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  DeviceInfo get requester => $_getN(0);
+  @$pb.TagNumber(1)
+  set requester(DeviceInfo value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequester() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequester() => $_clearField(1);
+  @$pb.TagNumber(1)
+  DeviceInfo ensureRequester() => $_ensure(0);
+
+  @$pb.TagNumber(2)
+  $core.String get offerToken => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set offerToken($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasOfferToken() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearOfferToken() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get answerBlob => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set answerBlob($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAnswerBlob() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAnswerBlob() => $_clearField(3);
+}
+
+class DeliverAnswerResponse extends $pb.GeneratedMessage {
+  factory DeliverAnswerResponse({
+    $core.bool? ok,
+    $core.String? message,
+  }) {
+    final result = create();
+    if (ok != null) result.ok = ok;
+    if (message != null) result.message = message;
+    return result;
+  }
+
+  DeliverAnswerResponse._();
+
+  factory DeliverAnswerResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory DeliverAnswerResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'DeliverAnswerResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'ok')
+    ..aOS(2, _omitFieldNames ? '' : 'message')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeliverAnswerResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeliverAnswerResponse copyWith(
+          void Function(DeliverAnswerResponse) updates) =>
+      super.copyWith((message) => updates(message as DeliverAnswerResponse))
+          as DeliverAnswerResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static DeliverAnswerResponse create() => DeliverAnswerResponse._();
+  @$core.override
+  DeliverAnswerResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static DeliverAnswerResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<DeliverAnswerResponse>(create);
+  static DeliverAnswerResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get ok => $_getBF(0);
+  @$pb.TagNumber(1)
+  set ok($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasOk() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearOk() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get message => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set message($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasMessage() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearMessage() => $_clearField(2);
+}
+
 class TapPairRequest extends $pb.GeneratedMessage {
   factory TapPairRequest({
     DeviceInfo? requester,

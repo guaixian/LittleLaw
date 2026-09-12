@@ -51,6 +51,16 @@ class PairingServiceClient extends $grpc.Client {
     return $createUnaryCall(_$pairWithTap, request, options: options);
   }
 
+  /// 应答自动回传(WebRTC 远程配对):受邀方扫描邀请后,若邀请方地址
+  /// 可达,直接把 answer 引导包推回给邀请方,免人工复制粘贴。
+  /// 安全性:offer_token 即"持有了邀请二维码"的物理证明。
+  $grpc.ResponseFuture<$0.DeliverAnswerResponse> deliverAnswer(
+    $0.DeliverAnswerRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$deliverAnswer, request, options: options);
+  }
+
   /// 解除配对:双端同时删除对方信任记录(需要有效会话令牌)。
   $grpc.ResponseFuture<$0.UnpairResponse> unpair(
     $0.UnpairRequest request, {
@@ -71,6 +81,11 @@ class PairingServiceClient extends $grpc.Client {
           '/littlelaw.v1.PairingService/PairWithTap',
           ($0.TapPairRequest value) => value.writeToBuffer(),
           $0.TapPairResponse.fromBuffer);
+  static final _$deliverAnswer =
+      $grpc.ClientMethod<$0.DeliverAnswerRequest, $0.DeliverAnswerResponse>(
+          '/littlelaw.v1.PairingService/DeliverAnswer',
+          ($0.DeliverAnswerRequest value) => value.writeToBuffer(),
+          $0.DeliverAnswerResponse.fromBuffer);
   static final _$unpair =
       $grpc.ClientMethod<$0.UnpairRequest, $0.UnpairResponse>(
           '/littlelaw.v1.PairingService/Unpair',
@@ -97,6 +112,15 @@ abstract class PairingServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $0.TapPairRequest.fromBuffer(value),
         ($0.TapPairResponse value) => value.writeToBuffer()));
+    $addMethod(
+        $grpc.ServiceMethod<$0.DeliverAnswerRequest, $0.DeliverAnswerResponse>(
+            'DeliverAnswer',
+            deliverAnswer_Pre,
+            false,
+            false,
+            ($core.List<$core.int> value) =>
+                $0.DeliverAnswerRequest.fromBuffer(value),
+            ($0.DeliverAnswerResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.UnpairRequest, $0.UnpairResponse>(
         'Unpair',
         unpair_Pre,
@@ -121,6 +145,15 @@ abstract class PairingServiceBase extends $grpc.Service {
 
   $async.Future<$0.TapPairResponse> pairWithTap(
       $grpc.ServiceCall call, $0.TapPairRequest request);
+
+  $async.Future<$0.DeliverAnswerResponse> deliverAnswer_Pre(
+      $grpc.ServiceCall $call,
+      $async.Future<$0.DeliverAnswerRequest> $request) async {
+    return deliverAnswer($call, await $request);
+  }
+
+  $async.Future<$0.DeliverAnswerResponse> deliverAnswer(
+      $grpc.ServiceCall call, $0.DeliverAnswerRequest request);
 
   $async.Future<$0.UnpairResponse> unpair_Pre(
       $grpc.ServiceCall $call, $async.Future<$0.UnpairRequest> $request) async {

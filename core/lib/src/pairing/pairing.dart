@@ -273,6 +273,8 @@ class PairingManager extends pbg.PairingServiceBase {
     if (blob.deviceId == identity.deviceId) {
       throw StateError('不能与本机配对');
     }
+    // 受邀方记住 offer 令牌:若邀请方地址可达,用它自动回传应答。
+    _pendingOfferTokenForDelivery = blob.token;
     final peer = Peer(
       deviceId: blob.deviceId,
       deviceName: blob.deviceName,
@@ -423,6 +425,58 @@ class PairingManager extends pbg.PairingServiceBase {
     }
   }
 
+  // ---------------------------------------------------- 应答自动回传
+
+  /// 收到的远程应答(answer 引导包编码串),由 app 层应用到 WebRTC。
+  final _answerDeliveries = StreamController<String>.broadcast();
+  Stream<String> get answerDeliveries => _answerDeliveries.stream;
+
+  @override
+  Future<pb.DeliverAnswerResponse> deliverAnswer(
+      ServiceCall call, pb.DeliverAnswerRequest request) async {
+    final pending = _pendingOfferToken;
+    final at = _pendingOfferAt;
+    if (pending == null ||
+        at == null ||
+        DateTime.now().difference(at) > const Duration(minutes: 10)) {
+      return pb.DeliverAnswerResponse(
+          ok: false, message: 'no pending invite or expired');
+    }
+    // offer_token = 持有邀请二维码的物理证明。
+    if (!Auth.constantTimeEquals(request.offerToken, pending)) {
+      return pb.DeliverAnswerResponse(ok: false, message: 'token mismatch');
+    }
+    // 应用 answer(与手动粘贴同一路径,含令牌回显校验与入账)。
+    try {
+      final blob = OobBlob.decode(request.answerBlob);
+      acceptRemoteAnswer(blob);
+    } catch (e) {
+      return pb.DeliverAnswerResponse(ok: false, message: '$e');
+    }
+    _answerDeliveries.add(request.answerBlob);
+    return pb.DeliverAnswerResponse(ok: true);
+  }
+
+  /// (受邀方)把 answer 引导包自动回传给邀请方。
+  Future<void> deliverAnswerTo(String host, int port, String answerBlob) async {
+    final ch = PeerChannel.connect(host: host, port: port);
+    try {
+      final client = pbg.PairingServiceClient(ch.channel);
+      final pending = _pendingOfferTokenForDelivery ?? '';
+      final resp = await client.deliverAnswer(
+        pb.DeliverAnswerRequest(
+            requester: myInfo, offerToken: pending, answerBlob: answerBlob),
+        options: CallOptions(timeout: const Duration(seconds: 15)),
+      );
+      if (!resp.ok) throw StateError(resp.message);
+    } finally {
+      await ch.shutdown();
+    }
+  }
+
+  /// 受邀方侧暂存:加入邀请时收到的 offer 令牌(deliverAnswerTo 出示用)。
+  String? _pendingOfferTokenForDelivery;
+
   String _remoteHost(ServiceCall call) {
     // grpc-dart 不直接暴露远端地址,配对回显用途,尽力而为。
     final authority = call.clientMetadata?[':authority'];
@@ -436,6 +490,7 @@ class PairingManager extends pbg.PairingServiceBase {
       e.completer.complete(false);
     }
     _pending.clear();
+    await _answerDeliveries.close();
     await _requestsController.close();
   }
 }

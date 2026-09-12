@@ -30,11 +30,25 @@ class WebRtcLinkManager {
   _PendingOffer? _pendingOffer;
   final _links = <String, _ActiveLink>{};
   final _linkEvents = StreamController<WebRtcLinkEvent>.broadcast();
+  StreamSubscription<String>? _answerSub;
 
   /// 链路状态事件(UI 提示用)。
   Stream<WebRtcLinkEvent> get linkEvents => _linkEvents.stream;
 
   bool isLinked(String peerId) => _links.containsKey(peerId);
+
+  /// 初始化:监听对方自动回传的应答,自动完成链路建立。
+  void start() {
+    _answerSub?.cancel();
+    _answerSub = engine.answerDeliveries.listen((blobText) async {
+      try {
+        final peer = await acceptAnswer(blobText);
+        _linkEvents.add(WebRtcLinkEvent(peer.deviceId, true));
+      } catch (_) {
+        // 已被其他途径处理或应答失效,忽略。
+      }
+    });
+  }
 
   // ------------------------------------------------------------ 邀请方
 
@@ -110,6 +124,7 @@ class WebRtcLinkManager {
       deviceModel: engine.identity.deviceModel,
       sdp: local.sdp,
       candidates: _pickCandidates(candidates),
+      addresses: await engine.localGrpcAddresses(), // 供对方自动回传应答
     ).encode();
   }
 
@@ -208,7 +223,7 @@ class WebRtcLinkManager {
     final local = await pc.getLocalDescription().timeout(
         const Duration(seconds: 5),
         onTimeout: () => null);
-    return OobBlob(
+    final answer = OobBlob(
       type: OobBlob.typeAnswer,
       deviceId: engine.identity.deviceId,
       deviceName: engine.identity.deviceName,
@@ -219,6 +234,22 @@ class WebRtcLinkManager {
       sdp: local?.sdp,
       candidates: _pickCandidates(candidates),
     ).encode();
+
+    // 邀请方地址可达 → 自动回传应答,免人工粘贴。
+    if (blob.addresses.isNotEmpty) {
+      for (final addr in blob.addresses) {
+        final idx = addr.lastIndexOf(':');
+        if (idx <= 0) continue;
+        try {
+          await engine.deliverAnswerTo(addr.substring(0, idx),
+              int.parse(addr.substring(idx + 1)), answer);
+          return ''; // 已自动回传,无需展示 answer
+        } catch (_) {
+          // 尝试下一个地址;全部失败则走人工回传
+        }
+      }
+    }
+    return answer;
   }
 
   /// 裁剪 ICE 候选,控制引导包体积(二维码容量有限)。
@@ -368,6 +399,7 @@ class WebRtcLinkManager {
   }
 
   Future<void> dispose() async {
+    await _answerSub?.cancel();
     await closePendingOffer();
     for (final id in _links.keys.toList()) {
       await disconnect(id);

@@ -57,8 +57,24 @@ service PairingService {
   // tap_token 后签发会话令牌并双端入账。
   rpc PairWithTap(TapPairRequest) returns (TapPairResponse);
 
+  // 应答自动回传(WebRTC 远程配对):受邀方扫描邀请后,若邀请方地址
+  // 可达,直接把 answer 引导包推回给邀请方,免人工复制粘贴。
+  // 安全性:offer_token 即"持有了邀请二维码"的物理证明。
+  rpc DeliverAnswer(DeliverAnswerRequest) returns (DeliverAnswerResponse);
+
   // 解除配对:双端同时删除对方信任记录(需要有效会话令牌)。
   rpc Unpair(UnpairRequest) returns (UnpairResponse);
+}
+
+message DeliverAnswerRequest {
+  DeviceInfo requester = 1;
+  string offer_token = 2;    // 邀请方 offer 中的令牌(防伪凭据)
+  string answer_blob = 3;    // OobBlob(answer) 编码串
+}
+
+message DeliverAnswerResponse {
+  bool ok = 1;
+  string message = 2;
 }
 
 message TapPairRequest {

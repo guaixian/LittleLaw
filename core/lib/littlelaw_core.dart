@@ -233,6 +233,30 @@ class LittleLawEngine {
   /// 放弃进行中的邀请。
   void cancelRemoteOffer() => pairing.cancelRemoteOffer();
 
+  /// 本机全部局域网 gRPC 地址候选(host:port)。
+  Future<List<String>> localGrpcAddresses() async {
+    final addresses = <String>[];
+    try {
+      for (final iface in await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLinkLocal: false,
+      )) {
+        for (final addr in iface.addresses) {
+          if (addr.isLoopback) continue;
+          addresses.add('${addr.address}:$grpcPort');
+        }
+      }
+    } catch (_) {}
+    return addresses;
+  }
+
+  /// 收到的远程应答(app 层应用到 WebRTC 完成链路)。
+  Stream<String> get answerDeliveries => pairing.answerDeliveries;
+
+  /// (受邀方)把 answer 引导包自动回传给邀请方(地址可达时免手动粘贴)。
+  Future<void> deliverAnswerTo(String host, int port, String answerBlob) =>
+      pairing.deliverAnswerTo(host, port, answerBlob);
+
   /// 开启免 PIN 配对窗口,返回二维码/NFC 用的局域网载荷字符串(2 分钟有效)。
   /// 载荷内含本机全部局域网地址候选与一次性 tap 令牌。
   Future<String> enableTapPairing() async {
