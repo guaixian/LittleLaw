@@ -42,7 +42,7 @@ class _BlobDisplayState extends State<BlobDisplay> {
   void _startAutoPlay() {
     if (_frames.length <= 1) return;
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+    _timer = Timer.periodic(const Duration(milliseconds: 900), (_) {
       if (!_autoPlay || !mounted) return;
       setState(() => _index = (_index + 1) % _frames.length);
     });
