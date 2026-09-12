@@ -42,10 +42,11 @@ void main() {
       final sub = a.answerDeliveries.listen((s) => delivered = s);
       await b.deliverAnswerTo('127.0.0.1', a.grpcPort, answer);
 
-      // A 应已入账 B,且收到回传事件。
-      expect(a.peerById(b.identity.deviceId), isNotNull);
+      // RPC 只转发不消费:A 的 WebRTC 层(此处模拟)经事件完成入账。
       await Future.delayed(const Duration(milliseconds: 300));
       expect(delivered, answer);
+      final peerBinA = a.acceptRemoteAnswer(OobBlob.decode(delivered!));
+      expect(peerBinA.token, token);
       expect(a.peerById(b.identity.deviceId)!.token, token);
       await sub.cancel();
 

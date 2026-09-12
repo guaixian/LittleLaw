@@ -44,8 +44,9 @@ class WebRtcLinkManager {
       try {
         final peer = await acceptAnswer(blobText);
         _linkEvents.add(WebRtcLinkEvent(peer.deviceId, true));
-      } catch (_) {
-        // 已被其他途径处理或应答失效,忽略。
+      } catch (e) {
+        // 入账/应用失败(如重复回传):上报断开,UI 提示。
+        _linkEvents.add(WebRtcLinkEvent('', false, error: '$e'));
       }
     });
   }
@@ -421,9 +422,10 @@ class WebRtcLinkManager {
 }
 
 class WebRtcLinkEvent {
-  WebRtcLinkEvent(this.peerId, this.connected);
+  WebRtcLinkEvent(this.peerId, this.connected, {this.error});
   final String peerId;
   final bool connected;
+  final String? error;
 }
 
 class _PendingOffer {

@@ -26,6 +26,9 @@ LittleLawEngine? _engine;
 /// 全局 WebRTC 链路管理器。
 WebRtcLinkManager? _rtc;
 
+/// 全局导航句柄(远程链路建立后自动进入聊天页用)。
+final navigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized(); // 视频播放
@@ -47,6 +50,7 @@ class LittleLawApp extends StatelessWidget {
       builder: (context, _) => MaterialApp(
         title: 'LittleLaw',
         debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey,
         scaffoldMessengerKey: rootScaffoldMessengerKey,
         theme: themeController.light(),
         darkTheme: themeController.dark(),
@@ -179,13 +183,28 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    // WebRTC 远程链路建立/断开 → 全局 toast。
+    // WebRTC 远程链路事件:建立后自动进入聊天页,断开/失败 toast。
     _rtcSub = _rtc?.linkEvents.listen((e) {
-      final name = _engine?.peerById(e.peerId)?.deviceName ?? '对方设备';
+      if (e.error != null) {
+        showToast('远程应答处理失败: ${e.error}', type: ToastType.error);
+        return;
+      }
+      final peer = _engine?.peerById(e.peerId);
+      final name = peer?.deviceName ?? '对方设备';
       showToast(
         e.connected ? '远程链路已建立: $name' : '远程链路已断开: $name',
         type: e.connected ? ToastType.success : ToastType.info,
       );
+      if (e.connected && peer != null) {
+        // 回到主页并直接进入与该设备的聊天页。
+        final nav = navigatorKey.currentState;
+        if (nav != null) {
+          nav.popUntil((route) => route.isFirst);
+          nav.push(MaterialPageRoute(
+            builder: (_) => ChatPage(peer: peer, engine: _engine!),
+          ));
+        }
+      }
     });
   }
 

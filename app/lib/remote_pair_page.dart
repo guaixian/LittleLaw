@@ -123,8 +123,14 @@ class _RemotePairPageState extends State<RemotePairPage> {
       showToast('已与 ${peer.deviceName} 配对', type: ToastType.success);
       _pasteCtrl.clear();
     } catch (e) {
-      _setStatus('应答无效');
-      _reportError('应答无效', e);
+      // 应答已被对方自动回传处理过(令牌已消费)属正常,不是错误。
+      if ('$e'.contains('没有进行中的邀请')) {
+        _setStatus('该应答已自动处理,等待链路建立…');
+        showToast('该应答已自动处理,等待链路建立', type: ToastType.info);
+      } else {
+        _setStatus('应答无效');
+        _reportError('应答无效', e);
+      }
     } finally {
       setState(() => _busy = false);
     }

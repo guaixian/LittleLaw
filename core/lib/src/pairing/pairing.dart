@@ -446,10 +446,10 @@ class PairingManager extends pbg.PairingServiceBase {
     if (!Auth.constantTimeEquals(request.offerToken, pending)) {
       return pb.DeliverAnswerResponse(ok: false, message: 'token mismatch');
     }
-    // 应用 answer(与手动粘贴同一路径,含令牌回显校验与入账)。
+    // 只验证应答包格式合法,不做入账/消费——入账与链路建立统一由
+    // WebRTC 层经 answerDeliveries 事件一次性完成(避免双重消费令牌)。
     try {
-      final blob = OobBlob.decode(request.answerBlob);
-      acceptRemoteAnswer(blob);
+      OobBlob.decode(request.answerBlob);
     } catch (e) {
       return pb.DeliverAnswerResponse(ok: false, message: '$e');
     }
