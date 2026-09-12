@@ -5,9 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import 'blob_widgets.dart';
+import 'smart_qr.dart';
 import 'toast.dart';
 import 'webrtc_link.dart';
 
@@ -277,15 +277,7 @@ class _RemotePairPageState extends State<RemotePairPage> {
                   ),
                   const SizedBox(height: 8),
                   Center(
-                    child: Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.all(10),
-                      child: QrImageView(
-                        data: _lanPayload!,
-                        size: 240,
-                        errorCorrectionLevel: QrErrorCorrectLevel.M,
-                      ),
-                    ),
+                    child: SmartQrView(data: _lanPayload!, size: 240),
                   ),
                 ],
               ],

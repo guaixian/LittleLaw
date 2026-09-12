@@ -12,6 +12,7 @@ dependencies:
   crypto: ^3.0.7
   cryptography: ^2.9.0
   grpc: ^5.1.0
+  lzma: ^1.0.1
   protobuf: ^6.0.0
   sqlite3: ^3.5.2
   uuid: ^4.6.0

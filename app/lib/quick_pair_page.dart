@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import 'nfc_pair.dart';
+import 'smart_qr.dart';
 import 'toast.dart';
 
 /// 局域网快速配对页:碰一碰(NFC)或扫一扫(二维码),免 PIN。
@@ -173,15 +173,7 @@ class _QuickPairPageState extends State<QuickPairPage> {
             ),
             const SizedBox(height: 8),
             Center(
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(12),
-                child: QrImageView(
-                  data: _payload!,
-                  size: 260,
-                  errorCorrectionLevel: QrErrorCorrectLevel.M,
-                ),
-              ),
+              child: SmartQrView(data: _payload!, size: 260),
             ),
             const SizedBox(height: 8),
             const Center(

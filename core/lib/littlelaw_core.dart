@@ -27,6 +27,7 @@ import 'src/transport/transport.dart';
 export 'src/discovery/discovery.dart' show DiscoveredDevice;
 export 'src/identity/identity.dart' show Identity;
 export 'src/oob/blob.dart' show OobBlob;
+export 'src/oob/base45.dart' show Base45;
 export 'src/oob/lan_oob.dart' show LanOobPayload;
 export 'src/oob/qr_chunker.dart' show QrChunker, QrReassembler;
 export 'src/pairing/pairing.dart' show PairRequestEvent, PairResult;

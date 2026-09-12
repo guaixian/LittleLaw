@@ -7,9 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'smart_qr.dart';
 import 'toast.dart';
 
 /// 引导包展示组件:
@@ -152,34 +152,12 @@ class _BlobDisplayState extends State<BlobDisplay> {
     );
   }
 
-  /// 单张完整大码:自适应取可用宽度(上限 480),保证码点像素密度可扫。
+  /// 单张完整大码:自适应取可用宽度(上限 480),最优模式渲染。
   Widget _singleQr(BuildContext context) {
     return LayoutBuilder(
       builder: (ctx, constraints) {
         final size = constraints.maxWidth.clamp(280.0, 480.0);
-        return Container(
-          color: Colors.white,
-          padding: const EdgeInsets.all(12), // 静区
-          child: QrImageView(
-            data: widget.blob,
-            size: size,
-            errorCorrectionLevel: QrErrorCorrectLevel.L,
-            errorStateBuilder: (ctx, err) => SizedBox(
-              width: size,
-              height: size,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    '内容超出单张容量,请切换分片码',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: Colors.black54),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
+        return SmartQrView(data: widget.blob, size: size);
       },
     );
   }
@@ -212,24 +190,10 @@ class _BlobDisplayState extends State<BlobDisplay> {
           ),
         GestureDetector(
           onTap: () => setState(() => _autoPlay = !_autoPlay),
-          child: Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(10),
-            child: QrImageView(
-              key: ValueKey(_index),
-              data: _frames[_index],
-              size: 260,
-              errorCorrectionLevel: QrErrorCorrectLevel.L,
-              errorStateBuilder: (ctx, err) => const SizedBox(
-                width: 260,
-                height: 260,
-                child: Center(
-                  child: Text('此帧过大,请使用复制或导出方式传递',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.black54)),
-                ),
-              ),
-            ),
+          child: SmartQrView(
+            key: ValueKey(_index),
+            data: _frames[_index],
+            size: 260,
           ),
         ),
         if (multi)

@@ -1,12 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:lzma/lzma.dart';
+
+import 'base45.dart';
+
 /// OOB(带外)引导包:通过二维码 / NFC / 复制粘贴等带外通道交换,
 /// 用于远程配对与 WebRTC 信令。物理/人工通道天然抗中间人,
 /// 包内证书指纹成为之后所有连接的信任锚。
 ///
-/// 编码格式:`LLB2.base64url(gzip(JSON))`(v2,gzip 压缩以适应二维码容量);
-/// 解码兼容旧格式 `LLB1.base64url(JSON)`。
+/// 编码格式:
+///   LLB3 = base45(lzma(JSON))  —— 当前默认,LZMA 高压缩 + QR 字母数字
+///          模式(97% 编码效率),同等内容二维码面积最小;
+///   LLB2 = base64url(gzip(JSON)) —— 兼容解码;
+///   LLB1 = base64url(JSON)      —— 兼容解码。
 class OobBlob {
   OobBlob({
     required this.type,
@@ -79,14 +86,20 @@ class OobBlob {
       if (addresses.isNotEmpty) 'addr': addresses,
       'ts': createdAtMs,
     });
-    return 'LLB2.${base64UrlEncode(gzip.encode(utf8.encode(json)))}';
+    return 'LLB3.${Base45.encode(lzma.encode(utf8.encode(json)))}';
   }
 
-  /// 解码并校验(兼容 LLB2 gzip 与 LLB1 明文)。格式非法抛 [FormatException]。
+  /// 解码并校验(兼容 LLB3 / LLB2 / LLB1)。格式非法抛 [FormatException]。
   static OobBlob decode(String encoded) {
     final text = encoded.trim();
     List<int> jsonBytes;
-    if (text.startsWith('LLB2.')) {
+    if (text.startsWith('LLB3.')) {
+      try {
+        jsonBytes = lzma.decode(Base45.decode(text.substring(5)));
+      } catch (_) {
+        throw const FormatException('引导包内容损坏(lzma 解压失败)');
+      }
+    } else if (text.startsWith('LLB2.')) {
       try {
         jsonBytes = gzip.decode(base64Url.decode(text.substring(5)));
       } catch (_) {
