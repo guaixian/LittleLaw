@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'chat_page.dart';
 import 'device_info.dart';
+import 'globals.dart';
 import 'hotspot_page.dart';
 import 'quick_pair_page.dart';
 import 'remote_pair_page.dart';
@@ -23,11 +24,7 @@ String? _argDeviceName;
 /// 全局引擎单例。
 LittleLawEngine? _engine;
 
-/// 全局 WebRTC 链路管理器。
-WebRtcLinkManager? _rtc;
 
-/// 全局导航句柄(远程链路建立后自动进入聊天页用)。
-final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,7 +96,7 @@ class _BootPageState extends State<BootPage> {
       if (!mounted) return;
       setState(() {
         _engine = engine;
-        _rtc = rtc;
+        rtcManager = rtc;
       });
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -184,7 +181,7 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     // WebRTC 远程链路事件:建立后自动进入聊天页,断开/失败 toast。
-    _rtcSub = _rtc?.linkEvents.listen((e) {
+    _rtcSub = rtcManager?.linkEvents.listen((e) {
       if (e.error != null) {
         showToast('远程应答处理失败: ${e.error}', type: ToastType.error);
         return;
@@ -702,7 +699,7 @@ class ConnectPage extends StatelessWidget {
         subtitle: '不在同一网络?WebRTC 跨网互联',
         color: const Color(0xFF4F7CFF),
         onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
-          builder: (_) => RemotePairPage(rtc: _rtc!),
+          builder: (_) => RemotePairPage(rtc: rtcManager!),
         )),
       ),
       _ConnectItem(
@@ -711,7 +708,7 @@ class ConnectPage extends StatelessWidget {
         subtitle: 'STUN / TURN 服务器配置',
         color: const Color(0xFF8B5CF6),
         onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
-          builder: (_) => SettingsPage(rtc: _rtc!),
+          builder: (_) => SettingsPage(rtc: rtcManager!),
         )),
       ),
     ];
@@ -964,7 +961,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('关于 LittleLaw'),
-                subtitle: const Text('NoServer 架构 · 协议 v1'),
+                subtitle: const Text('v1.0.2 · NoServer 架构 · 协议 v1'),
                 onTap: () {},
               ),
             ],

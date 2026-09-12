@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'blob_widgets.dart';
+import 'chat_page.dart';
+import 'globals.dart';
 import 'smart_qr.dart';
 import 'toast.dart';
 import 'webrtc_link.dart';
@@ -122,6 +124,8 @@ class _RemotePairPageState extends State<RemotePairPage> {
       _setStatus('已与 ${peer.deviceName} 配对,链路建立中(数秒)…');
       showToast('已与 ${peer.deviceName} 配对', type: ToastType.success);
       _pasteCtrl.clear();
+      // 直接进入聊天页。
+      _gotoChat(peer.deviceId);
     } catch (e) {
       // 应答已被对方自动回传处理过(令牌已消费)属正常,不是错误。
       if ('$e'.contains('没有进行中的邀请')) {
@@ -147,6 +151,9 @@ class _RemotePairPageState extends State<RemotePairPage> {
       if (answer.isEmpty) {
         _setStatus('已配对!应答已自动回传给邀请方,链路建立中…');
         showToast('应答已自动回传,等待链路建立', type: ToastType.success);
+        // 直接进入聊天页。
+        final peerId = widget.rtc.lastPairedPeer?.deviceId;
+        if (peerId != null) _gotoChat(peerId);
       } else {
         setState(() {
           _answerBlob = answer;
@@ -184,6 +191,19 @@ class _RemotePairPageState extends State<RemotePairPage> {
     } catch (e) {
       _reportError('导入文件无效', e);
     }
+  }
+
+  /// 跳回主页并进入与指定设备的聊天页。
+  void _gotoChat(String peerId) {
+    final engine = widget.rtc.engine;
+    final peer = engine.peerById(peerId);
+    if (peer == null) return;
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    nav.popUntil((route) => route.isFirst);
+    nav.push(MaterialPageRoute(
+      builder: (_) => ChatPage(peer: peer, engine: engine),
+    ));
   }
 
   /// 输入内容自动路由:局域网 tap 载荷 / offer / answer。

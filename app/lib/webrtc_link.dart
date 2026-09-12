@@ -32,6 +32,9 @@ class WebRtcLinkManager {
   final _linkEvents = StreamController<WebRtcLinkEvent>.broadcast();
   StreamSubscription<String>? _answerSub;
 
+  /// 最近一次成功配对的设备(UI 直接跳转用)。
+  Peer? lastPairedPeer;
+
   /// 链路状态事件(UI 提示用)。
   Stream<WebRtcLinkEvent> get linkEvents => _linkEvents.stream;
 
@@ -138,6 +141,7 @@ class WebRtcLinkManager {
     }
     // 入账(校验令牌回显,失败抛异常)。
     final peer = engine.acceptRemoteAnswer(blob);
+    lastPairedPeer = peer;
 
     if (blob.hasRtc) {
       await pending.pc.setRemoteDescription(
@@ -174,6 +178,7 @@ class WebRtcLinkManager {
     final blob = OobBlob.decode(blobText);
     if (!blob.isOffer) throw ArgumentError('这是应答包,请使用"粘贴应答"');
     final peer = engine.acceptRemoteOffer(blob); // 入账(带外信任锚)
+    lastPairedPeer = peer;
 
     if (!blob.hasRtc) {
       // 对端纯局域网引导包:直连其 gRPC 地址候选,无 answer 需回传。

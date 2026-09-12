@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'media_viewers.dart';
+import 'globals.dart';
+import 'remote_pair_page.dart';
 import 'theme/app_theme.dart';
 
 /// 聊天页:气泡消息、长按/右键菜单、多选删除、图片/视频内联显示、
@@ -364,6 +366,20 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       actions: [
+        // 远程设备(WebRTC 配对,无局域网地址)且离线:提供重连入口。
+        if (!_online &&
+            (widget.peer.lastHost == null || widget.peer.lastHost!.isEmpty))
+          IconButton(
+            tooltip: '重新连接(远程配对)',
+            icon: const Icon(Icons.link_outlined),
+            onPressed: () {
+              final rtc = rtcManager;
+              if (rtc == null) return;
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => RemotePairPage(rtc: rtc),
+              ));
+            },
+          ),
         IconButton(
           tooltip: '清空聊天记录(双端)',
           icon: const Icon(Icons.delete_sweep_outlined),
