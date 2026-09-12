@@ -3,6 +3,7 @@ name: build-all-platforms
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
@@ -119,3 +120,40 @@ jobs:
         with:
           name: ios-unsigned
           path: app/build/ios/iphoneos/
+
+  # ------------------------------------------------ 打包并发布 Release
+  # 每次 main 推送滚动更新 nightly 预发布;推 v* tag 出正式版。
+  release:
+    needs: [windows, linux, macos, android, ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: 打包五端产物
+        run: |
+          set -e
+          mkdir -p dist
+          (cd artifacts/windows-x64 && zip -qr "$OLDPWD/dist/littlelaw-windows-x64.zip" .)
+          (cd artifacts/linux-x64 && tar -czf "$OLDPWD/dist/littlelaw-linux-x64.tar.gz" .)
+          (cd artifacts/macos && zip -qr "$OLDPWD/dist/littlelaw-macos.zip" .)
+          cp artifacts/android-apks/*.apk dist/
+          (cd artifacts/ios-unsigned && zip -qr "$OLDPWD/dist/littlelaw-ios-unsigned.zip" .)
+          ls -lh dist
+      - name: 发布到 Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'nightly' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('LittleLaw {0}', github.ref_name) || 'LittleLaw Nightly(main 最新构建)' }}
+          body: |
+            五端构建产物(commit ${{ github.sha }}):
+            - littlelaw-windows-x64.zip(Windows 绿色版)
+            - littlelaw-linux-x64.tar.gz
+            - littlelaw-macos.zip
+            - android APK(arm64-v8a 为现代手机推荐)
+            - littlelaw-ios-unsigned.zip(未签名,需自签安装)
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          make_latest: ${{ startsWith(github.ref, 'refs/tags/') }}
