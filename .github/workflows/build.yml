@@ -97,8 +97,26 @@ jobs:
           echo "app: $APP"
           # 删除调试符号目录,缩小体积(WebRTC.xcframework 本体必需,保留)
           find "$APP" -name "*.dSYM" -type d -exec rm -rf {} + 2>/dev/null || true
+          # ad-hoc 临时签名(免费,无开发者账号也能避免部分"已损坏"报错)
+          codesign --force --deep --sign - "$APP" || true
+          # 组装 DMG:应用 + Applications 快捷方式(拖放即装)+ 打开说明
+          STAGE=app/build/dmg-stage
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          cat > "$STAGE/打开方法.txt" <<'EOF'
+          LittleLaw 安装与打开说明
+          ========================
+          1. 把 LittleLaw.app 拖到右边的 Applications 文件夹完成安装。
+          2. 首次打开若提示"无法验证开发者",请【右键】点击图标选「打开」,
+             或到 系统设置 → 隐私与安全性 → 点「仍要打开」。
+             也可以在终端执行:
+             xattr -dr com.apple.quarantine /Applications/LittleLaw.app
+          (应用未购买苹果开发者签名,属正常现象,源代码完全公开)
+          EOF
           mkdir -p app/build/macos-dmg
-          hdiutil create -volname LittleLaw -srcfolder "$APP" -ov -format UDZO \
+          hdiutil create -volname LittleLaw -srcfolder "$STAGE" -ov -format UDZO \
             app/build/macos-dmg/littlelaw-macos.dmg
       - uses: actions/upload-artifact@v4
         with:

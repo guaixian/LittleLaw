@@ -99,6 +99,13 @@ app/                       Flutter 应用(Android/iOS/Windows/macOS/Linux)
 tool/gen_proto.ps1         protoc 代码生成脚本
 ```
 
+### iOS / macOS 未签名说明
+
+macOS 版(.dmg/.zip)**未购买苹果开发者签名**,首次打开会提示"无法验证开发者":
+右键点图标 →「打开」,或 系统设置 → 隐私与安全性 →「仍要打开」,或终端执行
+`xattr -dr com.apple.quarantine /Applications/LittleLaw.app`。iOS 包同理需自签
+(AltStore / Xcode)。要官方免警告安装需 Apple 开发者账号($99/年)做签名+公证。
+
 ## 构建与运行
 
 ### Windows / Linux / macOS(桌面端)
