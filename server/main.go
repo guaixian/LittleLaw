@@ -23,6 +23,7 @@ var upgrader = websocket.Upgrader{
 func main() {
 	addr := flag.String("addr", ":47600", "监听地址")
 	dbPath := flag.String("db", "rendezvous.db", "邮箱数据库文件路径")
+	fcmKey := flag.String("fcm-key", "", "Firebase serviceAccount.json 路径(可选,启用离线推送唤醒)")
 	flag.Parse()
 
 	mb, err := OpenMailbox(*dbPath)
@@ -31,6 +32,7 @@ func main() {
 	}
 	defer mb.Close()
 
+	push := NewPushService(mb.db, *fcmKey)
 	hub := NewHub()
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +46,7 @@ func main() {
 			log.Printf("upgrade: %v", err)
 			return
 		}
-		client := newClient(hub, mb, conn)
+		client := newClient(hub, mb, push, conn)
 		go client.writePump()
 		go client.readPump()
 	})

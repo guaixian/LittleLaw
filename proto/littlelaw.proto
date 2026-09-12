@@ -133,7 +133,15 @@ message Envelope {
     LinkAuth link_auth = 11;              // 外部传输链路(WebRTC)建连鉴权
     FileFetchRequest file_fetch = 12;     // 信封式文件拉取(传输层无关)
     FileData file_data = 13;              // 信封式文件数据帧
+    FileDataAck file_data_ack = 14;       // 数据帧回执(窗口背压)
   }
+}
+
+// 信封式文件数据回执:接收方每写入一帧回报已落盘偏移,
+// 发送方按窗口(8 帧)控制发送节奏,防止慢链路撑爆缓冲。
+message FileDataAck {
+  string file_id = 1;
+  int64 acked_offset = 2;
 }
 
 // 外部传输链路(WebRTC DataChannel 等)的第一个信封:

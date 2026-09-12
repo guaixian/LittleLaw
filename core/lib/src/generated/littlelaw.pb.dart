@@ -808,6 +808,7 @@ enum Envelope_Payload {
   linkAuth,
   fileFetch,
   fileData,
+  fileDataAck,
   notSet
 }
 
@@ -826,6 +827,7 @@ class Envelope extends $pb.GeneratedMessage {
     LinkAuth? linkAuth,
     FileFetchRequest? fileFetch,
     FileData? fileData,
+    FileDataAck? fileDataAck,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -841,6 +843,7 @@ class Envelope extends $pb.GeneratedMessage {
     if (linkAuth != null) result.linkAuth = linkAuth;
     if (fileFetch != null) result.fileFetch = fileFetch;
     if (fileData != null) result.fileData = fileData;
+    if (fileDataAck != null) result.fileDataAck = fileDataAck;
     return result;
   }
 
@@ -866,13 +869,14 @@ class Envelope extends $pb.GeneratedMessage {
     11: Envelope_Payload.linkAuth,
     12: Envelope_Payload.fileFetch,
     13: Envelope_Payload.fileData,
+    14: Envelope_Payload.fileDataAck,
     0: Envelope_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'Envelope',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
       createEmptyInstance: create)
-    ..oo(0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+    ..oo(0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<Hello>(2, _omitFieldNames ? '' : 'hello', subBuilder: Hello.create)
     ..aOM<ChatMessage>(3, _omitFieldNames ? '' : 'chat',
@@ -897,6 +901,8 @@ class Envelope extends $pb.GeneratedMessage {
         subBuilder: FileFetchRequest.create)
     ..aOM<FileData>(13, _omitFieldNames ? '' : 'fileData',
         subBuilder: FileData.create)
+    ..aOM<FileDataAck>(14, _omitFieldNames ? '' : 'fileDataAck',
+        subBuilder: FileDataAck.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -929,6 +935,7 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(11)
   @$pb.TagNumber(12)
   @$pb.TagNumber(13)
+  @$pb.TagNumber(14)
   Envelope_Payload whichPayload() => _Envelope_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -942,6 +949,7 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(11)
   @$pb.TagNumber(12)
   @$pb.TagNumber(13)
+  @$pb.TagNumber(14)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1084,6 +1092,85 @@ class Envelope extends $pb.GeneratedMessage {
   void clearFileData() => $_clearField(13);
   @$pb.TagNumber(13)
   FileData ensureFileData() => $_ensure(12);
+
+  @$pb.TagNumber(14)
+  FileDataAck get fileDataAck => $_getN(13);
+  @$pb.TagNumber(14)
+  set fileDataAck(FileDataAck value) => $_setField(14, value);
+  @$pb.TagNumber(14)
+  $core.bool hasFileDataAck() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearFileDataAck() => $_clearField(14);
+  @$pb.TagNumber(14)
+  FileDataAck ensureFileDataAck() => $_ensure(13);
+}
+
+/// 信封式文件数据回执:接收方每写入一帧回报已落盘偏移,
+/// 发送方按窗口(8 帧)控制发送节奏,防止慢链路撑爆缓冲。
+class FileDataAck extends $pb.GeneratedMessage {
+  factory FileDataAck({
+    $core.String? fileId,
+    $fixnum.Int64? ackedOffset,
+  }) {
+    final result = create();
+    if (fileId != null) result.fileId = fileId;
+    if (ackedOffset != null) result.ackedOffset = ackedOffset;
+    return result;
+  }
+
+  FileDataAck._();
+
+  factory FileDataAck.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory FileDataAck.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'FileDataAck',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'fileId')
+    ..aInt64(2, _omitFieldNames ? '' : 'ackedOffset')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  FileDataAck clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  FileDataAck copyWith(void Function(FileDataAck) updates) =>
+      super.copyWith((message) => updates(message as FileDataAck))
+          as FileDataAck;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static FileDataAck create() => FileDataAck._();
+  @$core.override
+  FileDataAck createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static FileDataAck getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<FileDataAck>(create);
+  static FileDataAck? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get fileId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set fileId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasFileId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearFileId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $fixnum.Int64 get ackedOffset => $_getI64(1);
+  @$pb.TagNumber(2)
+  set ackedOffset($fixnum.Int64 value) => $_setInt64(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasAckedOffset() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearAckedOffset() => $_clearField(2);
 }
 
 /// 外部传输链路(WebRTC DataChannel 等)的第一个信封:

@@ -88,3 +88,9 @@ type MailboxAckFrame struct {
 	Type string   `json:"type"` // "mailbox_ack"
 	IDs  []uint64 `json:"ids"`
 }
+
+type PushRegisterFrame struct {
+	Type     string `json:"type"` // "push_register"
+	Token    string `json:"token"`
+	Platform string `json:"platform"` // android / ios
+}

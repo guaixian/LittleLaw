@@ -51,6 +51,8 @@ dependencies:
   device_info_plus: ^13.2.0
   share_plus: ^13.3.0
   qr: ^3.0.2
+  firebase_core: ^4.14.0
+  firebase_messaging: ^16.6.0
 
 dev_dependencies:
   flutter_test:

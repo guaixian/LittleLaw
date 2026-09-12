@@ -45,7 +45,8 @@ export 'src/sync/sync_engine.dart'
         FileMessageArrived,
         FileCancelled,
         FileFetchRequested,
-        FileDataReceived;
+        FileDataReceived,
+        FileDataAcked;
 export 'src/transfer/transfer.dart' show TransferProgress;
 export 'src/generated/littlelaw.pb.dart' show Envelope, LinkAuth;
 export 'src/transport/auth.dart' show Auth;

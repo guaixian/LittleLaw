@@ -1,16 +1,21 @@
 package dev.littlelaw.littlelaw
 
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
+import android.os.Bundle
+import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     // 部分 Android 设备/ROM 默认过滤组播报文,必须持有 MulticastLock
@@ -23,10 +28,18 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         const val HOTSPOT_CHANNEL = "dev.littlelaw/hotspot"
+        const val SHARE_CHANNEL = "dev.littlelaw/share"
 
         /// NFC HCE 当前广播的 NDEF 文本载荷(由 Dart 侧设置,2 分钟配对窗口)。
         @Volatile
         var nfcPayloadText: String = ""
+
+        /// 冷启动收到的分享内容(Dart 侧取走后清空)。
+        @Volatile
+        var initialShare: Map<String, Any?>? = null
+
+        /// 分享事件转发(Dart 侧 MethodChannel 监听 onShare)。
+        var shareChannel: MethodChannel? = null
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -57,6 +70,88 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // 分享面板通道:Dart 取冷启动分享 + 监听热启动分享。
+        val sc = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL)
+        shareChannel = sc
+        sc.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getInitialShare" -> {
+                    result.success(initialShare)
+                    initialShare = null
+                }
+                else -> result.notImplemented()
+            }
+        }
+        handleShareIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    // ------------------------------------------------------------ 分享面板
+
+    private fun handleShareIntent(intent: Intent?) {
+        when (intent?.action) {
+            Intent.ACTION_SEND -> {
+                if (intent.type?.startsWith("text/") == true) {
+                    val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                    if (!text.isNullOrEmpty()) {
+                        emitShare(mapOf("type" to "text", "text" to text))
+                    }
+                } else {
+                    val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                    val path = uri?.let { copyToCache(it) }
+                    if (path != null) {
+                        emitShare(mapOf("type" to "file", "path" to path))
+                    }
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                val paths = uris?.mapNotNull { copyToCache(it) } ?: emptyList()
+                if (paths.isNotEmpty()) {
+                    emitShare(mapOf("type" to "files", "paths" to paths))
+                }
+            }
+        }
+    }
+
+    private fun emitShare(payload: Map<String, Any?>) {
+        val sc = shareChannel
+        if (sc != null) {
+            sc.invokeMethod("onShare", payload)
+        } else {
+            initialShare = payload
+        }
+    }
+
+    /// content:// → 复制到应用缓存,换成 file 路径交给引擎发送。
+    private fun copyToCache(uri: Uri): String? {
+        return try {
+            val name = queryDisplayName(uri) ?: "shared_${System.currentTimeMillis()}"
+            val dir = File(cacheDir, "share_inbox")
+            dir.mkdirs()
+            val out = File(dir, name)
+            contentResolver.openInputStream(uri)?.use { input ->
+                out.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+            out.absolutePath
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        return try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // ------------------------------------------------------------ 热点

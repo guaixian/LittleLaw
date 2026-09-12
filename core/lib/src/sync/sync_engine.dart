@@ -72,6 +72,14 @@ class FileDataReceived extends EngineEvent {
   final pb.FileData data;
 }
 
+/// 收到信封式文件数据回执(窗口背压)。
+class FileDataAcked extends EngineEvent {
+  FileDataAcked(this.peerId, this.fileId, this.ackedOffset);
+  final String peerId;
+  final String fileId;
+  final int ackedOffset;
+}
+
 // ---------------------------------------------------------------------------
 // 同步引擎:1:1 会话的端到端一致同步。
 //
@@ -358,6 +366,9 @@ class SyncEngine extends pbg.SyncServiceBase {
             peerId, env.fileFetch.fileId, env.fileFetch.offset.toInt()));
       case pb.Envelope_Payload.fileData:
         _events.add(FileDataReceived(peerId, env.fileData));
+      case pb.Envelope_Payload.fileDataAck:
+        _events.add(FileDataAcked(peerId, env.fileDataAck.fileId,
+            env.fileDataAck.ackedOffset.toInt()));
       case pb.Envelope_Payload.linkAuth:
         break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
       case pb.Envelope_Payload.heartbeat:

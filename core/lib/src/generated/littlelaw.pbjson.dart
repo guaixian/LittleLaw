@@ -323,6 +323,15 @@ const Envelope$json = {
       '9': 0,
       '10': 'fileData'
     },
+    {
+      '1': 'file_data_ack',
+      '3': 14,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.FileDataAck',
+      '9': 0,
+      '10': 'fileDataAck'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -343,7 +352,23 @@ final $typed_data.Uint8List envelopeDescriptor = $convert.base64Decode(
     'xpdHRsZWxhdy52MS5IZWFydGJlYXRIAFIJaGVhcnRiZWF0EjUKCWxpbmtfYXV0aBgLIAEoCzIW'
     'LmxpdHRsZWxhdy52MS5MaW5rQXV0aEgAUghsaW5rQXV0aBI/CgpmaWxlX2ZldGNoGAwgASgLMh'
     '4ubGl0dGxlbGF3LnYxLkZpbGVGZXRjaFJlcXVlc3RIAFIJZmlsZUZldGNoEjUKCWZpbGVfZGF0'
-    'YRgNIAEoCzIWLmxpdHRsZWxhdy52MS5GaWxlRGF0YUgAUghmaWxlRGF0YUIJCgdwYXlsb2Fk');
+    'YRgNIAEoCzIWLmxpdHRsZWxhdy52MS5GaWxlRGF0YUgAUghmaWxlRGF0YRI/Cg1maWxlX2RhdG'
+    'FfYWNrGA4gASgLMhkubGl0dGxlbGF3LnYxLkZpbGVEYXRhQWNrSABSC2ZpbGVEYXRhQWNrQgkK'
+    'B3BheWxvYWQ=');
+
+@$core.Deprecated('Use fileDataAckDescriptor instead')
+const FileDataAck$json = {
+  '1': 'FileDataAck',
+  '2': [
+    {'1': 'file_id', '3': 1, '4': 1, '5': 9, '10': 'fileId'},
+    {'1': 'acked_offset', '3': 2, '4': 1, '5': 3, '10': 'ackedOffset'},
+  ],
+};
+
+/// Descriptor for `FileDataAck`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List fileDataAckDescriptor = $convert.base64Decode(
+    'CgtGaWxlRGF0YUFjaxIXCgdmaWxlX2lkGAEgASgJUgZmaWxlSWQSIQoMYWNrZWRfb2Zmc2V0GA'
+    'IgASgDUgthY2tlZE9mZnNldA==');
 
 @$core.Deprecated('Use linkAuthDescriptor instead')
 const LinkAuth$json = {

@@ -93,6 +93,11 @@ class TransferManager extends pbg.TransferServiceBase {
   /// fileId → 信封式数据帧暂存(接收侧)。
   final _envelopeData = <String, StreamController<pb.FileData>>{};
 
+  /// 窗口背压:发送侧等待 ACK 状态。
+  static const _ackWindowFrames = 8;
+  final _lastAck = <String, int>{};
+  final _ackNotifiers = <String, Completer<void>>{};
+
   StreamSubscription<EngineEvent>? _eventSub;
 
   void start() {
@@ -106,6 +111,11 @@ class TransferManager extends pbg.TransferServiceBase {
         unawaited(_serveEnvelopeFetch(e));
       } else if (e is FileDataReceived) {
         _envelopeData[e.data.fileId]?.add(e.data);
+      } else if (e is FileDataAcked) {
+        // 窗口背压:更新对端已落盘偏移,唤醒发送节奏等待。
+        final cur = _lastAck[e.fileId] ?? 0;
+        if (e.ackedOffset > cur) _lastAck[e.fileId] = e.ackedOffset;
+        _ackNotifiers.remove(e.fileId)?.complete();
       }
     });
   }
@@ -307,6 +317,12 @@ class TransferManager extends pbg.TransferServiceBase {
         sink.add(frame.data);
         received += frame.data.length;
         if (frame.last) gotLast = true;
+        // 数据帧回执(窗口背压):回报已落盘偏移。
+        sync.sendEnvelope(peerId, pb.Envelope(
+          id: const Uuid().v4(),
+          fileDataAck: pb.FileDataAck(
+              fileId: fileId, ackedOffset: Int64(received)),
+        ));
         _emit(TransferProgress(
           fileId: fileId,
           msgId: msg.msgId,
@@ -357,7 +373,8 @@ class TransferManager extends pbg.TransferServiceBase {
     }
   }
 
-  /// 响应对端的信封式拉取请求(发送侧):分帧发送文件数据。
+  /// 响应对端的信封式拉取请求(发送侧):按窗口(8 帧)节奏分帧发送,
+  /// 带背压——慢链路不会撑爆缓冲;ACK 超时即中止(接收方可断点重试)。
   Future<void> _serveEnvelopeFetch(FileFetchRequested req) async {
     final path = _sendSources[req.fileId] ?? _findSentFile(req.fileId);
     if (path == null) return;
@@ -366,36 +383,51 @@ class TransferManager extends pbg.TransferServiceBase {
 
     var offset = req.offset;
     final total = await file.length();
-    await for (final data in file.openRead(offset)) {
-      var index = 0;
-      while (index < data.length) {
+    _lastAck[req.fileId] = offset;
+    final raf = await file.open();
+    try {
+      while (offset < total) {
+        // 背压:在途未确认字节达到窗口上限时等待 ACK。
+        while (offset - (_lastAck[req.fileId] ?? offset) >=
+            _ackWindowFrames * envelopeChunkSize) {
+          final notifier = Completer<void>();
+          _ackNotifiers[req.fileId] = notifier;
+          var timedOut = false;
+          await notifier.future.timeout(const Duration(seconds: 30),
+              onTimeout: () => timedOut = true);
+          if (timedOut) return; // 对端停滞:中止(.part 保留,可续传)
+        }
         if (_cancelled.contains(req.fileId)) return;
-        final end = (index + envelopeChunkSize > data.length)
-            ? data.length
-            : index + envelopeChunkSize;
-        final chunk = data.sublist(index, end);
-        offset += chunk.length;
+        final end = (offset + envelopeChunkSize > total)
+            ? total
+            : offset + envelopeChunkSize;
+        final chunk = await raf.read(end - offset);
         sync.sendEnvelope(req.peerId, pb.Envelope(
           id: const Uuid().v4(),
           fileData: pb.FileData(
             fileId: req.fileId,
-            offset: Int64(offset - chunk.length),
+            offset: Int64(offset),
             data: chunk,
-            last: offset >= total,
+            last: end >= total,
           ),
         ));
-        index = end;
-        // 让出事件循环,避免大文件撑爆发送缓冲。
-        await Future.delayed(Duration.zero);
+        offset = end;
       }
-    }
-    // 零字节文件或恰好整除:补发空 last 帧收尾。
-    if (offset == req.offset || offset < total) {
-      sync.sendEnvelope(req.peerId, pb.Envelope(
-        id: const Uuid().v4(),
-        fileData: pb.FileData(
-            fileId: req.fileId, offset: Int64(offset), data: const [], last: true),
-      ));
+      // 零字节文件:补发空 last 帧收尾。
+      if (offset == req.offset) {
+        sync.sendEnvelope(req.peerId, pb.Envelope(
+          id: const Uuid().v4(),
+          fileData: pb.FileData(
+              fileId: req.fileId,
+              offset: Int64(offset),
+              data: const [],
+              last: true),
+        ));
+      }
+    } finally {
+      await raf.close();
+      _lastAck.remove(req.fileId);
+      _ackNotifiers.remove(req.fileId);
     }
   }
 

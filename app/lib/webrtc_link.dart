@@ -99,34 +99,54 @@ class WebRtcLinkManager {
       final dc = await pc
           .createDataChannel('littlelaw', RTCDataChannelInit()..ordered = true)
           .timeout(const Duration(seconds: 10));
-      final candidates = <String>[];
-      final gathered = Completer<void>();
+
+      // Trickle ICE:offer 秒发,候选边收集边批量补发(建连快 1~2 秒)。
+      final trickle = <String>[];
+      late Timer flushTimer;
+      Future<void> flush() async {
+        if (trickle.isEmpty) return;
+        final batch = trickle.toList();
+        trickle.clear();
+        try {
+          await rc.sendSignal(peerId, {
+            'kind': 'ice',
+            'candidates': [for (final c in batch) _compactCandidate(c)],
+          });
+        } catch (_) {}
+      }
+
+      flushTimer = Timer.periodic(
+          const Duration(milliseconds: 250), (_) => unawaited(flush()));
       pc.onIceCandidate = (c) {
         if (c.candidate != null && c.candidate!.isNotEmpty) {
-          candidates.add(jsonEncode(c.toMap()));
+          trickle.add(jsonEncode(c.toMap()));
         }
       };
       pc.onIceGatheringState = (s) {
-        if (s == RTCIceGatheringState.RTCIceGatheringStateComplete &&
-            !gathered.isCompleted) {
-          gathered.complete();
+        if (s == RTCIceGatheringState.RTCIceGatheringStateComplete) {
+          unawaited(flush());
+          flushTimer.cancel();
         }
       };
+
+      final pending = _PendingOffer(pc: pc, dc: dc, token: peer.token);
+      pending.trickleTimer = flushTimer;
+      _pendingRtc[peerId] = pending;
+
       final offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      await gathered.future.timeout(_gatherWindow, onTimeout: () {});
+      // 不等收集:立即把本地描述发出去(候选走 ice 帧后补)。
       final local = await pc.getLocalDescription();
       if (local?.sdp == null) {
+        flushTimer.cancel();
+        _pendingRtc.remove(peerId);
         await pc.close();
         return;
       }
-      _pendingRtc[peerId] = _PendingOffer(pc: pc, dc: dc, token: peer.token);
       await rc.sendSignal(peerId, {
         'kind': 'offer',
         'sdp': _stripInlineCandidates(local!.sdp!),
-        'candidates': [
-          for (final c in _pickCandidates(candidates)) _compactCandidate(c),
-        ],
+        'candidates': const [],
       });
     } catch (_) {}
   }
@@ -150,13 +170,26 @@ class WebRtcLinkManager {
     } else if (kind == 'answer') {
       final pending = _pendingRtc.remove(peerId);
       if (pending == null) return;
+      pending.trickleTimer?.cancel();
       await pending.pc.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
       for (final c in candidates) {
         await pending.pc.addCandidate(_candidateFromCompact(c));
       }
       _armChannel(pending.dc, pending.pc, peer);
+    } else if (kind == 'ice') {
+      // Trickle 补充候选:落到对应的在途连接上。
+      final target =
+          _pendingRtc[peerId]?.pc ?? _rendezvousAnswerers[peerId];
+      if (target != null) {
+        for (final c in candidates) {
+          await target.addCandidate(_candidateFromCompact(c));
+        }
+      }
     }
   }
+
+  /// answerer 侧在途连接(trickle 候选落点)。
+  final _rendezvousAnswerers = <String, RTCPeerConnection>{};
 
   Future<void> _answerViaRendezvous(
       Peer peer, String sdp, List<List<dynamic>> candidates) async {
@@ -165,38 +198,58 @@ class WebRtcLinkManager {
     try {
       final pc = await createPeerConnection(_rtcConfig())
           .timeout(const Duration(seconds: 10));
-      final myCandidates = <String>[];
-      final gathered = Completer<void>();
+      _rendezvousAnswerers[peer.deviceId] = pc;
+
+      // Trickle ICE:answer 秒发,候选边收集边批量补发。
+      final trickle = <String>[];
+      late Timer flushTimer;
+      Future<void> flush() async {
+        if (trickle.isEmpty) return;
+        final batch = trickle.toList();
+        trickle.clear();
+        try {
+          await rc.sendSignal(peer.deviceId, {
+            'kind': 'ice',
+            'candidates': [for (final c in batch) _compactCandidate(c)],
+          });
+        } catch (_) {}
+      }
+
+      flushTimer = Timer.periodic(
+          const Duration(milliseconds: 250), (_) => unawaited(flush()));
       pc.onIceCandidate = (c) {
         if (c.candidate != null && c.candidate!.isNotEmpty) {
-          myCandidates.add(jsonEncode(c.toMap()));
+          trickle.add(jsonEncode(c.toMap()));
         }
       };
       pc.onIceGatheringState = (s) {
-        if (s == RTCIceGatheringState.RTCIceGatheringStateComplete &&
-            !gathered.isCompleted) {
-          gathered.complete();
+        if (s == RTCIceGatheringState.RTCIceGatheringStateComplete) {
+          unawaited(flush());
+          flushTimer.cancel();
         }
       };
-      pc.onDataChannel = (dc) => _armChannel(dc, pc, peer);
+      pc.onDataChannel = (dc) {
+        flushTimer.cancel();
+        _rendezvousAnswerers.remove(peer.deviceId);
+        _armChannel(dc, pc, peer);
+      };
       await pc.setRemoteDescription(RTCSessionDescription(sdp, 'offer'));
       for (final c in candidates) {
         await pc.addCandidate(_candidateFromCompact(c));
       }
       final answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      await gathered.future.timeout(_gatherWindow, onTimeout: () {});
       final local = await pc.getLocalDescription();
       if (local?.sdp == null) {
+        flushTimer.cancel();
+        _rendezvousAnswerers.remove(peer.deviceId);
         await pc.close();
         return;
       }
       await rc.sendSignal(peer.deviceId, {
         'kind': 'answer',
         'sdp': _stripInlineCandidates(local!.sdp!),
-        'candidates': [
-          for (final c in _pickCandidates(myCandidates)) _compactCandidate(c),
-        ],
+        'candidates': const [],
       });
     } catch (_) {}
   }
@@ -443,18 +496,33 @@ class WebRtcLinkManager {
   }
 
   /// 裁剪 ICE 候选,控制引导包体积(二维码容量有限)。
-  /// 优先级:srflx(公网映射,打洞关键)> host(直连)> 其他,最多 5 条。
-  /// 候选 JSON 字符串数组。
+  /// 优先级:IPv6 srflx/host(中国移动网络多有公网 v6,可绕 CGNAT 直连)
+  /// > IPv4 srflx > IPv4 host > 其他,最多 5 条。
   List<String> _pickCandidates(List<String> all, {int max = 5}) {
-    final srflx = all.where((c) => c.contains(' typ srflx')).toList();
-    final host = all.where((c) => c.contains(' typ host')).toList();
+    bool isV6(String c) {
+      // 候选行第 5 段是地址;含 ':' 即 IPv6。
+      final parts = c.split(' ');
+      if (parts.length < 5) return false;
+      return parts[4].contains(':');
+    }
+
+    final v6Srflx =
+        all.where((c) => c.contains(' typ srflx') && isV6(c)).toList();
+    final v6Host =
+        all.where((c) => c.contains(' typ host') && isV6(c)).toList();
+    final v4Srflx =
+        all.where((c) => c.contains(' typ srflx') && !isV6(c)).toList();
+    final v4Host =
+        all.where((c) => c.contains(' typ host') && !isV6(c)).toList();
     final rest = all
         .where((c) => !c.contains(' typ srflx') && !c.contains(' typ host'))
         .toList();
     final picked = <String>[
-      ...srflx.take(3),
-      ...host.take(2),
-      ...rest.take(2),
+      ...v6Srflx.take(2),
+      ...v6Host.take(1),
+      ...v4Srflx.take(2),
+      ...v4Host.take(1),
+      ...rest.take(1),
     ];
     return picked.take(max).toList();
   }
@@ -606,10 +674,15 @@ class WebRtcLinkManager {
     await _signalSub?.cancel();
     await _rcStateSub?.cancel();
     for (final p in _pendingRtc.values) {
+      p.trickleTimer?.cancel();
       await p.dc.close();
       await p.pc.close();
     }
     _pendingRtc.clear();
+    for (final pc in _rendezvousAnswerers.values) {
+      await pc.close();
+    }
+    _rendezvousAnswerers.clear();
     await closePendingOffer();
     for (final id in _links.keys.toList()) {
       await disconnect(id);
@@ -630,6 +703,7 @@ class _PendingOffer {
   final RTCPeerConnection pc;
   final RTCDataChannel dc;
   final String token;
+  Timer? trickleTimer; // Trickle ICE 补发定时器
 }
 
 class _ActiveLink {

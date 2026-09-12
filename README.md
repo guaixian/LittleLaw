@@ -140,6 +140,18 @@ littlelaw.joywiki.cc {
 
 客户端留空即默认走 `wss://littlelaw.joywiki.cc/ws`;自建填自己地址;填 `off` 关闭。
 
+### 可选:FCM 离线推送唤醒
+
+收到发给离线设备的信封时,服务器可代发一条 FCM 数据消息唤醒对方
+(仅唤醒信号,绝不含消息内容)。启用步骤:
+
+1. Firebase 控制台建项目 → Android 应用下载 `google-services.json`
+   放到 `app/android/app/`(iOS 用 `GoogleService-Info.plist` 放 `app/ios/Runner/`);
+2. 下载 service account JSON(项目设置 → 服务账号),放到服务器;
+3. 服务器启动加参数:`rendezvous -fcm-key /path/serviceAccount.json`。
+
+未配置则整体静默禁用,不影响任何功能。
+
 ## 目录
 
 ```

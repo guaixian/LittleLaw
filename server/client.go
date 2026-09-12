@@ -13,6 +13,7 @@ import (
 type Client struct {
 	hub      *Hub
 	mailbox  *Mailbox
+	push     *PushService
 	conn     *websocket.Conn
 	send     chan []byte
 	deviceID string
@@ -30,10 +31,11 @@ const (
 	authTimeout    = 15 * time.Second
 )
 
-func newClient(h *Hub, mb *Mailbox, conn *websocket.Conn) *Client {
+func newClient(h *Hub, mb *Mailbox, push *PushService, conn *websocket.Conn) *Client {
 	return &Client{
 		hub:     h,
 		mailbox: mb,
+		push:    push,
 		conn:    conn,
 		send:    make(chan []byte, 64),
 	}
@@ -143,6 +145,16 @@ func (c *Client) handleFrame(message []byte) {
 		if json.Unmarshal(message, &push) == nil && push.To != "" {
 			if _, err := c.mailbox.Push(push.To, c.deviceID, push.Data); err != nil {
 				log.Printf("mailbox push: %v", err)
+			} else if !c.hub.isOnline(push.To) {
+				// 接收方离线:代发推送唤醒(仅信号,无内容)。
+				c.push.NotifyDevice(push.To)
+			}
+		}
+	case "push_register":
+		var reg PushRegisterFrame
+		if json.Unmarshal(message, &reg) == nil && reg.Token != "" {
+			if err := c.push.saveToken(c.deviceID, reg.Token, reg.Platform); err != nil {
+				log.Printf("push register: %v", err)
 			}
 		}
 	case "mailbox_fetch":

@@ -369,6 +369,13 @@ class RendezvousClient {
     _send({'type': 'mailbox_ack', 'ids': ids});
   }
 
+  /// 注册移动推送令牌(FCM;服务器在收到发给本设备的离线信封时
+  /// 代发唤醒通知,通知只含唤醒信号不含任何内容)。
+  void registerPushToken(String token, String platform) {
+    if (!_up) return;
+    _send({'type': 'push_register', 'token': token, 'platform': platform});
+  }
+
   Future<void> dispose() async {
     await stop();
     await _peerOnline.close();

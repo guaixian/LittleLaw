@@ -9,9 +9,11 @@ import 'chat_page.dart';
 import 'device_info.dart';
 import 'globals.dart';
 import 'hotspot_page.dart';
+import 'push_wake.dart';
 import 'quick_pair_page.dart';
 import 'remote_pair_page.dart';
 import 'settings_page.dart';
+import 'share_handler.dart';
 import 'theme/app_theme.dart';
 import 'toast.dart';
 import 'webrtc_link.dart';
@@ -103,6 +105,8 @@ class _BootPageState extends State<BootPage> {
         _engine = engine;
         rtcManager = rtc;
       });
+      ShareHandler.attach(engine); // 系统分享面板接入
+      PushWake.attach(engine); // FCM 离线推送唤醒(可选,无配置自动禁用)
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeShell()),
       );
