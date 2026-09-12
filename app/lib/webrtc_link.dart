@@ -122,7 +122,7 @@ class WebRtcLinkManager {
       fingerprint: engine.identity.fingerprint,
       token: token,
       deviceModel: engine.identity.deviceModel,
-      sdp: local.sdp,
+      sdp: _stripInlineCandidates(local.sdp!),
       candidates: _pickCandidates(candidates),
       addresses: await engine.localGrpcAddresses(), // 供对方自动回传应答
     ).encode();
@@ -231,7 +231,7 @@ class WebRtcLinkManager {
       fingerprint: engine.identity.fingerprint,
       token: blob.token, // 令牌原样回显
       deviceModel: engine.identity.deviceModel,
-      sdp: local?.sdp,
+      sdp: local?.sdp == null ? null : _stripInlineCandidates(local!.sdp!),
       candidates: _pickCandidates(candidates),
     ).encode();
 
@@ -254,6 +254,7 @@ class WebRtcLinkManager {
 
   /// 裁剪 ICE 候选,控制引导包体积(二维码容量有限)。
   /// 优先级:srflx(公网映射,打洞关键)> host(直连)> 其他,最多 5 条。
+  /// 候选 JSON 字符串数组。
   List<String> _pickCandidates(List<String> all, {int max = 5}) {
     final srflx = all.where((c) => c.contains(' typ srflx')).toList();
     final host = all.where((c) => c.contains(' typ host')).toList();
@@ -266,6 +267,17 @@ class WebRtcLinkManager {
       ...rest.take(2),
     ];
     return picked.take(max).toList();
+  }
+
+  /// 剥离 SDP 中内联的候选行:候选已通过 candidates 字段单独携带,
+  /// 内联属于重复传输,剥掉可显著缩小引导包(对端用 addCandidate 恢复)。
+  String _stripInlineCandidates(String sdp) {
+    return sdp
+        .split('\r\n')
+        .where((line) =>
+            !line.startsWith('a=candidate') &&
+            !line.startsWith('a=end-of-candidates'))
+        .join('\r\n');
   }
 
   // ------------------------------------------------------------ 通道武装
