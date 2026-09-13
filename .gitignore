@@ -44,3 +44,5 @@ core/test/debug_*.dart
 # OS
 .DS_Store
 Thumbs.db
+
+app/littlelaw-windows-*.zip
