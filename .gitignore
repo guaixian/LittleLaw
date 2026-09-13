@@ -46,3 +46,6 @@ core/test/debug_*.dart
 Thumbs.db
 
 app/littlelaw-windows-*.zip
+
+keystore-base64.txt
+app/android/littlelaw-release-original-backup.keystore
