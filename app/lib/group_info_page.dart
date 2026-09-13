@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
+import 'i18n.dart';
 import 'toast.dart';
 
 /// 群资料页:成员列表、拉人、踢人、改群名、退群、解散。
@@ -33,7 +34,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('修改群名'),
+        title: Text(L10n.t('group.rename')),
         content: TextField(controller: ctrl, autofocus: true),
         actions: [
           TextButton(
@@ -64,7 +65,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setInner) => AlertDialog(
-          title: const Text('添加成员'),
+          title: Text(L10n.t('group.addMembers')),
           content: SizedBox(
             width: 360,
             child: ListView(
@@ -132,7 +133,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     }
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('群资料')),
+      appBar: AppBar(title: Text(L10n.t('group.info'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -162,7 +163,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '修改群名',
+                    tooltip: L10n.t('group.rename'),
                     icon: const Icon(Icons.edit_outlined),
                     onPressed: _rename,
                   ),
@@ -173,10 +174,10 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Expanded(
-                  child: Text('成员',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
+              Expanded(
+                  child: Text(L10n.t('devices.groups') == '群聊' ? '成员' : 'Members',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14))),
               TextButton.icon(
                 onPressed: _addMembers,
                 icon: const Icon(Icons.person_add_alt_outlined, size: 18),
@@ -197,7 +198,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
               Navigator.of(context).pop();
             }),
             icon: const Icon(Icons.logout_outlined),
-            label: const Text('退出群聊'),
+            label: Text(L10n.t('group.leave')),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
@@ -210,7 +211,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
               Navigator.of(context).pop();
             }),
             icon: const Icon(Icons.delete_outline_outlined),
-            label: const Text('解散群聊'),
+            label: Text(L10n.t('group.dissolve')),
           ),
         ],
       ),
@@ -262,7 +263,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
           ),
           if (!isMe)
             IconButton(
-              tooltip: '移出群聊',
+              tooltip: L10n.t('group.removeMember'),
               icon: const Icon(Icons.person_remove_outlined, size: 20),
               onPressed: () => _confirm('移出成员',
                   '将 $name 移出群聊?对方本地的群与消息会被删除。', () {

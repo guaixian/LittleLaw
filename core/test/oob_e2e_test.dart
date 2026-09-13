@@ -170,8 +170,12 @@ void main() {
       await waitFor(() => done != null,
           description: '信封式文件传输完成', timeout: const Duration(seconds: 60));
       await psub.cancel();
+      // 收件按发送方设备分目录(目录名含对端名称/ID 前缀),以消息记录为准。
+      final gotMsg = b
+          .loadMessages(idA)
+          .firstWhere((m) => m.fileId == done!.fileId);
       final gotSha = sha256
-          .convert(await File('${dirB.path}/inbox/oob.bin').readAsBytes())
+          .convert(await File(gotMsg.filePath!).readAsBytes())
           .toString();
       expect(gotSha, srcSha);
 

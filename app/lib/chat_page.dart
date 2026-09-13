@@ -15,20 +15,32 @@ import 'globals.dart';
 import 'call_page.dart';
 import 'forward_picker.dart';
 import 'group_info_page.dart';
+import 'i18n.dart';
 import 'remote_pair_page.dart';
 import 'share_out.dart';
 import 'theme/app_theme.dart';
 
 /// 聊天页:气泡消息、长按/右键菜单、多选删除、图片/视频内联显示、
 /// 时间分隔条、空状态、输入栏附件面板。
-/// 支持两种目标:1:1(peer)与群聊(group)。
+/// 支持两种目标:1:1(peer)与群聊(group);移动端整页 / 桌面嵌入式。
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key, required this.peer, required this.engine, this.group});
+  const ChatPage({
+    super.key,
+    required this.peer,
+    required this.engine,
+    this.group,
+    this.embedded = false,
+    this.onClose,
+  });
   final Peer peer;
   final LittleLawEngine engine;
 
   /// 非空 = 群聊模式。
   final Group? group;
+
+  /// 桌面三栏嵌入模式(关闭按钮替代返回)。
+  final bool embedded;
+  final VoidCallback? onClose;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -86,7 +98,7 @@ class _ChatPageState extends State<ChatPage> {
         Clipboard.setData(ClipboardData(text: e.text));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('对方剪贴板已写入本机剪贴板')),
+            SnackBar(content: Text(L10n.t('chat.clipRecvToast'))),
           );
         }
       }
@@ -273,7 +285,7 @@ class _ChatPageState extends State<ChatPage> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('剪贴板没有可发送的内容')));
+            .showSnackBar(SnackBar(content: Text(L10n.t('chat.pasteEmpty'))));
       }
     }
   }
@@ -296,15 +308,15 @@ class _ChatPageState extends State<ChatPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _attachAction(Icons.photo_outlined, '图片',
+          _attachAction(Icons.photo_outlined, L10n.t('chat.image'),
               () => _pickAndSend(FileType.image)),
-          _attachAction(Icons.videocam_outlined, '视频',
+          _attachAction(Icons.videocam_outlined, L10n.t('chat.video'),
               () => _pickAndSend(FileType.video)),
-          _attachAction(Icons.attach_file_outlined, '文件',
+          _attachAction(Icons.attach_file_outlined, L10n.t('chat.file'),
               () => _pickAndSend(FileType.any)),
-          _attachAction(Icons.content_paste_go_outlined, '剪贴板',
+          _attachAction(Icons.content_paste_go_outlined, L10n.t('chat.clipboard'),
               _sendClipboard),
-          _attachAction(Icons.content_paste_outlined, '粘贴发送', _pasteAndSend),
+          _attachAction(Icons.content_paste_outlined, L10n.t('chat.pasteSend'), _pasteAndSend),
         ],
       ),
     );
@@ -349,7 +361,7 @@ class _ChatPageState extends State<ChatPage> {
   void _copyMessage(Message m) {
     Clipboard.setData(ClipboardData(text: m.text));
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已复制')));
+        .showSnackBar(SnackBar(content: Text(L10n.t('chat.copiedToast'))));
   }
 
   void _copySelection() {
@@ -360,7 +372,7 @@ class _ChatPageState extends State<ChatPage> {
     if (texts.isNotEmpty) {
       Clipboard.setData(ClipboardData(text: texts));
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('已复制所选文本')));
+          .showSnackBar(SnackBar(content: Text(L10n.t('chat.copiedToast'))));
     }
     setState(() => _selection.clear());
   }
@@ -375,16 +387,30 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _openMessage(Message m) {
-    final path = m.filePath;
-    if (path == null) return;
+  /// 供查看/打开/转发/分享的明文路径(vault 开启时解密到缓存)。
+  Future<String?> _plainPathOf(Message m) async {
+    if (m.filePath == null ||
+        m.fileState != Message.fileStateDone) {
+      return null;
+    }
+    try {
+      return await widget.engine.plaintextPathFor(m);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _openMessage(Message m) async {
+    final path = await _plainPathOf(m);
+    if (!mounted || path == null) return;
     if (m.kind == Message.kindImage) {
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => ImageViewerPage(path: path, heroTag: m.msgId),
       ));
     } else if (m.kind == Message.kindVideo) {
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => VideoPlayerPage(path: path, title: m.fileName ?? '视频'),
+        builder: (_) => VideoPlayerPage(
+            path: path, title: m.fileName ?? L10n.t('chat.video')),
       ));
     }
   }
@@ -432,7 +458,7 @@ class _ChatPageState extends State<ChatPage> {
             ListTile(
               dense: true,
               leading: const Icon(Icons.copy_outlined),
-              title: const Text('复制'),
+              title: Text(L10n.t('common.copy')),
               enabled: m.kind == Message.kindText,
               onTap: () {
                 Navigator.of(ctx).pop();
@@ -444,7 +470,7 @@ class _ChatPageState extends State<ChatPage> {
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.open_in_new),
-                title: const Text('打开'),
+                title: Text(L10n.t('common.open')),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   _openMessage(m);
@@ -453,7 +479,7 @@ class _ChatPageState extends State<ChatPage> {
             ListTile(
               dense: true,
               leading: const Icon(Icons.checklist),
-              title: const Text('多选'),
+              title: Text(L10n.t('chat.multiSelect')),
               onTap: () {
                 Navigator.of(ctx).pop();
                 _toggleSelect(m.msgId);
@@ -463,16 +489,19 @@ class _ChatPageState extends State<ChatPage> {
             ListTile(
               dense: true,
               leading: const Icon(Icons.shortcut_outlined),
-              title: const Text('转发'),
+              title: Text(L10n.t('chat.forward')),
               enabled: m.kind == Message.kindText ||
                   (Message.hasFilePayload(m.kind) &&
                       m.fileState == Message.fileStateDone),
-              onTap: () {
+              onTap: () async {
                 Navigator.of(ctx).pop();
                 if (m.kind == Message.kindText) {
                   showForwardPicker(widget.engine, text: m.text);
                 } else if (m.filePath != null) {
-                  showForwardPicker(widget.engine, filePath: m.filePath);
+                  final plain = await _plainPathOf(m);
+                  if (plain != null) {
+                    showForwardPicker(widget.engine, filePath: plain);
+                  }
                 }
               },
             ),
@@ -480,16 +509,17 @@ class _ChatPageState extends State<ChatPage> {
             ListTile(
               dense: true,
               leading: const Icon(Icons.ios_share),
-              title: const Text('分享到其他应用'),
+              title: Text(L10n.t('chat.shareOut')),
               enabled: m.kind == Message.kindText ||
                   (Message.hasFilePayload(m.kind) &&
                       m.fileState == Message.fileStateDone),
-              onTap: () {
+              onTap: () async {
                 Navigator.of(ctx).pop();
                 if (m.kind == Message.kindText) {
                   ShareOut.shareText(m.text);
-                } else if (m.filePath != null) {
-                  ShareOut.shareFile(m.filePath!);
+                } else {
+                  final plain = await _plainPathOf(m);
+                  if (plain != null) ShareOut.shareFile(plain);
                 }
               },
             ),
@@ -497,13 +527,13 @@ class _ChatPageState extends State<ChatPage> {
               dense: true,
               leading:
                   Icon(Icons.delete_outline, color: scheme.error),
-              title: Text('删除(双端)',
+              title: Text(L10n.t('chat.deleteBoth'),
                   style: TextStyle(color: scheme.error)),
               onTap: () {
                 Navigator.of(ctx).pop();
                 _isGroup ? widget.engine.deleteGroupMessages(_convKey, [m.msgId]) : widget.engine.deleteMessages(_convKey, [m.msgId]);
                 ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('已在双端删除')));
+                    .showSnackBar(SnackBar(content: Text(L10n.t('chat.deletedToast'))));
               },
             ),
             const SizedBox(height: 6),
@@ -587,13 +617,20 @@ class _ChatPageState extends State<ChatPage> {
     final title = group?.name ?? widget.peer.deviceName;
     final subtitle = group != null
         ? '${group.memberIds.length} 名成员'
-        : (_online ? '在线' : '离线(消息将在对方上线后送达)');
+        : (_online ? L10n.t('common.online') : L10n.t('chat.offlineHint'));
     final avatarIcon = group != null
         ? Icons.groups_outlined
         : (widget.peer.platform == 'android' || widget.peer.platform == 'ios'
             ? Icons.smartphone
             : Icons.computer);
     return AppBar(
+      leading: widget.embedded
+          ? IconButton(
+              tooltip: '关闭',
+              icon: const Icon(Icons.close),
+              onPressed: widget.onClose,
+            )
+          : null,
       title: GestureDetector(
         onTap: _isGroup
             ? () => Navigator.of(context).push(MaterialPageRoute(
@@ -641,12 +678,12 @@ class _ChatPageState extends State<ChatPage> {
         // 语音/视频通话(仅 1:1,任意已连接通道可用)。
         if (_online && !_isGroup) ...[
           IconButton(
-            tooltip: '语音通话',
+            tooltip: L10n.t('chat.audioCall'),
             icon: const Icon(Icons.call_outlined),
             onPressed: () => _startCall(video: false),
           ),
           IconButton(
-            tooltip: '视频通话',
+            tooltip: L10n.t('chat.videoCall'),
             icon: const Icon(Icons.videocam_outlined),
             onPressed: () => _startCall(video: true),
           ),
@@ -656,7 +693,7 @@ class _ChatPageState extends State<ChatPage> {
             !_online &&
             (widget.peer.lastHost == null || widget.peer.lastHost!.isEmpty))
           IconButton(
-            tooltip: '重新连接(远程配对)',
+            tooltip: L10n.t('chat.reconnect'),
             icon: const Icon(Icons.link_outlined),
             onPressed: () {
               final rtc = rtcManager;
@@ -667,7 +704,7 @@ class _ChatPageState extends State<ChatPage> {
             },
           ),
         IconButton(
-          tooltip: '清空聊天记录(双端)',
+          tooltip: L10n.t('chat.clearAll'),
           icon: const Icon(Icons.delete_sweep_outlined),
           onPressed: _confirmClearAll,
         ),
@@ -706,13 +743,13 @@ class _ChatPageState extends State<ChatPage> {
           Icon(Icons.lock_outline,
               size: 56, color: Colors.grey.shade400),
           const SizedBox(height: 12),
-          Text('端到端加密会话',
+          Text(L10n.t('chat.e2eTitle'),
               style: TextStyle(
                   fontSize: 16,
                   color: Colors.grey.shade600,
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
-          Text('消息、图片、文件仅存储于两台设备本地\n删除即双端同时销毁',
+          Text(L10n.t('chat.e2eBody'),
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
         ],
@@ -723,21 +760,29 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildItem(BuildContext ctx, int i, String myId, LittleLawEngine engine) {
     final m = _messages[i];
     final children = <Widget>[];
-    // 时间分隔条:首条或与上一条间隔超过 10 分钟。
+    final mine = engine.isFromMe(m.senderId);
+    // 消息分组:与上一条同发送者且间隔 < 4 分钟 → 隐藏发送者名与头像间距收紧。
+    final grouped = i > 0 &&
+        _messages[i - 1].senderId == m.senderId &&
+        m.createdAtMs - _messages[i - 1].createdAtMs <
+            const Duration(minutes: 4).inMilliseconds;
+    // 时间分隔条:首条或与上一条间隔超过 30 分钟。
     if (i == 0 ||
         m.createdAtMs - _messages[i - 1].createdAtMs >
-            const Duration(minutes: 10).inMilliseconds) {
+            const Duration(minutes: 30).inMilliseconds) {
       children.add(_TimeDivider(ms: m.createdAtMs));
     }
     children.add(_MessageBubble(
       message: m,
-      mine: engine.isFromMe(m.senderId),
-      senderName: _isGroup && !engine.isFromMe(m.senderId)
+      mine: mine,
+      showSender: !grouped,
+      senderName: _isGroup && !mine
           ? (engine.peerById(m.senderId)?.deviceName ?? '群成员')
           : null,
       progress: _transfers[m.msgId],
       selected: _selection.contains(m.msgId),
       selecting: _selecting,
+      avatarIcon: _avatarIcon(mine, m.senderId),
       onReaction: (emoji) => _react(m, emoji),
       onTap: () {
         if (_selecting) {
@@ -751,6 +796,14 @@ class _ChatPageState extends State<ChatPage> {
       },
     ));
     return Column(children: children);
+  }
+
+  IconData _avatarIcon(bool mine, String senderId) {
+    if (mine) return Icons.person;
+    final p = widget.engine.peerById(senderId);
+    return (p?.platform == 'android' || p?.platform == 'ios')
+        ? Icons.smartphone
+        : Icons.computer_outlined;
   }
 
   Widget _inputBar() {
@@ -777,13 +830,13 @@ class _ChatPageState extends State<ChatPage> {
             const Spacer(),
             TextButton(
               onPressed: () => _stopRecord(send: false),
-              child: const Text('取消'),
+              child: Text(L10n.t('common.cancel')),
             ),
             const SizedBox(width: 4),
             FilledButton.icon(
               onPressed: () => _stopRecord(send: true),
               icon: const Icon(Icons.send_rounded, size: 16),
-              label: const Text('发送'),
+              label: Text(L10n.t('chat.send')),
             ),
           ],
         ),
@@ -811,7 +864,7 @@ class _ChatPageState extends State<ChatPage> {
             children: [
               // + 按钮:展开/收起附件面板,打开时旋转为 ×。
               IconButton(
-                tooltip: '附件',
+                tooltip: L10n.t('chat.attach'),
                 icon: AnimatedRotation(
                   turns: _attachOpen ? 0.125 : 0,
                   duration: const Duration(milliseconds: 200),
@@ -825,8 +878,8 @@ class _ChatPageState extends State<ChatPage> {
                   minLines: 1,
                   maxLines: 5,
                   textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    hintText: '输入消息…',
+                  decoration: InputDecoration(
+                    hintText: L10n.t('chat.inputHint'),
                     border: InputBorder.none,
                     isDense: true,
                     filled: false,
@@ -839,7 +892,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
               // 麦克风:点击开始录音,再点完成发送。
               IconButton(
-                tooltip: '语音消息',
+                tooltip: L10n.t('chat.voiceMsg'),
                 icon: Icon(Icons.mic_none_rounded, color: scheme.primary),
                 onPressed: _toggleRecord,
               ),
@@ -848,7 +901,7 @@ class _ChatPageState extends State<ChatPage> {
                 radius: 19,
                 backgroundColor: scheme.primary,
                 child: IconButton(
-                  tooltip: '发送',
+                  tooltip: L10n.t('chat.send'),
                   icon: const Icon(Icons.send_rounded,
                       color: Colors.white, size: 17),
                   onPressed: _sendText,
@@ -940,13 +993,17 @@ class _MessageBubble extends StatelessWidget {
     required this.selecting,
     required this.onTap,
     required this.onLongPress,
+    required this.avatarIcon,
     this.senderName,
+    this.showSender = true,
     this.onReaction,
   });
 
   final Message message;
   final bool mine;
   final String? senderName; // 群消息:发送者名(自己为 null)
+  final bool showSender; // 分组中隐藏发送者名(头像仍显示)
+  final IconData avatarIcon;
   final TransferProgress? progress;
   final bool selected;
   final bool selecting;
@@ -970,13 +1027,24 @@ class _MessageBubble extends StatelessWidget {
               color: selected ? scheme.primary : Colors.grey,
             ),
           ),
+        if (!mine)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, right: 8),
+            child: CircleAvatar(
+              radius: 16,
+              backgroundColor: scheme.secondaryContainer,
+              child: Icon(avatarIcon,
+                  size: 16, color: scheme.onSecondaryContainer),
+            ),
+          ),
         Flexible(
           child: GestureDetector(
             onTap: onTap,
             onLongPressStart: (d) => onLongPress(d.globalPosition),
             onSecondaryTapDown: (d) => onLongPress(d.globalPosition),
             child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 3),
+              margin: EdgeInsets.symmetric(
+                  vertical: showSender ? 3 : 1, horizontal: 2),
               decoration: BoxDecoration(
                 color: selected
                     ? scheme.primaryContainer.withValues(alpha: 0.55)
@@ -990,7 +1058,7 @@ class _MessageBubble extends StatelessWidget {
                     : CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (senderName != null)
+                  if (senderName != null && showSender)
                     Padding(
                       padding: const EdgeInsets.only(left: 8, bottom: 1),
                       child: Text(senderName!,
@@ -1005,6 +1073,16 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
         ),
+        if (mine)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, left: 8),
+            child: CircleAvatar(
+              radius: 16,
+              backgroundColor: scheme.primaryContainer,
+              child: Icon(avatarIcon,
+                  size: 16, color: scheme.onPrimaryContainer),
+            ),
+          ),
       ],
     );
   }
@@ -1313,6 +1391,7 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
+
   String _fileStateText() {
     switch (message.fileState) {
       case Message.fileStateDone:
@@ -1370,8 +1449,15 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
   }
 
   Future<void> _toggle() async {
-    final path = widget.message.filePath;
-    if (path == null || widget.message.fileState != Message.fileStateDone) {
+    final engine = activeEngine;
+    if (engine == null ||
+        widget.message.fileState != Message.fileStateDone) {
+      return;
+    }
+    String path;
+    try {
+      path = await engine.plaintextPathFor(widget.message);
+    } catch (_) {
       return;
     }
     if (_playing) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'chat_page.dart';
+import 'i18n.dart';
 
 /// 全库消息搜索:文本 + 文件名,跨全部会话,点击跳转会话。
 class SearchPage extends StatefulWidget {
@@ -82,8 +83,8 @@ class _SearchPageState extends State<SearchPage> {
         title: TextField(
           controller: _controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '搜索消息 / 文件名…',
+          decoration: InputDecoration(
+            hintText: L10n.t('search.hint'),
             border: InputBorder.none,
           ),
           onSubmitted: (_) => _run(),
@@ -96,7 +97,7 @@ class _SearchPageState extends State<SearchPage> {
       body: _results.isEmpty
           ? Center(
               child: Text(
-                _controller.text.isEmpty ? '输入关键词搜索全部会话' : '没有匹配的消息',
+                _controller.text.isEmpty ? L10n.t('search.empty') : L10n.t('search.noMatch'),
                 style: TextStyle(color: Colors.grey.shade500),
               ),
             )

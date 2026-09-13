@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
@@ -9,7 +11,9 @@ import 'call.dart';
 import 'call_page.dart';
 import 'chat_page.dart';
 import 'device_info.dart';
+import 'adaptive_shell.dart';
 import 'globals.dart';
+import 'i18n.dart';
 import 'group_create_page.dart';
 import 'hotspot_page.dart';
 import 'search_page.dart';
@@ -40,6 +44,7 @@ Future<void> main(List<String> args) async {
     if (args[i] == '--name') _argDeviceName = args[i + 1];
   }
   await themeController.load();
+  await L10n.load(); // 语言设置(跟随系统/中文/English)
   runApp(const LittleLawApp());
 }
 
@@ -58,6 +63,13 @@ class LittleLawApp extends StatelessWidget {
         theme: themeController.light(),
         darkTheme: themeController.dark(),
         themeMode: themeController.mode,
+        locale: L10n.localeOf(context),
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         home: const BootPage(),
       ),
     );
@@ -101,6 +113,7 @@ class _BootPageState extends State<BootPage> {
           return raw; // 自建地址
         }),
         upnpEnabled: await SettingsPage.loadUpnpEnabled(),
+        encryptFilesAtRest: true, // 收件按设备分目录 + 落盘加密
       );
       final iceServers = await SettingsPage.loadIceServers();
       final rtc = WebRtcLinkManager(engine: engine, iceServers: iceServers)
@@ -108,6 +121,7 @@ class _BootPageState extends State<BootPage> {
       if (!mounted) return;
       setState(() {
         _engine = engine;
+        activeEngine = engine;
         rtcManager = rtc;
       });
       ShareHandler.attach(engine); // 系统分享面板接入
@@ -242,6 +256,14 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // 桌面端(宽屏):三栏外壳(图标栏 + 会话列表 + 聊天面板)。
+    final desktop = (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.linux) &&
+        MediaQuery.sizeOf(context).width >= 850;
+    if (desktop) {
+      return const AdaptiveHomeShell();
+    }
     final pages = [
       const DevicesPage(),
       const ConnectPage(),
@@ -253,21 +275,21 @@ class _HomeShellState extends State<HomeShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
+        destinations: [
           NavigationDestination(
             icon: Icon(Icons.devices_outlined),
             selectedIcon: Icon(Icons.devices),
-            label: '设备',
+            label: L10n.t('nav.devices'),
           ),
           NavigationDestination(
             icon: Icon(Icons.hub_outlined),
             selectedIcon: Icon(Icons.hub),
-            label: '连接',
+            label: L10n.t('nav.connect'),
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
-            label: '我的',
+            label: L10n.t('nav.profile'),
           ),
         ],
       ),
@@ -448,21 +470,21 @@ class _DevicesPageState extends State<DevicesPage> {
           slivers: [
             SliverToBoxAdapter(child: _header(engine)),
             if (peers.isNotEmpty) ...[
-              const _SectionLabel('已配对'),
+              const _SectionLabel(''),
               SliverList.builder(
                 itemCount: peers.length,
                 itemBuilder: (ctx, i) => _peerCard(engine, peers[i]),
               ),
             ],
             // 群聊
-            const _SectionLabel('群聊'),
+            const _SectionLabel(''),
             SliverList.builder(
               itemCount: engine.groups.length + 1,
               itemBuilder: (ctx, i) => i == engine.groups.length
                   ? _createGroupCard(engine)
                   : _groupCard(engine, engine.groups[i]),
             ),
-            const _SectionLabel('附近的设备'),
+            const _SectionLabel(''),
             if (discovered.isEmpty)
               SliverToBoxAdapter(
                 child: Padding(
@@ -570,7 +592,7 @@ class _DevicesPageState extends State<DevicesPage> {
                         color: Colors.white.withValues(alpha: 0.22),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Text('$online 台在线',
+                      child: Text(L10n.t('header.onlineCount', {'n': online}),
                           style: const TextStyle(
                               fontSize: 12, color: Colors.white)),
                     ),
@@ -596,7 +618,7 @@ class _DevicesPageState extends State<DevicesPage> {
           ),
           const SizedBox(height: 14),
           Text(
-            '局域网安全直连 · 消息只存两台设备',
+            L10n.t('header.tagline'),
             style: TextStyle(
                 fontSize: 12, color: Colors.white.withValues(alpha: 0.85)),
           ),
@@ -699,7 +721,7 @@ class _DevicesPageState extends State<DevicesPage> {
             ),
             child: Icon(Icons.add, color: skin.primary, size: 22),
           ),
-          title: const Text('新建群聊',
+          title: Text(L10n.t('devices.newGroup'),
               style: TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text('把多个已配对设备拉到一个会话',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
@@ -1054,6 +1076,36 @@ class _ProfilePageState extends State<ProfilePage> {
               SelectableText(engine.identity.fingerprint,
                   style: const TextStyle(fontSize: 12, color: Colors.white)),
             ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        // 语言
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.translate_outlined),
+            title: Text(L10n.t('settings.lang')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showDialog<void>(
+              context: context,
+              builder: (ctx) => SimpleDialog(
+                title: Text(L10n.t('settings.lang')),
+                children: [
+                  for (final entry in const [
+                    ('', null),
+                    ('zh', '中文'),
+                    ('en', 'English'),
+                  ])
+                    SimpleDialogOption(
+                      onPressed: () async {
+                        await L10n.set(entry.$1);
+                        themeController.refresh(); // 触发全局重建
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      child: Text(entry.$2 ?? L10n.t('settings.langSystem')),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 14),

@@ -179,7 +179,11 @@ void main() {
         description: 'B 文件接收完成', timeout: const Duration(seconds: 60));
     await psub.cancel();
 
-    final inboxFile = File('${b.dataDir}/inbox/test.bin');
+    // 收件按发送方设备分目录,以消息记录的实际路径为准。
+    final fileMsg = b
+        .loadMessages(idA())
+        .firstWhere((m) => m.kind == Message.kindFile);
+    final inboxFile = File(fileMsg.filePath!);
     expect(await inboxFile.exists(), isTrue);
     final gotSha = sha256.convert(await inboxFile.readAsBytes()).toString();
     expect(gotSha, srcSha, reason: '文件 SHA-256 必须一致');

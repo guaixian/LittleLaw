@@ -140,6 +140,27 @@ class Group {
   static String convIdOf(String groupId) => 'g:$groupId';
 }
 
+/// 会话摘要(最近会话列表)。
+class ConvSummary {
+  ConvSummary({
+    required this.convId,
+    required this.kind,
+    required this.text,
+    required this.fileName,
+    required this.atMs,
+    required this.senderId,
+    required this.unread,
+  });
+
+  final String convId; // 'g:<id>' 或 'devA:devB'
+  final int kind; // 最后一条消息类型
+  final String text;
+  final String? fileName;
+  final int atMs;
+  final String senderId;
+  final int unread;
+}
+
 /// SQLite 持久层。同步协议见 sync_engine.dart。
 class Store {
   late final Database _db;
@@ -502,6 +523,35 @@ class Store {
             'SELECT * FROM messages WHERE file_id=? AND sender_id=? LIMIT 1',
             [fileId, senderId]);
     return rows.isEmpty ? null : _messageFromRow(rows.first);
+  }
+
+  /// 会话摘要(桌面/最近会话列表):每会话最后一条 + 未读数。
+  List<ConvSummary> conversationSummaries(String myDeviceId) {
+    final rows = _db.select('''
+      SELECT m.conv_id, m.kind, m.text, m.file_name, m.created_at_ms, m.sender_id
+      FROM messages m
+      WHERE m.lamport = (
+        SELECT MAX(l2.lamport) FROM messages l2 WHERE l2.conv_id = m.conv_id
+      )
+    ''');
+    final unread = <String, int>{};
+    for (final r in _db.select(
+        'SELECT conv_id, COUNT(*) AS c FROM messages '
+        'WHERE sender_id<>? AND read=0 GROUP BY conv_id',
+        [myDeviceId])) {
+      unread[r['conv_id'] as String] = r['c'] as int;
+    }
+    final out = rows.map((r) => ConvSummary(
+          convId: r['conv_id'] as String,
+          kind: r['kind'] as int,
+          text: r['text'] as String,
+          fileName: r['file_name'] as String?,
+          atMs: r['created_at_ms'] as int,
+          senderId: r['sender_id'] as String,
+          unread: unread[r['conv_id'] as String] ?? 0,
+        )).toList();
+    out.sort((a, b) => b.atMs.compareTo(a.atMs));
+    return out;
   }
 
   // ------------------------------------------------------------------- ops

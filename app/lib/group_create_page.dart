@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'chat_page.dart';
+import 'i18n.dart';
 import 'toast.dart';
 
 /// 新建群聊:群名 + 从已配对设备多选成员。
@@ -26,11 +27,11 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
   Future<void> _create() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      showToast('请输入群名', type: ToastType.error);
+      showToast(L10n.t('group.nameRequired'), type: ToastType.error);
       return;
     }
     if (_selected.isEmpty) {
-      showToast('请至少选择一名成员', type: ToastType.error);
+      showToast(L10n.t('group.memberRequired'), type: ToastType.error);
       return;
     }
     final group = widget.engine.createGroup(name, _selected.toList());
@@ -50,14 +51,14 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
   Widget build(BuildContext context) {
     final peers = widget.engine.peers;
     return Scaffold(
-      appBar: AppBar(title: const Text('新建群聊')),
+      appBar: AppBar(title: Text(L10n.t('group.create'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           TextField(
             controller: _nameCtrl,
             autofocus: true,
-            decoration: const InputDecoration(labelText: '群名称'),
+            decoration: InputDecoration(labelText: L10n.t('group.nameLabel')),
           ),
           const SizedBox(height: 16),
           Text('选择成员(${_selected.length}/${peers.length})',
@@ -89,7 +90,7 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
           FilledButton.icon(
             onPressed: _create,
             icon: const Icon(Icons.group_add_outlined),
-            label: const Text('创建群聊'),
+            label: Text(L10n.t('group.createBtn')),
           ),
         ],
       ),

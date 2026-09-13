@@ -15,6 +15,7 @@ import 'package:uuid/uuid.dart';
 
 import 'src/discovery/discovery.dart';
 import 'src/generated/littlelaw.pb.dart' as pb;
+import 'src/crypto/file_vault.dart';
 import 'src/identity/identity.dart';
 import 'src/net/upnp.dart';
 import 'src/oob/blob.dart';
@@ -36,8 +37,10 @@ export 'src/rendezvous/rendezvous.dart'
     show RendezvousClient, RendezvousSignal, RendezvousMail, RendezvousPeerOnline;
 export 'src/net/upnp.dart' show UpnpMapper;
 export 'src/pairing/pairing.dart' show PairRequestEvent, PairResult;
-export 'src/store/store.dart' show Message, Peer, Store, Group;
+export 'src/store/store.dart'
+    show Message, Peer, Store, Group, ConvSummary;
 export 'src/crypto/backup_codec.dart' show BackupCodec;
+export 'src/crypto/file_vault.dart' show FileVault;
 export 'src/sync/sync_engine.dart'
     show
         EngineEvent,
@@ -120,6 +123,7 @@ class LittleLawEngine {
     bool autoAcceptFiles = true,
     String? rendezvousUrl,
     bool upnpEnabled = false,
+    bool encryptFilesAtRest = false,
   }) async {
     final identity = await Identity.loadOrCreate(dataDir,
         deviceName: deviceName, deviceModel: deviceModel);
@@ -134,12 +138,16 @@ class LittleLawEngine {
       store: store,
       grpcPort: grpcPort,
     );
+    // 落盘加密(可选):收到的文件以密文按设备/类型分目录存放。
+    final vault =
+        encryptFilesAtRest ? await FileVault.open(dataDir) : null;
     final transfer = TransferManager(
       identity: identity,
       store: store,
       sync: sync,
       inboxDir: '$dataDir/inbox',
       autoAcceptFiles: autoAcceptFiles,
+      vault: vault,
     );
 
     Server server;
@@ -237,6 +245,8 @@ class LittleLawEngine {
     // 先关闭全部通道(客户端 + 服务端流),再关停 server,避免挂起。
     await sync.dispose();
     await transfer.dispose();
+    // 清理文件解密缓存。
+    await vault?.clearCache();
     await pairing.dispose();
     await _server.shutdown().timeout(
       const Duration(seconds: 5),
@@ -443,6 +453,24 @@ class LittleLawEngine {
 
   /// SQLite WAL 落盘(备份前调用)。
   void checkpointDb() => store.checkpoint();
+
+  /// 文件落盘加密(encryptFilesAtRest 开启时非空)。
+  FileVault? get vault => transfer.vault;
+
+  /// 解密消息附件到缓存并返回明文路径(查看/打开/分享用)。
+  /// 未启用加密时直接返回原路径。
+  Future<String> plaintextPathFor(Message msg) async {
+    final p = msg.filePath;
+    final v = vault;
+    if (p == null) throw StateError('file not downloaded');
+    if (v == null || !p.endsWith(FileVault.encExt)) return p;
+    return v.decryptToCache(p, 'msg-${msg.msgId}-'
+        '${p.split(Platform.pathSeparator).last}');
+  }
+
+  /// 解锁回执计数入口(UI 刷新会话未读徽标用)。
+  List<ConvSummary> conversationSummaries() =>
+      store.conversationSummaries(identity.deviceId);
 
   // ------------------------------------------------------------ 群聊
 

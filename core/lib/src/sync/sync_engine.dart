@@ -658,9 +658,15 @@ class SyncEngine extends pbg.SyncServiceBase {
     final set = _sinks[peerId];
     final hasLive = set != null && set.isNotEmpty;
     if (hasLive) {
-      for (final sink in Set.of(set)) {
+      // 同一设备可能有双向两条链路(我方连出 + 对方连入):
+      // 每个信封只投递一条,避免有状态信封(文件帧/拉取)被重复处理;
+      // 优先最新注册的链路(对端重连后新链路后注册,旧链路拆除存在竞态窗口),
+      // 加不进去(已关闭)则退回次新。
+      final sinks = set.toList();
+      for (final sink in sinks.reversed) {
         try {
           sink.add(env);
+          return;
         } catch (_) {}
       }
       return;

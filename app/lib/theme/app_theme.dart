@@ -97,6 +97,9 @@ class ThemeController extends ChangeNotifier {
     await prefs.setInt(_keyMode, mode.index);
   }
 
+  /// 强制全局重建(语言切换等非主题状态变化时复用此通知)。
+  void refresh() => notifyListeners();
+
   ThemeData light() => AppThemeFactory.build(_skin, Brightness.light);
   ThemeData dark() => AppThemeFactory.build(_skin, Brightness.dark);
 }

@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../generated/littlelaw.pb.dart' as pb;
 import '../generated/littlelaw.pbgrpc.dart' as pbg;
+import '../crypto/file_vault.dart';
 import '../identity/identity.dart';
 import '../store/store.dart';
 import '../sync/sync_engine.dart';
@@ -62,12 +63,16 @@ class TransferManager extends pbg.TransferServiceBase {
     required this.inboxDir,
     this.chunkSize = 1 << 20, // 1 MiB
     this.autoAcceptFiles = true,
+    this.vault,
   });
 
   final Identity identity;
   final Store store;
   final SyncEngine sync;
   final String inboxDir;
+
+  /// 落盘加密(非空时收到的文件以 .llenc 密文存放,按设备/类型分目录)。
+  final FileVault? vault;
 
   /// 单帧大小(gRPC 数据面)。
   final int chunkSize;
@@ -211,6 +216,49 @@ class TransferManager extends pbg.TransferServiceBase {
 
   // ------------------------------------------------------------ 接收侧
 
+  /// 收件最终路径:按来源(对方设备/群)+ 类型分子目录。
+  /// 结构:<inbox>/<设备名_ab12cd>/images|videos|voice|files/<文件名>。
+  String _folderFor(Message msg) {
+    String owner;
+    if (msg.convId.startsWith('g:')) {
+      final group = store.getGroup(msg.convId.substring(2));
+      owner = 'group-${_sanitize(group?.name ?? msg.convId.substring(2))}';
+    } else {
+      // 1:1:convId = 'devA:devB',取不是我的那段。
+      final parts = msg.convId.split(':');
+      final other = (parts.length > 1 && parts.first == identity.deviceId)
+          ? parts.last
+          : parts.first;
+      final peer = store.getPeer(other);
+      owner =
+          '${_sanitize(peer?.deviceName ?? 'peer')}_${other.length >= 6 ? other.substring(0, 6) : other}';
+    }
+    final type = switch (msg.kind) {
+      Message.kindImage => 'images',
+      Message.kindVideo => 'videos',
+      Message.kindVoice => 'voice',
+      _ => 'files',
+    };
+    return '$owner/$type';
+  }
+
+  static String _sanitize(String name) {
+    final cleaned = name
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), '_')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final safe = cleaned.isEmpty ? 'peer' : cleaned;
+    return safe.length > 40 ? safe.substring(0, 40) : safe;
+  }
+
+  Future<String> _finalPathFor(Message msg) async {
+    final sub = _folderFor(msg);
+    final path = '$inboxDir/$sub/${msg.fileName ?? msg.fileId}';
+    // 子目录可能首次出现,确保存在(rename 目标父目录缺失会抛错)。
+    await File(path).parent.create(recursive: true);
+    return _dedupePath(path);
+  }
+
   /// 拉取对端文件(可重复调用,断点续传)。
   /// 群消息自动启用多源:发送者失败时改从其他在线成员拉取。
   Future<void> receiveFile(String peerId, Message msg) async {
@@ -265,7 +313,7 @@ class TransferManager extends pbg.TransferServiceBase {
     }
 
     final partPath = '$inboxDir/$fileId.part';
-    final finalPath = await _dedupePath('$inboxDir/${msg.fileName ?? fileId}');
+    final finalPath = await _finalPathFor(msg);
     final partFile = File(partPath);
     var offset = await partFile.exists() ? await partFile.length() : 0;
 
@@ -321,19 +369,7 @@ class TransferManager extends pbg.TransferServiceBase {
         _fail(msg, peerId, 'sha256 mismatch');
         return;
       }
-      await partFile.rename(finalPath);
-      store.updateFileState(msg.msgId, Message.fileStateDone,
-          filePath: finalPath);
-      _emit(TransferProgress(
-        fileId: fileId,
-        msgId: msg.msgId,
-        peerId: peerId,
-        fileName: msg.fileName ?? fileId,
-        totalBytes: msg.fileSize ?? received,
-        doneBytes: received,
-        direction: TransferProgress.directionReceive,
-        state: TransferProgress.stateDone,
-      ));
+      await _finishReceive(partFile, finalPath, msg, peerId, received);
     } on _TransferCancelled {
       await sink?.close();
       store.updateFileState(msg.msgId, Message.fileStatePending);
@@ -362,7 +398,7 @@ class TransferManager extends pbg.TransferServiceBase {
   Future<void> _doReceiveViaEnvelope(String peerId, Message msg) async {
     final fileId = msg.fileId!;
     final partPath = '$inboxDir/$fileId.part';
-    final finalPath = await _dedupePath('$inboxDir/${msg.fileName ?? fileId}');
+    final finalPath = await _finalPathFor(msg);
     final partFile = File(partPath);
     final offset = await partFile.exists() ? await partFile.length() : 0;
 
@@ -421,19 +457,7 @@ class TransferManager extends pbg.TransferServiceBase {
         _fail(msg, peerId, 'sha256 mismatch');
         return;
       }
-      await partFile.rename(finalPath);
-      store.updateFileState(msg.msgId, Message.fileStateDone,
-          filePath: finalPath);
-      _emit(TransferProgress(
-        fileId: fileId,
-        msgId: msg.msgId,
-        peerId: peerId,
-        fileName: msg.fileName ?? fileId,
-        totalBytes: msg.fileSize ?? received,
-        doneBytes: received,
-        direction: TransferProgress.directionReceive,
-        state: TransferProgress.stateDone,
-      ));
+      await _finishReceive(partFile, finalPath, msg, peerId, received);
     } on _TransferCancelled {
       await sink?.close();
       store.updateFileState(msg.msgId, Message.fileStatePending);
@@ -450,8 +474,9 @@ class TransferManager extends pbg.TransferServiceBase {
   /// 响应对端的信封式拉取请求(发送侧):按窗口(8 帧)节奏分帧发送,
   /// 带背压——慢链路不会撑爆缓冲;ACK 超时即中止(接收方可断点重试)。
   Future<void> _serveEnvelopeFetch(FileFetchRequested req) async {
-    final path = _sendSources[req.fileId] ?? _findSentFile(req.fileId);
-    if (path == null) return;
+    final rawPath = _sendSources[req.fileId] ?? _findSentFile(req.fileId);
+    if (rawPath == null) return;
+    final path = await _plaintextFor(rawPath);
     final file = File(path);
     if (!await file.exists()) return;
 
@@ -538,6 +563,42 @@ class TransferManager extends pbg.TransferServiceBase {
     ));
   }
 
+  /// 接收完成:有 vault 时加密落盘(.llenc,明文 .part 删除),
+  /// 否则直接改名到最终路径。filePath 记录实际存放路径。
+  Future<void> _finishReceive(
+      File partFile, String finalPath, Message msg, String peerId, int received) async {
+    String storedPath;
+    if (vault != null) {
+      storedPath = await vault!.encryptFile(partFile.path,
+          outPath: '$finalPath${FileVault.encExt}');
+    } else {
+      await partFile.rename(finalPath);
+      storedPath = finalPath;
+    }
+    store.updateFileState(msg.msgId, Message.fileStateDone,
+        filePath: storedPath);
+    _emit(TransferProgress(
+      fileId: msg.fileId ?? '',
+      msgId: msg.msgId,
+      peerId: peerId,
+      fileName: msg.fileName ?? '',
+      totalBytes: msg.fileSize ?? received,
+      doneBytes: received,
+      direction: TransferProgress.directionReceive,
+      state: TransferProgress.stateDone,
+    ));
+  }
+
+  /// 供源侧:密文文件 → 解密缓存明文(给 FetchFile/信封数据面读)。
+  Future<String> _plaintextFor(String path) async {
+    if (vault == null || !path.endsWith(FileVault.encExt)) return path;
+    final base = path
+        .split(Platform.pathSeparator)
+        .last
+        .replaceAll(FileVault.encExt, '');
+    return vault!.decryptToCache(path, 'srv-${path.hashCode}-$base');
+  }
+
   // ------------------------------------------------------------ 服务端
 
   @override
@@ -549,7 +610,9 @@ class TransferManager extends pbg.TransferServiceBase {
     if (path == null) {
       throw GrpcError.notFound('unknown file_id');
     }
-    final file = File(path);
+    // 密文文件先解到缓存再供源。
+    final servePath = await _plaintextFor(path);
+    final file = File(servePath);
     if (!await file.exists()) {
       throw GrpcError.failedPrecondition('file no longer exists');
     }

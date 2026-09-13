@@ -58,6 +58,8 @@ dependencies:
   desktop_drop: ^0.8.4
   archive: ^4.2.0
   crypto: ^3.0.7
+  flutter_localizations:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:

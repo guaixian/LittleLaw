@@ -3,6 +3,7 @@ import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'chat_page.dart';
 import 'globals.dart';
+import 'i18n.dart';
 import 'toast.dart';
 
 /// 转发选择器:把内容(text / 文件,可多个)发到某个会话(1:1 或群)。
@@ -109,7 +110,7 @@ class _ForwardSheet extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.all(12),
-          child: Text('发送到…',
+          child: Text(L10n.t('forward.title'),
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         ),
         for (final g in groups)
@@ -143,9 +144,9 @@ class _ForwardSheet extends StatelessWidget {
             onTap: () => _sendTo(p.deviceId, isGroup: false),
           ),
         if (peers.isEmpty && groups.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: Text('还没有配对设备或群聊')),
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(child: Text(L10n.t('forward.empty'))),
           ),
       ],
     );
