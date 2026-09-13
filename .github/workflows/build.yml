@@ -24,7 +24,8 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libsqlite3-0
       # rendezvous 集成测试需要服务器二进制
       - run: cd server && go build -o rendezvous.exe .
-      - run: dart test
+      # 多引擎 e2e 并行会抢端口/资源,串行稳定。
+      - run: dart test --concurrency=1
         working-directory: core
 
   # ------------------------------------------------ 中转服务器(可选组件)
