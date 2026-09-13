@@ -1,6 +1,8 @@
 #ifndef RUNNER_FLUTTER_WINDOW_H_
 #define RUNNER_FLUTTER_WINDOW_H_
 
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 
@@ -28,6 +30,11 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // 分享通道(文本/文件入剪贴板 + 读剪贴板图片)。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      share_channel_;
+  void RegisterShareChannel();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

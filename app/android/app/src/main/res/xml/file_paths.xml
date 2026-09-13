@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 对外分享的文件可见范围:应用数据目录 + 缓存 + 公共存储,覆盖
+     收件箱文件与 file_picker 选中的原始文件。 -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="files" path="."/>
+    <cache-path name="cache" path="."/>
+    <external-files-path name="external_files" path="."/>
+    <external-cache-path name="external_cache" path="."/>
+    <external-path name="external" path="."/>
+</paths>

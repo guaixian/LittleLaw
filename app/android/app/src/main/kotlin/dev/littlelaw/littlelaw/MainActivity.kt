@@ -12,6 +12,8 @@ import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -78,6 +80,42 @@ class MainActivity : FlutterActivity() {
                 "getInitialShare" -> {
                     result.success(initialShare)
                     initialShare = null
+                }
+                // ---- 对外分享:拉起系统分享面板(微信/QQ/飞书等) ----
+                "shareText" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    if (text.isEmpty()) {
+                        result.error("ARG", "text required", null)
+                    } else {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, text)
+                        }
+                        startActivity(Intent.createChooser(send, "分享到"))
+                        result.success(true)
+                    }
+                }
+                "shareFile" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    try {
+                        val file = File(path)
+                        val uri = FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", file)
+                        val ext = file.extension.lowercase()
+                        val mime =
+                            MimeTypeMap.getSingleton()
+                                .getMimeTypeFromExtension(ext) ?: "*/*"
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = mime
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(
+                            Intent.createChooser(send, "分享到"))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SHARE", e.message, null)
+                    }
                 }
                 else -> result.notImplemented()
             }

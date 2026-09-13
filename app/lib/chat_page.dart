@@ -13,8 +13,10 @@ import 'package:record/record.dart';
 import 'media_viewers.dart';
 import 'globals.dart';
 import 'call_page.dart';
+import 'forward_picker.dart';
 import 'group_info_page.dart';
 import 'remote_pair_page.dart';
+import 'share_out.dart';
 import 'theme/app_theme.dart';
 
 /// 聊天页:气泡消息、长按/右键菜单、多选删除、图片/视频内联显示、
@@ -254,6 +256,28 @@ class _ChatPageState extends State<ChatPage> {
     widget.engine.setReaction(_convKey, m.msgId, mine == emoji ? '' : emoji);
   }
 
+  // ------------------------------------------------------------ 粘贴发送
+
+  /// 粘贴板内容进会话:剪贴板有图片(Windows 截图等)直接发图,
+  /// 否则有文本则填入输入框。
+  Future<void> _pasteAndSend() async {
+    final imagePath = await ShareOut.clipboardImagePath();
+    if (imagePath != null) {
+      await _sendPath(imagePath);
+      return;
+    }
+    final data = await Clipboard.getData('text/plain');
+    final text = data?.text;
+    if (text != null && text.isNotEmpty) {
+      setState(() => _input.text = text);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('剪贴板没有可发送的内容')));
+      }
+    }
+  }
+
   void _showAttachSheet() {
     setState(() => _attachOpen = !_attachOpen);
   }
@@ -280,6 +304,7 @@ class _ChatPageState extends State<ChatPage> {
               () => _pickAndSend(FileType.any)),
           _attachAction(Icons.content_paste_go_outlined, '剪贴板',
               _sendClipboard),
+          _attachAction(Icons.content_paste_outlined, '粘贴发送', _pasteAndSend),
         ],
       ),
     );
@@ -432,6 +457,40 @@ class _ChatPageState extends State<ChatPage> {
               onTap: () {
                 Navigator.of(ctx).pop();
                 _toggleSelect(m.msgId);
+              },
+            ),
+            // 转发到其他会话(群/1:1)。
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.shortcut_outlined),
+              title: const Text('转发'),
+              enabled: m.kind == Message.kindText ||
+                  (Message.hasFilePayload(m.kind) &&
+                      m.fileState == Message.fileStateDone),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                if (m.kind == Message.kindText) {
+                  showForwardPicker(widget.engine, text: m.text);
+                } else if (m.filePath != null) {
+                  showForwardPicker(widget.engine, filePath: m.filePath);
+                }
+              },
+            ),
+            // 分享到系统面板 / 剪贴板(微信、QQ、飞书等)。
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.ios_share),
+              title: const Text('分享到其他应用'),
+              enabled: m.kind == Message.kindText ||
+                  (Message.hasFilePayload(m.kind) &&
+                      m.fileState == Message.fileStateDone),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                if (m.kind == Message.kindText) {
+                  ShareOut.shareText(m.text);
+                } else if (m.filePath != null) {
+                  ShareOut.shareFile(m.filePath!);
+                }
               },
             ),
             ListTile(

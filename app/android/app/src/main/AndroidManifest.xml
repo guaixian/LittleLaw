@@ -71,6 +71,17 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- 对外分享文件:微信/QQ/飞书等经 FileProvider 读到文件 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
+
         <!-- NFC HCE 一碰配对服务(模拟 NDEF 标签) -->
         <service
             android:name=".LittleLawHceService"
