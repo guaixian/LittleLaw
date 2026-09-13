@@ -6,6 +6,7 @@ import 'package:littlelaw_core/littlelaw_core.dart';
 import 'chat_page.dart';
 import 'globals.dart';
 import 'group_create_page.dart';
+import 'group_info_page.dart';
 import 'i18n.dart';
 import 'main.dart' show ConnectPage, ProfilePage;
 import 'search_page.dart';
@@ -165,29 +166,9 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           const SizedBox(height: 14),
           item(Icons.forum_outlined, L10n.t('nav.chats'), 0),
           item(Icons.hub_outlined, L10n.t('nav.connect'), 1),
-          item(Icons.settings_outlined, L10n.t('nav.settings'), 2),
           const Spacer(),
-          // 搜索:弹独立窗口页(不占栏)。
-          Tooltip(
-            message: L10n.t('common.search'),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => SearchPage(engine: engine),
-              )),
-              child: Container(
-                width: 44,
-                height: 44,
-                margin: const EdgeInsets.symmetric(vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(Icons.search,
-                    size: 22, color: scheme.onSurfaceVariant),
-              ),
-            ),
-          ),
+          // 设置固定在图标栏底部(搜索入口在会话列表头部)。
+          item(Icons.settings_outlined, L10n.t('nav.settings'), 2),
           const SizedBox(height: 12),
         ],
       ),
@@ -304,6 +285,8 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
         _tab = 0;
         _activeKey = e.key;
       }),
+      onLongPress: () => _convMenu(e),
+      onSecondaryTapDown: (d) => _convMenu(e, position: d.globalPosition),
       child: Container(
         color: selected
             ? scheme.primaryContainer.withValues(alpha: 0.45)
@@ -400,6 +383,136 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
     final sameDay =
         t.year == now.year && t.month == now.month && t.day == now.day;
     return sameDay ? '${two(t.hour)}:${two(t.minute)}' : '${t.month}/${t.day}';
+  }
+
+  // ------------------------------------------------------------ 会话菜单
+
+  /// 右键/长按会话:清空记录(双端);群聊另有退出/群资料。
+  void _convMenu(_ConvEntry e, {Offset? position}) {
+    if (e.isGroup) {
+      final g = engine.groupById(e.key);
+      if (g == null) return;
+      if (position == null) {
+        // 移动端:底部动作面板。
+        showModalBottomSheet<void>(
+          context: context,
+          builder: (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: Text(L10n.t('group.info')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) =>
+                          GroupInfoPage(engine: engine, groupId: e.key),
+                    ));
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_sweep_outlined),
+                  title: Text(L10n.t('chat.clearAll')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _confirmClear(e);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.logout_outlined),
+                  title: Text(L10n.t('group.leave')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    engine.leaveGroup(e.key);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+        return;
+      }
+      _popupMenu(e, position);
+      return;
+    }
+    if (position == null) {
+      showModalBottomSheet<void>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: ListTile(
+            leading: const Icon(Icons.delete_sweep_outlined),
+            title: Text(L10n.t('chat.clearAll')),
+            onTap: () {
+              Navigator.pop(ctx);
+              _confirmClear(e);
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    _popupMenu(e, position);
+  }
+
+  void _popupMenu(_ConvEntry e, Offset position) {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(position.dx, position.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        if (e.isGroup)
+          const PopupMenuItem(
+              value: 'info', child: Text('群资料')),
+        PopupMenuItem(
+            value: 'clear', child: Text(L10n.t('chat.clearAll'))),
+        if (e.isGroup)
+          PopupMenuItem(
+              value: 'leave', child: Text(L10n.t('group.leave'))),
+      ],
+    ).then((v) {
+      if (!mounted || v == null) return;
+      switch (v) {
+        case 'info':
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => GroupInfoPage(engine: engine, groupId: e.key),
+          ));
+        case 'clear':
+          _confirmClear(e);
+        case 'leave':
+          engine.leaveGroup(e.key);
+          if (_activeKey == e.key) setState(() => _activeKey = null);
+      }
+    });
+  }
+
+  Future<void> _confirmClear(_ConvEntry e) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(L10n.t('chat.clearAll')),
+        content: Text(L10n.t('chat.clearConfirm')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(L10n.t('common.cancel'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(L10n.t('chat.deleteForAll'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (e.isGroup) {
+      await engine.deleteGroupMessages(e.key, const [], clearAll: true);
+    } else {
+      await engine.deleteMessages(e.key, const [], clearAll: true);
+    }
+    if (_activeKey == e.key) setState(() => _activeKey = null);
   }
 
   // ------------------------------------------------------------ 右栏
