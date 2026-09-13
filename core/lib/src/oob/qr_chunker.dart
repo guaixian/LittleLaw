@@ -29,7 +29,8 @@ class QrChunker {
 
   /// 解析帧头。非分片帧返回 null。
   static ({int total, int seq, String payload})? parseFrame(String text) {
-    final t = text.trim();
+    // base45 载荷可能含空格,只剥换行类空白。
+    final t = text.replaceAll(RegExp(r'[\r\n\t]'), '');
     if (!t.startsWith(framePrefix)) return null;
     final rest = t.substring(framePrefix.length);
     final dot1 = rest.indexOf('.');

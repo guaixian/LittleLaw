@@ -97,14 +97,17 @@ class OobBlob {
   }
 
   /// 解码并校验(兼容 LLB3 / LLB2 / LLB1)。格式非法抛 [FormatException]。
+  ///
+  /// 注意:base45 字母表含空格,只剥离换行类空白,绝不能 trim()
+  /// (否则结尾为空格的合法载荷会被截断)。
   static OobBlob decode(String encoded) {
-    final text = encoded.trim();
+    final text = encoded.replaceAll(RegExp(r'[\r\n\t]'), '');
     List<int> jsonBytes;
     if (text.startsWith('LLB3.')) {
       try {
         jsonBytes = lzma.decode(Base45.decode(text.substring(5)));
-      } catch (_) {
-        throw const FormatException('引导包内容损坏(lzma 解压失败)');
+      } catch (e) {
+        throw FormatException('blob decode failed: $e');
       }
     } else if (text.startsWith('LLB2.')) {
       try {

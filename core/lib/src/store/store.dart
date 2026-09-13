@@ -104,6 +104,24 @@ class Op {
   final Uint8List payload; // protobuf 序列化的 ChatMessage / ChatDeleted
 }
 
+/// 群聊。
+class Group {
+  Group({
+    required this.id,
+    required this.name,
+    required this.createdAtMs,
+    required this.memberIds,
+  });
+
+  final String id;
+  String name;
+  final int createdAtMs;
+  final List<String> memberIds; // 全部成员设备 ID(含创建者本机)
+
+  /// 会话 ID(消息表用)。
+  static String convIdOf(String groupId) => 'g:$groupId';
+}
+
 /// SQLite 持久层。同步协议见 sync_engine.dart。
 class Store {
   late final Database _db;
@@ -168,6 +186,17 @@ class Store {
         payload BLOB NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_ops_peer ON ops(peer_id, seq);
+
+      CREATE TABLE IF NOT EXISTS groups (
+        group_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS group_members (
+        group_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        PRIMARY KEY (group_id, device_id)
+      );
     ''');
     // 轻量迁移:老库补列(已存在则忽略报错)。
     try {
@@ -402,4 +431,61 @@ class Store {
   void compactOps(String peerId, int ackedSeq) {
     _db.execute('DELETE FROM ops WHERE peer_id=? AND seq<=?', [peerId, ackedSeq]);
   }
+
+  // ---------------------------------------------------------------- groups
+
+  void insertGroup(Group g) {
+    _db.execute('INSERT OR REPLACE INTO groups (group_id, name, created_at_ms) VALUES (?,?,?)',
+        [g.id, g.name, g.createdAtMs]);
+    _db.execute('DELETE FROM group_members WHERE group_id=?', [g.id]);
+    for (final m in g.memberIds) {
+      _db.execute('INSERT OR IGNORE INTO group_members (group_id, device_id) VALUES (?,?)',
+          [g.id, m]);
+    }
+  }
+
+  List<Group> allGroups() {
+    final rows = _db.select('SELECT * FROM groups ORDER BY created_at_ms DESC');
+    return rows.map((r) {
+      final gid = r['group_id'] as String;
+      final members = _db
+          .select('SELECT device_id FROM group_members WHERE group_id=?', [gid])
+          .map((m) => m['device_id'] as String)
+          .toList();
+      return Group(
+        id: gid,
+        name: r['name'] as String,
+        createdAtMs: r['created_at_ms'] as int,
+        memberIds: members,
+      );
+    }).toList();
+  }
+
+  Group? getGroup(String groupId) {
+    final rows = _db.select('SELECT * FROM groups WHERE group_id=?', [groupId]);
+    if (rows.isEmpty) return null;
+    final members = _db
+        .select('SELECT device_id FROM group_members WHERE group_id=?', [groupId])
+        .map((m) => m['device_id'] as String)
+        .toList();
+    final r = rows.first;
+    return Group(
+      id: groupId,
+      name: r['name'] as String,
+      createdAtMs: r['created_at_ms'] as int,
+      memberIds: members,
+    );
+  }
+
+  /// 群成员(不含本机)。
+  List<String> groupRecipients(String groupId) {
+    final g = getGroup(groupId);
+    if (g == null) return const [];
+    return g.memberIds.where((id) => id != _dbSelfId).toList();
+  }
+
+  late String _dbSelfId;
+
+  /// 引擎启动时注入本机设备 ID(群收件人过滤用)。
+  set selfDeviceId(String id) => _dbSelfId = id;
 }

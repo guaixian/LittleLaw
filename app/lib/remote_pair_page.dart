@@ -120,7 +120,7 @@ class _RemotePairPageState extends State<RemotePairPage> {
       _lastError = null;
     });
     try {
-      final peer = await widget.rtc.acceptAnswer(text.trim());
+      final peer = await widget.rtc.acceptAnswer(_stripNl(text));
       _setStatus('已与 ${peer.deviceName} 配对,链路建立中(数秒)…');
       showToast('已与 ${peer.deviceName} 配对', type: ToastType.success);
       _pasteCtrl.clear();
@@ -146,7 +146,7 @@ class _RemotePairPageState extends State<RemotePairPage> {
       _lastError = null;
     });
     try {
-      final answer = await widget.rtc.joinInvite(text.trim());
+      final answer = await widget.rtc.joinInvite(_stripNl(text));
       _pasteCtrl.clear();
       if (answer.isEmpty) {
         _setStatus('已配对!应答已自动回传给邀请方,链路建立中…');
@@ -182,7 +182,7 @@ class _RemotePairPageState extends State<RemotePairPage> {
     try {
       final files = await FilePicker.pickFiles();
       if (files.isEmpty) return;
-      final text = utf8.decode(await files.single.readAsBytes()).trim();
+      final text = utf8.decode(await files.single.readAsBytes());
       if (text.isEmpty) {
         showToast('文件内容为空', type: ToastType.error);
         return;
@@ -192,6 +192,9 @@ class _RemotePairPageState extends State<RemotePairPage> {
       _reportError('导入文件无效', e);
     }
   }
+
+  /// 输入净化:只剥换行类空白(base45 载荷可含空格,不能 trim)。
+  static String _stripNl(String s) => s.replaceAll(RegExp(r'[\r\n\t]'), '');
 
   /// 跳回主页并进入与指定设备的聊天页。
   void _gotoChat(String peerId) {
@@ -399,12 +402,12 @@ class _RemotePairPageState extends State<RemotePairPage> {
               icon: const Icon(Icons.content_paste),
             ),
           ),
-          onSubmitted: _busy ? null : (v) => _routeIncoming(v.trim()),
+          onSubmitted: _busy ? null : (v) => _routeIncoming(v),
         ),
         const SizedBox(height: 10),
         FilledButton.tonalIcon(
           onPressed:
-              _busy ? null : () => _routeIncoming(_pasteCtrl.text.trim()),
+              _busy ? null : () => _routeIncoming(_pasteCtrl.text),
           icon: const Icon(Icons.login),
           label: const Text('确认加入'),
         ),

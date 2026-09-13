@@ -122,6 +122,47 @@ class TransferManager extends pbg.TransferServiceBase {
 
   // ------------------------------------------------------------ 发送侧
 
+  /// 发送群文件:元数据扇出给全体成员,各成员向本机拉取文件本体。
+  Future<Message> sendGroupFileTo(String groupId, String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw ArgumentError('file not found: $filePath');
+    }
+    final size = await file.length();
+    final fileId = const Uuid().v4();
+    final hash = await _sha256OfFile(file);
+    _sendSources[fileId] = filePath;
+
+    final convId = Group.convIdOf(groupId);
+    final msgId = const Uuid().v4();
+    final msgKind = _kindForPath(filePath);
+    final chatMsg = pb.ChatMessage(
+      msgId: msgId,
+      lamport: Int64(store.nextLamport(convId)),
+      createdAtMs: Int64(DateTime.now().millisecondsSinceEpoch),
+      kind: msgKind,
+      fileId: fileId,
+      fileName: file.uri.pathSegments.last,
+      fileSize: Int64(size),
+      fileSha256: hash,
+      groupId: groupId,
+    );
+    final msg = await sync.commitGroupFileMessage(groupId, chatMsg);
+    // 本端直接标记完成(源文件在本机)。
+    store.updateFileState(msgId, Message.fileStateDone, filePath: filePath);
+    _emit(TransferProgress(
+      fileId: fileId,
+      msgId: msgId,
+      peerId: groupId,
+      fileName: chatMsg.fileName,
+      totalBytes: size,
+      doneBytes: size,
+      direction: TransferProgress.directionSend,
+      state: TransferProgress.stateDone,
+    ));
+    return msg;
+  }
+
   /// 发送文件:提交文件消息(同步到对端),之后等对端来拉取。
   /// [kind] 缺省按扩展名识别:图片/视频/普通文件。
   Future<Message> sendFileTo(String peerId, String filePath, {int? kind}) async {

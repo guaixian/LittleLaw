@@ -34,7 +34,8 @@ class LanOobPayload {
   }
 
   static LanOobPayload decode(String encoded) {
-    final text = encoded.trim();
+    // base45 载荷可能含空格,只剥换行类空白。
+    final text = encoded.replaceAll(RegExp(r'[\r\n\t]'), '');
     if (!text.startsWith('LLT1.')) {
       throw const FormatException('不是 LittleLaw 局域网载荷(缺少 LLT1 前缀)');
     }

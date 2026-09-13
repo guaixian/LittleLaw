@@ -1853,6 +1853,7 @@ class ChatMessage extends $pb.GeneratedMessage {
     $core.String? fileSha256,
     $core.String? convPeer,
     $core.String? sender,
+    $core.String? groupId,
   }) {
     final result = create();
     if (msgId != null) result.msgId = msgId;
@@ -1867,6 +1868,7 @@ class ChatMessage extends $pb.GeneratedMessage {
     if (fileSha256 != null) result.fileSha256 = fileSha256;
     if (convPeer != null) result.convPeer = convPeer;
     if (sender != null) result.sender = sender;
+    if (groupId != null) result.groupId = groupId;
     return result;
   }
 
@@ -1895,6 +1897,7 @@ class ChatMessage extends $pb.GeneratedMessage {
     ..aOS(10, _omitFieldNames ? '' : 'fileSha256')
     ..aOS(11, _omitFieldNames ? '' : 'convPeer')
     ..aOS(12, _omitFieldNames ? '' : 'sender')
+    ..aOS(13, _omitFieldNames ? '' : 'groupId')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2024,6 +2027,15 @@ class ChatMessage extends $pb.GeneratedMessage {
   $core.bool hasSender() => $_has(11);
   @$pb.TagNumber(12)
   void clearSender() => $_clearField(12);
+
+  @$pb.TagNumber(13)
+  $core.String get groupId => $_getSZ(12);
+  @$pb.TagNumber(13)
+  set groupId($core.String value) => $_setString(12, value);
+  @$pb.TagNumber(13)
+  $core.bool hasGroupId() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearGroupId() => $_clearField(13);
 }
 
 /// 删除操作(墓碑)。Telegram 模式:一端删除,另一端同步硬删除。
@@ -2034,12 +2046,14 @@ class ChatDeleted extends $pb.GeneratedMessage {
     $core.Iterable<$core.String>? msgIds,
     $core.bool? clearAll,
     $core.String? convPeer,
+    $core.String? groupId,
   }) {
     final result = create();
     if (opSeq != null) result.opSeq = opSeq;
     if (msgIds != null) result.msgIds.addAll(msgIds);
     if (clearAll != null) result.clearAll = clearAll;
     if (convPeer != null) result.convPeer = convPeer;
+    if (groupId != null) result.groupId = groupId;
     return result;
   }
 
@@ -2060,6 +2074,7 @@ class ChatDeleted extends $pb.GeneratedMessage {
     ..pPS(2, _omitFieldNames ? '' : 'msgIds')
     ..aOB(3, _omitFieldNames ? '' : 'clearAll')
     ..aOS(4, _omitFieldNames ? '' : 'convPeer')
+    ..aOS(5, _omitFieldNames ? '' : 'groupId')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2110,6 +2125,15 @@ class ChatDeleted extends $pb.GeneratedMessage {
   $core.bool hasConvPeer() => $_has(3);
   @$pb.TagNumber(4)
   void clearConvPeer() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get groupId => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set groupId($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasGroupId() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearGroupId() => $_clearField(5);
 }
 
 /// 剪贴板同步(小文本直接走消息通道;图片等大内容走文件通道)。

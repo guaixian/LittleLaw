@@ -10,8 +10,8 @@ library littlelaw_core;
 
 import 'dart:async';
 import 'dart:io';
-
 import 'package:grpc/grpc.dart';
+import 'package:uuid/uuid.dart';
 
 import 'src/discovery/discovery.dart';
 import 'src/generated/littlelaw.pb.dart' as pb;
@@ -36,7 +36,7 @@ export 'src/rendezvous/rendezvous.dart'
     show RendezvousClient, RendezvousSignal, RendezvousMail, RendezvousPeerOnline;
 export 'src/net/upnp.dart' show UpnpMapper;
 export 'src/pairing/pairing.dart' show PairRequestEvent, PairResult;
-export 'src/store/store.dart' show Message, Peer, Store;
+export 'src/store/store.dart' show Message, Peer, Store, Group;
 export 'src/sync/sync_engine.dart'
     show
         EngineEvent,
@@ -113,7 +113,9 @@ class LittleLawEngine {
 
     final store = Store()..open('$dataDir/littlelaw.db');
 
-    final sync = SyncEngine(identity: identity, store: store);
+      // 引擎注入本机 ID(群收件人过滤)。
+      store.selfDeviceId = identity.deviceId;
+      final sync = SyncEngine(identity: identity, store: store);
     final pairing = PairingManager(
       identity: identity,
       store: store,
@@ -423,4 +425,40 @@ class LittleLawEngine {
 
   /// 本机收件箱目录。
   String get inboxDir => '$dataDir/inbox';
+
+  // ------------------------------------------------------------ 群聊
+
+  /// 创建群(成员含本机自动加入)。
+  Group createGroup(String name, List<String> memberDeviceIds) {
+    final id = const Uuid().v4();
+    final group = Group(
+      id: id,
+      name: name,
+      createdAtMs: DateTime.now().millisecondsSinceEpoch,
+      memberIds: [identity.deviceId, ...memberDeviceIds],
+    );
+    store.insertGroup(group);
+    return group;
+  }
+
+  List<Group> get groups => store.allGroups();
+
+  Group? groupById(String groupId) => store.getGroup(groupId);
+
+  Future<Message> sendGroupText(String groupId, String text) =>
+      sync.sendGroupText(groupId, text);
+
+  Future<Message> sendGroupFile(String groupId, String filePath) =>
+      transfer.sendGroupFileTo(groupId, filePath);
+
+  Future<void> deleteGroupMessages(String groupId, List<String> msgIds,
+          {bool clearAll = false}) =>
+      sync.deleteGroupMessages(groupId, msgIds, clearAll: clearAll);
+
+  List<Message> loadGroupMessages(String groupId,
+          {int limit = 200, int? beforeLamport}) =>
+      store.listMessages(Group.convIdOf(groupId),
+          limit: limit, beforeLamport: beforeLamport);
+
+  String groupConvId(String groupId) => Group.convIdOf(groupId);
 }

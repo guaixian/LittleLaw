@@ -543,6 +543,7 @@ const ChatMessage$json = {
     {'1': 'file_sha256', '3': 10, '4': 1, '5': 9, '10': 'fileSha256'},
     {'1': 'conv_peer', '3': 11, '4': 1, '5': 9, '10': 'convPeer'},
     {'1': 'sender', '3': 12, '4': 1, '5': 9, '10': 'sender'},
+    {'1': 'group_id', '3': 13, '4': 1, '5': 9, '10': 'groupId'},
   ],
 };
 
@@ -553,7 +554,8 @@ final $typed_data.Uint8List chatMessageDescriptor = $convert.base64Decode(
     'cmVhdGVkQXRNcxISCgRraW5kGAUgASgFUgRraW5kEhIKBHRleHQYBiABKAlSBHRleHQSFwoHZm'
     'lsZV9pZBgHIAEoCVIGZmlsZUlkEhsKCWZpbGVfbmFtZRgIIAEoCVIIZmlsZU5hbWUSGwoJZmls'
     'ZV9zaXplGAkgASgDUghmaWxlU2l6ZRIfCgtmaWxlX3NoYTI1NhgKIAEoCVIKZmlsZVNoYTI1Nh'
-    'IbCgljb252X3BlZXIYCyABKAlSCGNvbnZQZWVyEhYKBnNlbmRlchgMIAEoCVIGc2VuZGVy');
+    'IbCgljb252X3BlZXIYCyABKAlSCGNvbnZQZWVyEhYKBnNlbmRlchgMIAEoCVIGc2VuZGVyEhkK'
+    'CGdyb3VwX2lkGA0gASgJUgdncm91cElk');
 
 @$core.Deprecated('Use chatDeletedDescriptor instead')
 const ChatDeleted$json = {
@@ -563,6 +565,7 @@ const ChatDeleted$json = {
     {'1': 'msg_ids', '3': 2, '4': 3, '5': 9, '10': 'msgIds'},
     {'1': 'clear_all', '3': 3, '4': 1, '5': 8, '10': 'clearAll'},
     {'1': 'conv_peer', '3': 4, '4': 1, '5': 9, '10': 'convPeer'},
+    {'1': 'group_id', '3': 5, '4': 1, '5': 9, '10': 'groupId'},
   ],
 };
 
@@ -570,7 +573,7 @@ const ChatDeleted$json = {
 final $typed_data.Uint8List chatDeletedDescriptor = $convert.base64Decode(
     'CgtDaGF0RGVsZXRlZBIVCgZvcF9zZXEYASABKANSBW9wU2VxEhcKB21zZ19pZHMYAiADKAlSBm'
     '1zZ0lkcxIbCgljbGVhcl9hbGwYAyABKAhSCGNsZWFyQWxsEhsKCWNvbnZfcGVlchgEIAEoCVII'
-    'Y29udlBlZXI=');
+    'Y29udlBlZXISGQoIZ3JvdXBfaWQYBSABKAlSB2dyb3VwSWQ=');
 
 @$core.Deprecated('Use clipboardSyncDescriptor instead')
 const ClipboardSync$json = {
