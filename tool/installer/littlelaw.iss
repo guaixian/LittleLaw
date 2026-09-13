@@ -1,9 +1,13 @@
 ; LittleLaw Windows 安装程序(Inno Setup 6)
-; CI: & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" tool\installer\littlelaw.iss
+; CI: & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.1.0 tool\installer\littlelaw.iss
+
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 
 [Setup]
 AppName=LittleLaw
-AppVersion=1.0.0
+AppVersion={#AppVersion}
 AppPublisher=guaixian
 DefaultDirName={autopf}\LittleLaw
 DefaultGroupName=LittleLaw

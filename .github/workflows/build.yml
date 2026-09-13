@@ -63,7 +63,9 @@ jobs:
         working-directory: app
       - name: 打包 Inno Setup 安装程序
         shell: powershell
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" tool\installer\littlelaw.iss'
+        run: |
+          $ver = (Select-String -Path app/pubspec.yaml -Pattern '^version:\s*(.+)').Matches[0].Groups[1].Value.Trim() -replace '\+.*',''
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" tool\installer\littlelaw.iss
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
@@ -91,7 +93,9 @@ jobs:
       - run: flutter build linux --release
         working-directory: app
       - name: 打包 .deb
-        run: bash tool/installer/make_deb.sh 1.0.0 app/build/linux/x64/release/bundle app/build/linux-deb
+        run: |
+          VER=$(grep -E '^version:' app/pubspec.yaml | sed 's/version: *//' | cut -d'+' -f1)
+          bash tool/installer/make_deb.sh "$VER" app/build/linux/x64/release/bundle app/build/linux-deb
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
