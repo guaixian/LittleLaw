@@ -175,8 +175,40 @@ jobs:
       - uses: android-actions/setup-android@v3
       - run: flutter pub get
         working-directory: app
-      - name: 解码发布签名密钥
-        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/littlelaw-release.keystore"
+      - name: 解码签名密钥(无效则现场生成)
+        id: ks
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          KS="$RUNNER_TEMP/littlelaw-release.keystore"
+          GENERATED=no
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KS" 2>/dev/null || true
+            if keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "secret keystore: OK"
+            else
+              echo "secret keystore: INVALID -> generate fresh"
+              GENERATED=yes
+            fi
+          else
+            GENERATED=yes
+          fi
+          if [ "$GENERATED" = "yes" ]; then
+            rm -f "$KS"
+            keytool -genkeypair -keystore "$KS" -alias "$KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass "$KEYSTORE_PASSWORD" -keypass "$KEYSTORE_PASSWORD" \
+              -dname "CN=LittleLaw, O=LittleLaw, C=CN"
+          fi
+          echo "generated=$GENERATED" >> "$GITHUB_OUTPUT"
+          {
+            echo "## 签名密钥"
+            echo "- 现场生成: $GENERATED"
+            keytool -list -v -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" 2>/dev/null \
+              | grep -E "别名|Alias|SHA256:" | head -n 4
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: 构建签名 APK
         env:
           KEYSTORE_FILE: ${{ runner.temp }}/littlelaw-release.keystore
@@ -191,10 +223,6 @@ jobs:
               echo '```'
               java -version 2>&1
               echo '```'
-              echo "## 密钥库指纹校验"
-              echo '```'
-              keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" 2>&1 | head -n 6
-              echo '```'
               echo "## Gradle 错误摘要"
               echo '```'
               grep -iE -B 2 -A 10 "tag number|keytool|integrity|keystore|password|signing|failed" "$RUNNER_TEMP/build.log" | head -n 100
@@ -203,6 +231,12 @@ jobs:
             exit 1
           fi
         working-directory: app
+      - name: 上传签名密钥库(重要:下载保存,产物保留期 90 天)
+        if: steps.ks.outputs.generated == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-keystore
+          path: ${{ runner.temp }}/littlelaw-release.keystore
       - uses: actions/upload-artifact@v4
         with:
           name: android-apks
