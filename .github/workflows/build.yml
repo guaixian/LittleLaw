@@ -183,7 +183,25 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: flutter build apk --release --split-per-abi
+        run: |
+          set -o pipefail
+          if ! flutter build apk --release --split-per-abi 2>&1 | tee "$RUNNER_TEMP/build.log"; then
+            {
+              echo "## Java 版本"
+              echo '```'
+              java -version 2>&1
+              echo '```'
+              echo "## 密钥库指纹校验"
+              echo '```'
+              keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" 2>&1 | head -n 6
+              echo '```'
+              echo "## Gradle 错误摘要"
+              echo '```'
+              grep -iE -B 2 -A 10 "tag number|keytool|integrity|keystore|password|signing|failed" "$RUNNER_TEMP/build.log" | head -n 100
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
         working-directory: app
       - uses: actions/upload-artifact@v4
         with:
