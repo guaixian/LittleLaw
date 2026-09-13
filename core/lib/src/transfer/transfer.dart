@@ -493,11 +493,18 @@ class TransferManager extends pbg.TransferServiceBase {
     }
   }
 
-  /// 重启后 _sendSources 丢失:从消息表反查本端发出的文件路径。
+  /// 重启后 _sendSources 丢失:从消息表反查本端或"我的设备"发出的文件路径。
   String? _findSentFile(String fileId) {
-    final msg = store.findMessageByFileId(fileId,
+    // 自己发的。
+    final mine = store.findMessageByFileId(fileId,
         senderId: identity.deviceId);
-    return msg?.filePath;
+    if (mine?.filePath != null) return mine!.filePath;
+    // 我的设备镜像来的(文件本体在对端,可按普通配对通道拉取)。
+    for (final self in store.selfPeers()) {
+      final m = store.findMessageByFileId(fileId, senderId: self.deviceId);
+      if (m?.filePath != null) return m!.filePath;
+    }
+    return null;
   }
 
   @override

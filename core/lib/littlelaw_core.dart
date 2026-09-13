@@ -36,7 +36,7 @@ export 'src/rendezvous/rendezvous.dart'
     show RendezvousClient, RendezvousSignal, RendezvousMail, RendezvousPeerOnline;
 export 'src/net/upnp.dart' show UpnpMapper;
 export 'src/pairing/pairing.dart' show PairRequestEvent, PairResult;
-export 'src/store/store.dart' show Message, Peer;
+export 'src/store/store.dart' show Message, Peer, Store;
 export 'src/sync/sync_engine.dart'
     show
         EngineEvent,
@@ -410,6 +410,16 @@ class LittleLawEngine {
   /// 设备改名(同步到发现层后续 announce)。
   Future<void> renameDevice(String newName) =>
       identity.rename(dataDir, newName);
+
+  /// 标记/取消"我的设备"(多设备镜像)。
+  void setSelfDevice(String deviceId, bool isSelf) =>
+      store.setSelfDevice(deviceId, isSelf);
+
+  bool isSelfDevice(String deviceId) => store.isSelfDevice(deviceId);
+
+  /// 判定消息气泡归属:"我"= 本机或我的设备发出。
+  bool isFromMe(String senderId) =>
+      senderId == identity.deviceId || isSelfDevice(senderId);
 
   /// 本机收件箱目录。
   String get inboxDir => '$dataDir/inbox';

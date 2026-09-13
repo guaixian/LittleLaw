@@ -1851,6 +1851,8 @@ class ChatMessage extends $pb.GeneratedMessage {
     $core.String? fileName,
     $fixnum.Int64? fileSize,
     $core.String? fileSha256,
+    $core.String? convPeer,
+    $core.String? sender,
   }) {
     final result = create();
     if (msgId != null) result.msgId = msgId;
@@ -1863,6 +1865,8 @@ class ChatMessage extends $pb.GeneratedMessage {
     if (fileName != null) result.fileName = fileName;
     if (fileSize != null) result.fileSize = fileSize;
     if (fileSha256 != null) result.fileSha256 = fileSha256;
+    if (convPeer != null) result.convPeer = convPeer;
+    if (sender != null) result.sender = sender;
     return result;
   }
 
@@ -1889,6 +1893,8 @@ class ChatMessage extends $pb.GeneratedMessage {
     ..aOS(8, _omitFieldNames ? '' : 'fileName')
     ..aInt64(9, _omitFieldNames ? '' : 'fileSize')
     ..aOS(10, _omitFieldNames ? '' : 'fileSha256')
+    ..aOS(11, _omitFieldNames ? '' : 'convPeer')
+    ..aOS(12, _omitFieldNames ? '' : 'sender')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1999,6 +2005,25 @@ class ChatMessage extends $pb.GeneratedMessage {
   $core.bool hasFileSha256() => $_has(9);
   @$pb.TagNumber(10)
   void clearFileSha256() => $_clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.String get convPeer => $_getSZ(10);
+  @$pb.TagNumber(11)
+  set convPeer($core.String value) => $_setString(10, value);
+  @$pb.TagNumber(11)
+  $core.bool hasConvPeer() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearConvPeer() => $_clearField(11);
+
+  /// (空=普通消息;非空=发送方自己的其他设备转发来的镜像)
+  @$pb.TagNumber(12)
+  $core.String get sender => $_getSZ(11);
+  @$pb.TagNumber(12)
+  set sender($core.String value) => $_setString(11, value);
+  @$pb.TagNumber(12)
+  $core.bool hasSender() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearSender() => $_clearField(12);
 }
 
 /// 删除操作(墓碑)。Telegram 模式:一端删除,另一端同步硬删除。
@@ -2008,11 +2033,13 @@ class ChatDeleted extends $pb.GeneratedMessage {
     $fixnum.Int64? opSeq,
     $core.Iterable<$core.String>? msgIds,
     $core.bool? clearAll,
+    $core.String? convPeer,
   }) {
     final result = create();
     if (opSeq != null) result.opSeq = opSeq;
     if (msgIds != null) result.msgIds.addAll(msgIds);
     if (clearAll != null) result.clearAll = clearAll;
+    if (convPeer != null) result.convPeer = convPeer;
     return result;
   }
 
@@ -2032,6 +2059,7 @@ class ChatDeleted extends $pb.GeneratedMessage {
     ..aInt64(1, _omitFieldNames ? '' : 'opSeq')
     ..pPS(2, _omitFieldNames ? '' : 'msgIds')
     ..aOB(3, _omitFieldNames ? '' : 'clearAll')
+    ..aOS(4, _omitFieldNames ? '' : 'convPeer')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2073,6 +2101,15 @@ class ChatDeleted extends $pb.GeneratedMessage {
   $core.bool hasClearAll() => $_has(2);
   @$pb.TagNumber(3)
   void clearClearAll() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get convPeer => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set convPeer($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasConvPeer() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearConvPeer() => $_clearField(4);
 }
 
 /// 剪贴板同步(小文本直接走消息通道;图片等大内容走文件通道)。

@@ -577,6 +577,7 @@ class _DevicesPageState extends State<DevicesPage> {
   Widget _peerCard(LittleLawEngine engine, Peer peer) {
     final online = engine.isOnline(peer.deviceId);
     final isPhone = peer.platform == 'android' || peer.platform == 'ios';
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: Card(
@@ -604,10 +605,46 @@ class _DevicesPageState extends State<DevicesPage> {
                 fontSize: 12,
                 color: online ? Colors.green : Colors.grey.shade500),
           ),
-          trailing: IconButton(
-            icon: const Icon(Icons.link_off_outlined, size: 20),
-            tooltip: '解除配对(双端清除数据)',
-            onPressed: () => _confirmUnpair(peer),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (engine.isSelfDevice(peer.deviceId))
+                Tooltip(
+                  message: '我的设备(消息全量镜像)',
+                  child: Icon(Icons.devices_other,
+                      size: 16, color: scheme.primary),
+                ),
+              IconButton(
+                icon: Icon(
+                  engine.isSelfDevice(peer.deviceId)
+                      ? Icons.link
+                      : Icons.link_off_outlined,
+                  size: 20,
+                  color: engine.isSelfDevice(peer.deviceId)
+                      ? scheme.primary
+                      : null,
+                ),
+                tooltip: engine.isSelfDevice(peer.deviceId)
+                    ? '取消我的设备标记'
+                    : '标记为我的设备(消息全量镜像)',
+                onPressed: () {
+                  final nowSelf = !engine.isSelfDevice(peer.deviceId);
+                  engine.setSelfDevice(peer.deviceId, nowSelf);
+                  setState(() {});
+                  showToast(
+                    nowSelf
+                        ? '${peer.deviceName} 已标记为我的设备,消息将全量镜像'
+                        : '已取消 ${peer.deviceName} 的我的设备标记',
+                    type: ToastType.success,
+                  );
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.link_off_outlined, size: 20),
+                tooltip: '解除配对(双端清除数据)',
+                onPressed: () => _confirmUnpair(peer),
+              ),
+            ],
           ),
         ),
       ),

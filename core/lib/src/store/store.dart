@@ -11,6 +11,7 @@ class Peer {
     required this.certFingerprint,
     required this.token,
     this.deviceModel = '',
+    this.isSelfDevice = false,
     this.lastHost,
     this.lastPort,
     required this.pairedAtMs,
@@ -24,11 +25,15 @@ class Peer {
   String platform;
   String certFingerprint;
   String token; // 共享会话令牌(hex),配对时协商
-  String deviceModel; // 机型,如 "Xiaomi 13" / "iPhone 17 Pro Max"
+  /// 机型,如 "Xiaomi 13" / "iPhone 17 Pro Max"
+  String deviceModel;
   String? lastHost;
   int? lastPort;
   int pairedAtMs;
   int? lastSeenMs;
+
+  /// 是否是"我的设备"(同一用户的其他设备,消息全量镜像)。
+  bool isSelfDevice;
 
   /// 我已应用到本地的、来自对方 ops 的最大 seq(我发给对方的 Hello 游标)。
   int myAppliedSeq;
@@ -121,6 +126,7 @@ class Store {
         cert_fingerprint TEXT NOT NULL,
         token TEXT NOT NULL,
         device_model TEXT NOT NULL DEFAULT '',
+        is_self INTEGER NOT NULL DEFAULT 0,
         last_host TEXT,
         last_port INTEGER,
         paired_at_ms INTEGER NOT NULL,
@@ -171,6 +177,9 @@ class Store {
       _db.execute(
           "ALTER TABLE peers ADD COLUMN device_model TEXT NOT NULL DEFAULT ''");
     } catch (_) {}
+    try {
+      _db.execute("ALTER TABLE peers ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
   }
 
   /// 1:1 会话 ID:两个设备 ID 排序拼接,两端计算结果一致。
@@ -184,21 +193,38 @@ class Store {
   void upsertPeer(Peer p) {
     _db.execute(
       '''INSERT INTO peers (device_id, device_name, platform, cert_fingerprint,
-           token, device_model, last_host, last_port, paired_at_ms, last_seen_ms,
+           token, device_model, is_self, last_host, last_port, paired_at_ms, last_seen_ms,
            my_applied_seq, peer_applied_seq)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(device_id) DO UPDATE SET
            device_name=excluded.device_name,
            platform=excluded.platform,
            cert_fingerprint=excluded.cert_fingerprint,
            token=excluded.token,
-           device_model=excluded.device_model''',
+           device_model=excluded.device_model,
+           is_self=excluded.is_self''',
       [
         p.deviceId, p.deviceName, p.platform, p.certFingerprint, p.token,
-        p.deviceModel, p.lastHost, p.lastPort, p.pairedAtMs, p.lastSeenMs,
-        p.myAppliedSeq, p.peerAppliedSeq,
+        p.deviceModel, p.isSelfDevice ? 1 : 0, p.lastHost, p.lastPort,
+        p.pairedAtMs, p.lastSeenMs, p.myAppliedSeq, p.peerAppliedSeq,
       ],
     );
+  }
+
+  /// 标记/取消"我的设备"(只改标记,不动信任关系)。
+  void setSelfDevice(String deviceId, bool isSelf) {
+    _db.execute('UPDATE peers SET is_self=? WHERE device_id=?',
+        [isSelf ? 1 : 0, deviceId]);
+  }
+
+  /// 全部"我的设备"。
+  List<Peer> selfPeers() =>
+      _db.select('SELECT * FROM peers WHERE is_self=1').map(_peerFromRow).toList();
+
+  bool isSelfDevice(String deviceId) {
+    final rows = _db.select(
+        'SELECT is_self FROM peers WHERE device_id=?', [deviceId]);
+    return rows.isNotEmpty && (rows.first['is_self'] as int) == 1;
   }
 
   Peer? getPeer(String deviceId) {
@@ -237,6 +263,7 @@ class Store {
         certFingerprint: r['cert_fingerprint'] as String,
         token: r['token'] as String,
         deviceModel: (r['device_model'] as String?) ?? '',
+        isSelfDevice: (r['is_self'] as int? ?? 0) == 1,
         lastHost: r['last_host'] as String?,
         lastPort: r['last_port'] as int?,
         pairedAtMs: r['paired_at_ms'] as int,

@@ -163,72 +163,106 @@ class SyncEngine extends pbg.SyncServiceBase {
 
   /// 发送文本消息。
   Future<Message> sendText(String peerId, String text) async {
-    final convId = Store.convIdFor(identity.deviceId, peerId);
-    store.ensureConversation(convId, peerId);
-    final msg = Message(
+    final msg = await _commitMessage(peerId, (lamport, createdAt) => Message(
       msgId: const Uuid().v4(),
-      convId: convId,
+      convId: Store.convIdFor(identity.deviceId, peerId),
       senderId: identity.deviceId,
-      lamport: store.nextLamport(convId),
-      createdAtMs: DateTime.now().millisecondsSinceEpoch,
+      lamport: lamport,
+      createdAtMs: createdAt,
       kind: Message.kindText,
       text: text,
-    );
-    store.insertMessage(msg);
-    final seq = store.appendOp(peerId, Op.typeMsg, _chatToProto(msg).writeToBuffer());
-    _push(peerId, pb.Envelope(
-      id: const Uuid().v4(),
-      chat: _chatToProto(msg, opSeq: seq),
     ));
-    _events.add(MessageAdded(peerId, msg));
+    _mirrorChat(peerId, msg);
     return msg;
   }
 
   /// 记录一条文件消息(由传输层调用,文件元数据已就绪)。
-  Future<Message> commitFileMessage(String peerId, pb.ChatMessage fileMsg) async {
-    final convId = Store.convIdFor(identity.deviceId, peerId);
-    store.ensureConversation(convId, peerId);
-    final msg = Message(
+  Future<Message> commitFileMessage(
+      String peerId, pb.ChatMessage fileMsg) async {
+    final msg = await _commitMessage(peerId, (lamport, createdAt) => Message(
       msgId: fileMsg.msgId,
-      convId: convId,
+      convId: Store.convIdFor(identity.deviceId, peerId),
       senderId: identity.deviceId,
-      lamport: store.nextLamport(convId),
-      createdAtMs: DateTime.now().millisecondsSinceEpoch,
+      lamport: lamport,
+      createdAtMs: createdAt,
       kind: fileMsg.kind,
       fileId: fileMsg.fileId,
       fileName: fileMsg.fileName,
       fileSize: fileMsg.fileSize.toInt(),
       fileSha256: fileMsg.fileSha256.isEmpty ? null : fileMsg.fileSha256,
       fileState: Message.fileStatePending,
-    );
-    store.insertMessage(msg);
-    final seq = store.appendOp(peerId, Op.typeMsg, fileMsg.writeToBuffer());
-    _push(peerId, pb.Envelope(
-      id: const Uuid().v4(),
-      chat: _chatToProto(msg, opSeq: seq),
     ));
+    _mirrorChat(peerId, msg);
+    return msg;
+  }
+
+  /// 消息落库 + op 记录 + 在线推送(通用路径)。
+  Future<Message> _commitMessage(
+      String peerId, Message Function(int lamport, int createdAt) build) async {
+    final convId = Store.convIdFor(identity.deviceId, peerId);
+    store.ensureConversation(convId, peerId);
+    final msg = build(store.nextLamport(convId),
+        DateTime.now().millisecondsSinceEpoch);
+    store.insertMessage(msg);
+    final proto = _chatToProto(msg);
+    final seq = store.appendOp(peerId, Op.typeMsg, proto.writeToBuffer());
+    proto.opSeq = Int64(seq);
+    _push(peerId, pb.Envelope(id: const Uuid().v4(), chat: proto));
     _events.add(MessageAdded(peerId, msg));
     return msg;
   }
 
+  /// 多设备镜像:把发给 [peerId] 的消息同步给"我的设备"(带 conv_peer 标记)。
+  void _mirrorChat(String peerId, Message msg) {
+    final selfPeers = store.selfPeers();
+    if (selfPeers.isEmpty) return;
+    final proto = _chatToProto(msg)
+      ..convPeer = peerId
+      ..sender = identity.deviceId;
+    for (final self in selfPeers) {
+      if (self.deviceId == peerId) continue; // 对方本身就是我的设备,无需镜像
+      proto.opSeq = Int64(store.appendOp(
+          self.deviceId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer()));
+      _push(self.deviceId, pb.Envelope(id: const Uuid().v4(), chat: proto));
+    }
+  }
   /// 删除消息(Telegram 模式):本端硬删除 + 墓碑 op,对端在线即推、
-  /// 不在线则重连补发。
+  /// 不在线则重连补发。同时镜像给"我的设备"。
   Future<void> deleteMessages(String peerId, List<String> msgIds,
       {bool clearAll = false}) async {
-    final convId = Store.convIdFor(identity.deviceId, peerId);
+    _doDelete(peerId, peerId, msgIds, clearAll);
+    // 镜像:我的设备上删除同一个会话(conv_peer=peerId)。
+    for (final self in store.selfPeers()) {
+      if (self.deviceId == peerId) continue;
+      _doDelete(self.deviceId, peerId, msgIds, clearAll);
+    }
+  }
+
+  void _doDelete(
+      String targetPeer, String convPeer, List<String> msgIds, bool clearAll) {
+    final convId = Store.convIdFor(identity.deviceId, convPeer);
     if (clearAll) {
       store.clearConversation(convId);
     } else {
       store.deleteMessages(convId, msgIds);
     }
-    final deleted = pb.ChatDeleted(msgIds: msgIds, clearAll: clearAll);
-    final seq = store.appendOp(peerId, Op.typeDelete, deleted.writeToBuffer());
-    _push(peerId, pb.Envelope(
+    final deleted =
+        pb.ChatDeleted(msgIds: msgIds, clearAll: clearAll);
+    final seq =
+        store.appendOp(targetPeer, Op.typeDelete, deleted.writeToBuffer());
+    // 线上消息的 conv_peer 语义 = "接收方视角下的会话对方":
+    //  - 直发(target==convPeer):留空,接收方回退到信封发送者,即正确会话对方;
+    //  - 镜像(target 是我的设备):填 convPeer,使其落到与我对应设备的会话。
+    final wireConvPeer = targetPeer == convPeer ? '' : convPeer;
+    _push(targetPeer, pb.Envelope(
       id: const Uuid().v4(),
       chatDeleted: pb.ChatDeleted(
-          opSeq: Int64(seq), msgIds: msgIds, clearAll: clearAll),
+          opSeq: Int64(seq),
+          msgIds: msgIds,
+          clearAll: clearAll,
+          convPeer: wireConvPeer),
     ));
-    _events.add(MessagesDeleted(peerId, msgIds, clearAll));
+    _events.add(MessagesDeleted(targetPeer, msgIds, clearAll));
   }
 
   /// 剪贴板同步(瞬态,不落库不补发)。
@@ -482,12 +516,16 @@ class SyncEngine extends pbg.SyncServiceBase {
 
   void _applyChat(Peer peer, pb.ChatMessage chat) {
     final peerId = peer.deviceId;
-    final convId = Store.convIdFor(identity.deviceId, peerId);
-    store.ensureConversation(convId, peerId);
+    // 多设备镜像:conv_peer 指明会话实际属于哪个对方设备。
+    final convPeer = chat.convPeer.isEmpty ? peerId : chat.convPeer;
+    // 原作者:镜像消息显式携带,普通消息即信封发送者。
+    final senderId = chat.sender.isEmpty ? peerId : chat.sender;
+    final convId = Store.convIdFor(identity.deviceId, convPeer);
+    store.ensureConversation(convId, convPeer);
     final msg = Message(
       msgId: chat.msgId,
       convId: convId,
-      senderId: peerId,
+      senderId: senderId,
       lamport: chat.lamport.toInt(),
       createdAtMs: chat.createdAtMs.toInt(),
       kind: chat.kind,
@@ -501,23 +539,65 @@ class SyncEngine extends pbg.SyncServiceBase {
     final isNew = store.insertMessage(msg);
     _advanceCursor(peerId, chat.opSeq);
     if (isNew) {
-      _events.add(MessageAdded(peerId, msg));
+      _events.add(MessageAdded(convPeer, msg));
       if (Message.hasFilePayload(msg.kind)) {
-        _events.add(FileMessageArrived(peerId, msg));
+        _events.add(FileMessageArrived(convPeer, msg));
+      }
+      // 入向镜像:收到的原始消息(非镜像转发)同步给"我的设备"。
+      // 镜像消息本身带 conv_peer,不再二次转发(防回环)。
+      if (chat.convPeer.isEmpty && store.selfPeers().isNotEmpty) {
+        final mirror = pb.ChatMessage(
+          msgId: chat.msgId,
+          lamport: chat.lamport,
+          createdAtMs: chat.createdAtMs,
+          kind: chat.kind,
+          text: chat.text,
+          fileId: chat.fileId,
+          fileName: chat.fileName,
+          fileSize: chat.fileSize,
+          fileSha256: chat.fileSha256,
+          convPeer: peerId,
+          sender: peerId,
+        );
+        for (final self in store.selfPeers()) {
+          if (self.deviceId == peerId) continue;
+          mirror.opSeq = Int64(store.appendOp(self.deviceId, Op.typeMsg,
+              (mirror..opSeq = Int64.ZERO).writeToBuffer()));
+          _push(self.deviceId, pb.Envelope(id: const Uuid().v4(), chat: mirror));
+        }
       }
     }
   }
 
   void _applyDelete(Peer peer, pb.ChatDeleted del) {
     final peerId = peer.deviceId;
-    final convId = Store.convIdFor(identity.deviceId, peerId);
+    final convPeer = del.convPeer.isEmpty ? peerId : del.convPeer;
+    final convId = Store.convIdFor(identity.deviceId, convPeer);
     if (del.clearAll) {
       store.clearConversation(convId);
     } else {
       store.deleteMessages(convId, del.msgIds);
     }
     _advanceCursor(peerId, del.opSeq);
-    _events.add(MessagesDeleted(peerId, del.msgIds, del.clearAll));
+    _events.add(MessagesDeleted(convPeer, del.msgIds, del.clearAll));
+    // 入向删除镜像(仅原始删除;镜像删除不再转发,防回环)。
+    if (del.convPeer.isEmpty && store.selfPeers().isNotEmpty) {
+      for (final self in store.selfPeers()) {
+        if (self.deviceId == peerId) continue;
+        final payload = pb.ChatDeleted(
+            msgIds: del.msgIds, clearAll: del.clearAll, convPeer: peerId);
+        final seq = store.appendOp(self.deviceId, Op.typeDelete,
+            (payload..opSeq = Int64.ZERO).writeToBuffer());
+        _push(self.deviceId, pb.Envelope(
+          id: const Uuid().v4(),
+          chatDeleted: pb.ChatDeleted(
+              opSeq: Int64(seq),
+              msgIds: del.msgIds,
+              clearAll: del.clearAll,
+              convPeer: peerId),
+        ));
+      }
+    }
   }
 
   /// 推进"我已应用对方 op"游标并回 ACK(供对端压缩 ops)。

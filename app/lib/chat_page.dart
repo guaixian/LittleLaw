@@ -305,6 +305,7 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final myId = widget.engine.identity.deviceId;
+    final engine = widget.engine;
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
       appBar: _selecting ? _selectionBar() : _normalBar(),
@@ -321,7 +322,7 @@ class _ChatPageState extends State<ChatPage> {
                         controller: _scroll,
                         padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
                         itemCount: _messages.length,
-                        itemBuilder: (ctx, i) => _buildItem(ctx, i, myId),
+                        itemBuilder: (ctx, i) => _buildItem(ctx, i, myId, engine),
                       ),
                     ),
                   ),
@@ -460,7 +461,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildItem(BuildContext ctx, int i, String myId) {
+  Widget _buildItem(BuildContext ctx, int i, String myId, LittleLawEngine engine) {
     final m = _messages[i];
     final children = <Widget>[];
     // 时间分隔条:首条或与上一条间隔超过 10 分钟。
@@ -471,7 +472,7 @@ class _ChatPageState extends State<ChatPage> {
     }
     children.add(_MessageBubble(
       message: m,
-      mine: m.senderId == myId,
+      mine: engine.isFromMe(m.senderId),
       progress: _transfers[m.msgId],
       selected: _selection.contains(m.msgId),
       selecting: _selecting,

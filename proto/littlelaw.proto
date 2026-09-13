@@ -216,6 +216,9 @@ message ChatMessage {
   string file_name = 8;
   int64  file_size = 9;
   string file_sha256 = 10;  // kind=2 时整包 SHA-256 hex,接收方校验依据
+  string conv_peer = 11;    // 多设备镜像:该会话实际属于哪个对方设备
+                            // (空=普通消息;非空=发送方自己的其他设备转发来的镜像)
+  string sender = 12;       // 多设备镜像:原作者设备 ID(空=信封发送者本人)
 }
 
 // 删除操作(墓碑)。Telegram 模式:一端删除,另一端同步硬删除。
@@ -224,6 +227,7 @@ message ChatDeleted {
   int64 op_seq = 1;
   repeated string msg_ids = 2;  // 要删除的消息 UUID 集合
   bool clear_all = 3;           // true 时清空整个会话
+  string conv_peer = 4;         // 多设备镜像归属(同 ChatMessage)
 }
 
 // 剪贴板同步(小文本直接走消息通道;图片等大内容走文件通道)。

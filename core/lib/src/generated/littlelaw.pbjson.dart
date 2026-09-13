@@ -541,6 +541,8 @@ const ChatMessage$json = {
     {'1': 'file_name', '3': 8, '4': 1, '5': 9, '10': 'fileName'},
     {'1': 'file_size', '3': 9, '4': 1, '5': 3, '10': 'fileSize'},
     {'1': 'file_sha256', '3': 10, '4': 1, '5': 9, '10': 'fileSha256'},
+    {'1': 'conv_peer', '3': 11, '4': 1, '5': 9, '10': 'convPeer'},
+    {'1': 'sender', '3': 12, '4': 1, '5': 9, '10': 'sender'},
   ],
 };
 
@@ -550,8 +552,8 @@ final $typed_data.Uint8List chatMessageDescriptor = $convert.base64Decode(
     'BTZXESGAoHbGFtcG9ydBgDIAEoA1IHbGFtcG9ydBIiCg1jcmVhdGVkX2F0X21zGAQgASgDUgtj'
     'cmVhdGVkQXRNcxISCgRraW5kGAUgASgFUgRraW5kEhIKBHRleHQYBiABKAlSBHRleHQSFwoHZm'
     'lsZV9pZBgHIAEoCVIGZmlsZUlkEhsKCWZpbGVfbmFtZRgIIAEoCVIIZmlsZU5hbWUSGwoJZmls'
-    'ZV9zaXplGAkgASgDUghmaWxlU2l6ZRIfCgtmaWxlX3NoYTI1NhgKIAEoCVIKZmlsZVNoYTI1Ng'
-    '==');
+    'ZV9zaXplGAkgASgDUghmaWxlU2l6ZRIfCgtmaWxlX3NoYTI1NhgKIAEoCVIKZmlsZVNoYTI1Nh'
+    'IbCgljb252X3BlZXIYCyABKAlSCGNvbnZQZWVyEhYKBnNlbmRlchgMIAEoCVIGc2VuZGVy');
 
 @$core.Deprecated('Use chatDeletedDescriptor instead')
 const ChatDeleted$json = {
@@ -560,13 +562,15 @@ const ChatDeleted$json = {
     {'1': 'op_seq', '3': 1, '4': 1, '5': 3, '10': 'opSeq'},
     {'1': 'msg_ids', '3': 2, '4': 3, '5': 9, '10': 'msgIds'},
     {'1': 'clear_all', '3': 3, '4': 1, '5': 8, '10': 'clearAll'},
+    {'1': 'conv_peer', '3': 4, '4': 1, '5': 9, '10': 'convPeer'},
   ],
 };
 
 /// Descriptor for `ChatDeleted`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List chatDeletedDescriptor = $convert.base64Decode(
     'CgtDaGF0RGVsZXRlZBIVCgZvcF9zZXEYASABKANSBW9wU2VxEhcKB21zZ19pZHMYAiADKAlSBm'
-    '1zZ0lkcxIbCgljbGVhcl9hbGwYAyABKAhSCGNsZWFyQWxs');
+    '1zZ0lkcxIbCgljbGVhcl9hbGwYAyABKAhSCGNsZWFyQWxsEhsKCWNvbnZfcGVlchgEIAEoCVII'
+    'Y29udlBlZXI=');
 
 @$core.Deprecated('Use clipboardSyncDescriptor instead')
 const ClipboardSync$json = {
