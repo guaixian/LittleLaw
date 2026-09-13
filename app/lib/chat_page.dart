@@ -8,6 +8,7 @@ import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'media_viewers.dart';
 import 'globals.dart';
+import 'call_page.dart';
 import 'remote_pair_page.dart';
 import 'theme/app_theme.dart';
 
@@ -101,6 +102,18 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   // ------------------------------------------------------------ 发送
+
+  /// 发起音视频通话。
+  Future<void> _startCall({required bool video}) async {
+    final calls = callManager;
+    if (calls == null) return;
+    await calls.startCall(_peerId, video: video);
+    if (!mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => CallPage(manager: calls),
+    ));
+  }
 
   Future<void> _sendText() async {
     final text = _input.text.trim();
@@ -366,6 +379,19 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       actions: [
+        // 语音/视频通话(任意已连接通道可用)。
+        if (_online) ...[
+          IconButton(
+            tooltip: '语音通话',
+            icon: const Icon(Icons.call_outlined),
+            onPressed: () => _startCall(video: false),
+          ),
+          IconButton(
+            tooltip: '视频通话',
+            icon: const Icon(Icons.videocam_outlined),
+            onPressed: () => _startCall(video: true),
+          ),
+        ],
         // 远程设备(WebRTC 配对,无局域网地址)且离线:提供重连入口。
         if (!_online &&
             (widget.peer.lastHost == null || widget.peer.lastHost!.isEmpty))

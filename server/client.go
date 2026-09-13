@@ -18,6 +18,7 @@ type Client struct {
 	send     chan []byte
 	deviceID string
 	nonce    string
+	endpoint string
 	authed   bool
 
 	closeOnce sync.Once
@@ -114,6 +115,7 @@ func (c *Client) handleHello(message []byte) bool {
 		return false
 	}
 	c.deviceID = hello.DeviceID
+	c.endpoint = hello.Endpoint
 	c.authed = true
 	c.hub.register(c)
 	c.sendJSON(HelloOKFrame{Type: "hello_ok", ServerTime: time.Now().UnixMilli()})

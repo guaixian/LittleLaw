@@ -25,15 +25,21 @@ type ErrorFrame struct {
 	Message string `json:"message"`
 }
 
+type PresenceItem struct {
+	ID       string `json:"id"`
+	Endpoint string `json:"endpoint,omitempty"` // 公网直连端点(UPnP 映射,可空)
+}
+
 type PresenceFrame struct {
-	Type    string   `json:"type"` // "presence"
-	Online  []string `json:"online"`
-	Offline []string `json:"offline"`
+	Type    string         `json:"type"` // "presence"
+	Online  []PresenceItem `json:"online"`
+	Offline []string       `json:"offline"`
 }
 
 type PeerEventFrame struct {
-	Type string `json:"type"` // "peer_online" / "peer_offline"
-	ID   string `json:"id"`
+	Type     string `json:"type"` // "peer_online" / "peer_offline"
+	ID       string `json:"id"`
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 type SignalToClientFrame struct {
@@ -61,6 +67,7 @@ type HelloFrame struct {
 	Fingerprint string `json:"fingerprint"`
 	CertPEM     string `json:"cert"`
 	Sig         string `json:"sig"` // hex(r||s),对 sha256(deviceId|fingerprint|nonce) 的 ECDSA 签名
+	Endpoint    string `json:"endpoint,omitempty"` // 公网直连端点(UPnP,host:port,可空)
 }
 
 type SubscribeFrame struct {

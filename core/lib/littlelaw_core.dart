@@ -16,6 +16,7 @@ import 'package:grpc/grpc.dart';
 import 'src/discovery/discovery.dart';
 import 'src/generated/littlelaw.pb.dart' as pb;
 import 'src/identity/identity.dart';
+import 'src/net/upnp.dart';
 import 'src/oob/blob.dart';
 import 'src/oob/lan_oob.dart';
 import 'src/pairing/pairing.dart';
@@ -32,7 +33,8 @@ export 'src/oob/base45.dart' show Base45;
 export 'src/oob/lan_oob.dart' show LanOobPayload;
 export 'src/oob/qr_chunker.dart' show QrChunker, QrReassembler;
 export 'src/rendezvous/rendezvous.dart'
-    show RendezvousClient, RendezvousSignal, RendezvousMail;
+    show RendezvousClient, RendezvousSignal, RendezvousMail, RendezvousPeerOnline;
+export 'src/net/upnp.dart' show UpnpMapper;
 export 'src/pairing/pairing.dart' show PairRequestEvent, PairResult;
 export 'src/store/store.dart' show Message, Peer;
 export 'src/sync/sync_engine.dart'
@@ -46,10 +48,15 @@ export 'src/sync/sync_engine.dart'
         FileCancelled,
         FileFetchRequested,
         FileDataReceived,
-        FileDataAcked;
-export 'src/transfer/transfer.dart' show TransferProgress;
-export 'src/generated/littlelaw.pb.dart' show Envelope, LinkAuth;
+        FileDataAcked,
+        CallOfferReceived,
+        CallAnswerReceived,
+        CallCandidateReceived,
+        CallEndReceived;
+export 'src/generated/littlelaw.pb.dart'
+    show Envelope, LinkAuth, CallOffer, CallAnswer, CallCandidate, CallEnd;
 export 'src/transport/auth.dart' show Auth;
+export 'src/transfer/transfer.dart' show TransferProgress;
 
 /// 引擎门面:Flutter UI 只与这个类交互。
 class LittleLawEngine {
@@ -99,6 +106,7 @@ class LittleLawEngine {
     bool includeLoopbackScan = false,
     bool autoAcceptFiles = true,
     String? rendezvousUrl,
+    bool upnpEnabled = false,
   }) async {
     final identity = await Identity.loadOrCreate(dataDir,
         deviceName: deviceName, deviceModel: deviceModel);
@@ -161,8 +169,20 @@ class LittleLawEngine {
 
     // 可选:挂接中转服务器(离线邮箱兜底 + presence + 信令)。
     if (rendezvousUrl != null && rendezvousUrl.isNotEmpty) {
+      // UPnP 端口映射(可选):获得公网直连端点,注册时上报。
+      String? endpoint;
+      if (upnpEnabled) {
+        final mapped = await UpnpMapper.mapPort(boundPort,
+            timeout: const Duration(seconds: 4));
+        if (mapped != null) {
+          endpoint = '${mapped.host}:${mapped.port}';
+        }
+      }
       final rc = RendezvousClient(
-          identity: identity, store: store, url: rendezvousUrl);
+          identity: identity,
+          store: store,
+          url: rendezvousUrl,
+          endpoint: endpoint);
       sync.attachRendezvous(rc);
       pairing.onPeersChanged = rc.subscribePeers;
       // 受邀方应答经服务器推回:回退用邀请令牌解密,统一走 WebRTC 应用路径。

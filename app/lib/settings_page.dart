@@ -15,6 +15,7 @@ class SettingsPage extends StatefulWidget {
   static const _keyTurnUsername = 'turn_username';
   static const _keyTurnCredential = 'turn_credential';
   static const _keyRendezvousUrl = 'rendezvous_url';
+  static const _keyUpnpEnabled = 'upnp_enabled';
 
   /// 启动时加载持久化配置。
   static Future<List<String>> loadIceServers() async {
@@ -22,10 +23,16 @@ class SettingsPage extends StatefulWidget {
     return prefs.getStringList(_keyIceServers) ?? WebRtcLinkManager.defaultIceServers;
   }
 
-  /// 启动时加载中转服务器地址(空 = 不启用,纯 NoServer 模式)。
+  /// 启动时加载中转服务器地址(空 = 内置公共服务)。
   static Future<String> loadRendezvousUrl() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_keyRendezvousUrl) ?? '';
+  }
+
+  /// UPnP 端口映射开关(默认关,隐私自决)。
+  static Future<bool> loadUpnpEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyUpnpEnabled) ?? false;
   }
 
   @override
@@ -39,6 +46,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _rendezvousCtrl = TextEditingController();
   bool _loaded = false;
   bool _rcConnected = false;
+  bool _upnpEnabled = false;
   StreamSubscription? _rcSub;
 
   @override
@@ -71,6 +79,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _turnUserCtrl.text = prefs.getString(SettingsPage._keyTurnUsername) ?? '';
     _turnPassCtrl.text = prefs.getString(SettingsPage._keyTurnCredential) ?? '';
     _rendezvousCtrl.text = prefs.getString(SettingsPage._keyRendezvousUrl) ?? '';
+    _upnpEnabled = prefs.getBool(SettingsPage._keyUpnpEnabled) ?? false;
     setState(() => _loaded = true);
   }
 
@@ -91,12 +100,13 @@ class _SettingsPageState extends State<SettingsPage> {
         SettingsPage._keyTurnCredential, _turnPassCtrl.text.trim());
     await prefs.setString(
         SettingsPage._keyRendezvousUrl, _rendezvousCtrl.text.trim());
+    await prefs.setBool(SettingsPage._keyUpnpEnabled, _upnpEnabled);
     widget.rtc.iceServers = servers;
     widget.rtc.configureTurn(
         username: _turnUserCtrl.text.trim().isEmpty ? null : _turnUserCtrl.text.trim(),
         credential:
             _turnPassCtrl.text.trim().isEmpty ? null : _turnPassCtrl.text.trim());
-    showToast('已保存,中转服务器设置在下次启动生效', type: ToastType.success);
+    showToast('已保存,中转服务器与 UPnP 设置在下次启动生效', type: ToastType.success);
   }
 
   @override
@@ -141,6 +151,16 @@ class _SettingsPageState extends State<SettingsPage> {
               hintText: '留空默认 wss://littlelaw.joywiki.cc/ws',
             ),
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('UPnP 端口映射'),
+            subtitle: const Text(
+                '在家庭路由器上映射端口,获得公网直连端点(与 WebRTC 竞速建连)。'
+                '会向中转服务器公布当前公网 IP:端口,内容仍全程加密。默认关闭。'),
+            value: _upnpEnabled,
+            onChanged: (v) => setState(() => _upnpEnabled = v),
           ),
           const SizedBox(height: 20),
           const Text('STUN 服务器(每行一个)',

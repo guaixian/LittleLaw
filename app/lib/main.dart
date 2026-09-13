@@ -5,6 +5,8 @@ import 'package:littlelaw_core/littlelaw_core.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'call.dart';
+import 'call_page.dart';
 import 'chat_page.dart';
 import 'device_info.dart';
 import 'globals.dart';
@@ -96,6 +98,7 @@ class _BootPageState extends State<BootPage> {
           if (raw.toLowerCase() == 'off') return null; // 显式关闭
           return raw; // 自建地址
         }),
+        upnpEnabled: await SettingsPage.loadUpnpEnabled(),
       );
       final iceServers = await SettingsPage.loadIceServers();
       final rtc = WebRtcLinkManager(engine: engine, iceServers: iceServers)
@@ -107,6 +110,21 @@ class _BootPageState extends State<BootPage> {
       });
       ShareHandler.attach(engine); // 系统分享面板接入
       PushWake.attach(engine); // FCM 离线推送唤醒(可选,无配置自动禁用)
+      final calls = CallManager(engine: engine, iceServers: iceServers)
+        ..start();
+      callManager = calls;
+      // 来电自动弹通话页(全屏呼入界面)。
+      calls.stateChanges.listen((s) {
+        if (s.state == CallState.incoming) {
+          final nav = navigatorKey.currentState;
+          if (nav == null) return;
+          nav.push(PageRouteBuilder(
+            opaque: false,
+            pageBuilder: (_, _, _) => CallPage(manager: calls),
+            fullscreenDialog: true,
+          ));
+        }
+      });
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeShell()),
       );

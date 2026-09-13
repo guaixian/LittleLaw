@@ -57,9 +57,22 @@ class WebRtcLinkManager {
     final rc = engine.rendezvous;
     if (rc != null) {
       _presenceSub?.cancel();
-      _presenceSub = rc.peerOnline.listen((peerId) {
+      _presenceSub = rc.peerOnlineEx.listen((event) {
+        final peerId = event.id;
         final peer = engine.peerById(peerId);
         if (peer == null) return;
+        // 竞速建连:对端有公网端点(UPnP)时并行尝试 gRPC 直连。
+        final endpoint = event.endpoint;
+        if (endpoint != null) {
+          final idx = endpoint.lastIndexOf(':');
+          if (idx > 0) {
+            final host = endpoint.substring(0, idx);
+            final port = int.tryParse(endpoint.substring(idx + 1));
+            if (port != null) {
+              engine.sync.notePeerAddress(peer, host, port);
+            }
+          }
+        }
         if (engine.isOnline(peerId) || isLinked(peerId)) return;
         // 防眩光:deviceId 字典序小的一方发 offer,另一方等 offer。
         if (engine.identity.deviceId.compareTo(peerId) < 0) {
@@ -81,7 +94,7 @@ class WebRtcLinkManager {
 
   // ---------------------------------------------------- 服务器信令重连
 
-  StreamSubscription<String>? _presenceSub;
+  StreamSubscription<RendezvousPeerOnline>? _presenceSub;
   StreamSubscription<RendezvousSignal>? _signalSub;
   StreamSubscription<bool>? _rcStateSub;
 

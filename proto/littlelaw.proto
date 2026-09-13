@@ -134,6 +134,10 @@ message Envelope {
     FileFetchRequest file_fetch = 12;     // 信封式文件拉取(传输层无关)
     FileData file_data = 13;              // 信封式文件数据帧
     FileDataAck file_data_ack = 14;       // 数据帧回执(窗口背压)
+    CallOffer call_offer = 15;            // 通话发起(音视频信令)
+    CallAnswer call_answer = 16;          // 通话应答
+    CallCandidate call_candidate = 17;    // 通话 ICE 候选(Trickle)
+    CallEnd call_end = 18;                // 挂断/拒绝/失败
   }
 }
 
@@ -142,6 +146,35 @@ message Envelope {
 message FileDataAck {
   string file_id = 1;
   int64 acked_offset = 2;
+}
+
+// ---------------------------------------------------------------------------
+// 音视频通话信令:与聊天同走已认证信封通道(LAN gRPC / WebRTC 链路均可),
+// 媒体本身走独立的 WebRTC PeerConnection(DTLS-SRTP 端到端加密)。
+// ---------------------------------------------------------------------------
+
+message CallOffer {
+  string call_id = 1;
+  string sdp = 2;
+  bool video = 3;  // true=视频通话 false=纯语音
+}
+
+message CallAnswer {
+  string call_id = 1;
+  string sdp = 2;
+  bool accepted = 3;  // false=拒绝
+}
+
+message CallCandidate {
+  string call_id = 1;
+  string candidate = 2;
+  string sdp_mid = 3;
+  int32 sdp_mline_index = 4;
+}
+
+message CallEnd {
+  string call_id = 1;
+  string reason = 2;  // hangup / reject / busy / failed / timeout
 }
 
 // 外部传输链路(WebRTC DataChannel 等)的第一个信封:

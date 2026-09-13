@@ -80,6 +80,34 @@ class FileDataAcked extends EngineEvent {
   final int ackedOffset;
 }
 
+/// 收到通话发起。
+class CallOfferReceived extends EngineEvent {
+  CallOfferReceived(this.peerId, this.offer);
+  final String peerId;
+  final pb.CallOffer offer;
+}
+
+/// 收到通话应答。
+class CallAnswerReceived extends EngineEvent {
+  CallAnswerReceived(this.peerId, this.answer);
+  final String peerId;
+  final pb.CallAnswer answer;
+}
+
+/// 收到通话 ICE 候选。
+class CallCandidateReceived extends EngineEvent {
+  CallCandidateReceived(this.peerId, this.candidate);
+  final String peerId;
+  final pb.CallCandidate candidate;
+}
+
+/// 收到通话结束(挂断/拒绝/失败)。
+class CallEndReceived extends EngineEvent {
+  CallEndReceived(this.peerId, this.end);
+  final String peerId;
+  final pb.CallEnd end;
+}
+
 // ---------------------------------------------------------------------------
 // 同步引擎:1:1 会话的端到端一致同步。
 //
@@ -369,6 +397,14 @@ class SyncEngine extends pbg.SyncServiceBase {
       case pb.Envelope_Payload.fileDataAck:
         _events.add(FileDataAcked(peerId, env.fileDataAck.fileId,
             env.fileDataAck.ackedOffset.toInt()));
+      case pb.Envelope_Payload.callOffer:
+        _events.add(CallOfferReceived(peerId, env.callOffer));
+      case pb.Envelope_Payload.callAnswer:
+        _events.add(CallAnswerReceived(peerId, env.callAnswer));
+      case pb.Envelope_Payload.callCandidate:
+        _events.add(CallCandidateReceived(peerId, env.callCandidate));
+      case pb.Envelope_Payload.callEnd:
+        _events.add(CallEndReceived(peerId, env.callEnd));
       case pb.Envelope_Payload.linkAuth:
         break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
       case pb.Envelope_Payload.heartbeat:

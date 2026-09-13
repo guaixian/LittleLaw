@@ -37,7 +37,7 @@ func (h *Hub) register(c *Client) {
 	h.mu.Unlock()
 
 	for _, w := range watchers {
-		w.sendJSON(PeerEventFrame{Type: "peer_online", ID: c.deviceID})
+		w.sendJSON(PeerEventFrame{Type: "peer_online", ID: c.deviceID, Endpoint: c.endpoint})
 	}
 }
 
@@ -71,15 +71,17 @@ func (h *Hub) subscribe(c *Client, ids []string) {
 	h.mu.Unlock()
 
 	// 快照。
-	online := make([]string, 0)
+	online := make([]PresenceItem, 0)
 	offline := make([]string, 0)
+	h.mu.RLock()
 	for id := range set {
-		if h.isOnline(id) {
-			online = append(online, id)
+		if c, ok := h.online[id]; ok {
+			online = append(online, PresenceItem{ID: id, Endpoint: c.endpoint})
 		} else {
 			offline = append(offline, id)
 		}
 	}
+	h.mu.RUnlock()
 	c.sendJSON(PresenceFrame{Type: "presence", Online: online, Offline: offline})
 }
 

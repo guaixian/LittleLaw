@@ -20,5 +20,10 @@
 	<!-- 程序化加入热点(需在 App ID 启用 "Hotspot Configuration") -->
 	<key>com.apple.developer.networking.HotspotConfiguration</key>
 	<true/>
+	<!-- 音视频通话:摄像头与麦克风(sandbox) -->
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>

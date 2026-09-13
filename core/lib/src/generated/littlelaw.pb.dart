@@ -809,6 +809,10 @@ enum Envelope_Payload {
   fileFetch,
   fileData,
   fileDataAck,
+  callOffer,
+  callAnswer,
+  callCandidate,
+  callEnd,
   notSet
 }
 
@@ -828,6 +832,10 @@ class Envelope extends $pb.GeneratedMessage {
     FileFetchRequest? fileFetch,
     FileData? fileData,
     FileDataAck? fileDataAck,
+    CallOffer? callOffer,
+    CallAnswer? callAnswer,
+    CallCandidate? callCandidate,
+    CallEnd? callEnd,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -844,6 +852,10 @@ class Envelope extends $pb.GeneratedMessage {
     if (fileFetch != null) result.fileFetch = fileFetch;
     if (fileData != null) result.fileData = fileData;
     if (fileDataAck != null) result.fileDataAck = fileDataAck;
+    if (callOffer != null) result.callOffer = callOffer;
+    if (callAnswer != null) result.callAnswer = callAnswer;
+    if (callCandidate != null) result.callCandidate = callCandidate;
+    if (callEnd != null) result.callEnd = callEnd;
     return result;
   }
 
@@ -870,13 +882,17 @@ class Envelope extends $pb.GeneratedMessage {
     12: Envelope_Payload.fileFetch,
     13: Envelope_Payload.fileData,
     14: Envelope_Payload.fileDataAck,
+    15: Envelope_Payload.callOffer,
+    16: Envelope_Payload.callAnswer,
+    17: Envelope_Payload.callCandidate,
+    18: Envelope_Payload.callEnd,
     0: Envelope_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'Envelope',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
       createEmptyInstance: create)
-    ..oo(0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+    ..oo(0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<Hello>(2, _omitFieldNames ? '' : 'hello', subBuilder: Hello.create)
     ..aOM<ChatMessage>(3, _omitFieldNames ? '' : 'chat',
@@ -903,6 +919,14 @@ class Envelope extends $pb.GeneratedMessage {
         subBuilder: FileData.create)
     ..aOM<FileDataAck>(14, _omitFieldNames ? '' : 'fileDataAck',
         subBuilder: FileDataAck.create)
+    ..aOM<CallOffer>(15, _omitFieldNames ? '' : 'callOffer',
+        subBuilder: CallOffer.create)
+    ..aOM<CallAnswer>(16, _omitFieldNames ? '' : 'callAnswer',
+        subBuilder: CallAnswer.create)
+    ..aOM<CallCandidate>(17, _omitFieldNames ? '' : 'callCandidate',
+        subBuilder: CallCandidate.create)
+    ..aOM<CallEnd>(18, _omitFieldNames ? '' : 'callEnd',
+        subBuilder: CallEnd.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -936,6 +960,10 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
+  @$pb.TagNumber(15)
+  @$pb.TagNumber(16)
+  @$pb.TagNumber(17)
+  @$pb.TagNumber(18)
   Envelope_Payload whichPayload() => _Envelope_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -950,6 +978,10 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
+  @$pb.TagNumber(15)
+  @$pb.TagNumber(16)
+  @$pb.TagNumber(17)
+  @$pb.TagNumber(18)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1103,6 +1135,50 @@ class Envelope extends $pb.GeneratedMessage {
   void clearFileDataAck() => $_clearField(14);
   @$pb.TagNumber(14)
   FileDataAck ensureFileDataAck() => $_ensure(13);
+
+  @$pb.TagNumber(15)
+  CallOffer get callOffer => $_getN(14);
+  @$pb.TagNumber(15)
+  set callOffer(CallOffer value) => $_setField(15, value);
+  @$pb.TagNumber(15)
+  $core.bool hasCallOffer() => $_has(14);
+  @$pb.TagNumber(15)
+  void clearCallOffer() => $_clearField(15);
+  @$pb.TagNumber(15)
+  CallOffer ensureCallOffer() => $_ensure(14);
+
+  @$pb.TagNumber(16)
+  CallAnswer get callAnswer => $_getN(15);
+  @$pb.TagNumber(16)
+  set callAnswer(CallAnswer value) => $_setField(16, value);
+  @$pb.TagNumber(16)
+  $core.bool hasCallAnswer() => $_has(15);
+  @$pb.TagNumber(16)
+  void clearCallAnswer() => $_clearField(16);
+  @$pb.TagNumber(16)
+  CallAnswer ensureCallAnswer() => $_ensure(15);
+
+  @$pb.TagNumber(17)
+  CallCandidate get callCandidate => $_getN(16);
+  @$pb.TagNumber(17)
+  set callCandidate(CallCandidate value) => $_setField(17, value);
+  @$pb.TagNumber(17)
+  $core.bool hasCallCandidate() => $_has(16);
+  @$pb.TagNumber(17)
+  void clearCallCandidate() => $_clearField(17);
+  @$pb.TagNumber(17)
+  CallCandidate ensureCallCandidate() => $_ensure(16);
+
+  @$pb.TagNumber(18)
+  CallEnd get callEnd => $_getN(17);
+  @$pb.TagNumber(18)
+  set callEnd(CallEnd value) => $_setField(18, value);
+  @$pb.TagNumber(18)
+  $core.bool hasCallEnd() => $_has(17);
+  @$pb.TagNumber(18)
+  void clearCallEnd() => $_clearField(18);
+  @$pb.TagNumber(18)
+  CallEnd ensureCallEnd() => $_ensure(17);
 }
 
 /// 信封式文件数据回执:接收方每写入一帧回报已落盘偏移,
@@ -1171,6 +1247,315 @@ class FileDataAck extends $pb.GeneratedMessage {
   $core.bool hasAckedOffset() => $_has(1);
   @$pb.TagNumber(2)
   void clearAckedOffset() => $_clearField(2);
+}
+
+class CallOffer extends $pb.GeneratedMessage {
+  factory CallOffer({
+    $core.String? callId,
+    $core.String? sdp,
+    $core.bool? video,
+  }) {
+    final result = create();
+    if (callId != null) result.callId = callId;
+    if (sdp != null) result.sdp = sdp;
+    if (video != null) result.video = video;
+    return result;
+  }
+
+  CallOffer._();
+
+  factory CallOffer.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CallOffer.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CallOffer',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'callId')
+    ..aOS(2, _omitFieldNames ? '' : 'sdp')
+    ..aOB(3, _omitFieldNames ? '' : 'video')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallOffer clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallOffer copyWith(void Function(CallOffer) updates) =>
+      super.copyWith((message) => updates(message as CallOffer)) as CallOffer;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CallOffer create() => CallOffer._();
+  @$core.override
+  CallOffer createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CallOffer getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<CallOffer>(create);
+  static CallOffer? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get callId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set callId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasCallId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearCallId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get sdp => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set sdp($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSdp() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSdp() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.bool get video => $_getBF(2);
+  @$pb.TagNumber(3)
+  set video($core.bool value) => $_setBool(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasVideo() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearVideo() => $_clearField(3);
+}
+
+class CallAnswer extends $pb.GeneratedMessage {
+  factory CallAnswer({
+    $core.String? callId,
+    $core.String? sdp,
+    $core.bool? accepted,
+  }) {
+    final result = create();
+    if (callId != null) result.callId = callId;
+    if (sdp != null) result.sdp = sdp;
+    if (accepted != null) result.accepted = accepted;
+    return result;
+  }
+
+  CallAnswer._();
+
+  factory CallAnswer.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CallAnswer.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CallAnswer',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'callId')
+    ..aOS(2, _omitFieldNames ? '' : 'sdp')
+    ..aOB(3, _omitFieldNames ? '' : 'accepted')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallAnswer clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallAnswer copyWith(void Function(CallAnswer) updates) =>
+      super.copyWith((message) => updates(message as CallAnswer)) as CallAnswer;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CallAnswer create() => CallAnswer._();
+  @$core.override
+  CallAnswer createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CallAnswer getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<CallAnswer>(create);
+  static CallAnswer? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get callId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set callId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasCallId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearCallId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get sdp => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set sdp($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSdp() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSdp() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.bool get accepted => $_getBF(2);
+  @$pb.TagNumber(3)
+  set accepted($core.bool value) => $_setBool(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAccepted() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAccepted() => $_clearField(3);
+}
+
+class CallCandidate extends $pb.GeneratedMessage {
+  factory CallCandidate({
+    $core.String? callId,
+    $core.String? candidate,
+    $core.String? sdpMid,
+    $core.int? sdpMlineIndex,
+  }) {
+    final result = create();
+    if (callId != null) result.callId = callId;
+    if (candidate != null) result.candidate = candidate;
+    if (sdpMid != null) result.sdpMid = sdpMid;
+    if (sdpMlineIndex != null) result.sdpMlineIndex = sdpMlineIndex;
+    return result;
+  }
+
+  CallCandidate._();
+
+  factory CallCandidate.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CallCandidate.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CallCandidate',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'callId')
+    ..aOS(2, _omitFieldNames ? '' : 'candidate')
+    ..aOS(3, _omitFieldNames ? '' : 'sdpMid')
+    ..aI(4, _omitFieldNames ? '' : 'sdpMlineIndex')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallCandidate clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallCandidate copyWith(void Function(CallCandidate) updates) =>
+      super.copyWith((message) => updates(message as CallCandidate))
+          as CallCandidate;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CallCandidate create() => CallCandidate._();
+  @$core.override
+  CallCandidate createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CallCandidate getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<CallCandidate>(create);
+  static CallCandidate? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get callId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set callId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasCallId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearCallId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get candidate => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set candidate($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasCandidate() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCandidate() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get sdpMid => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set sdpMid($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasSdpMid() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSdpMid() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get sdpMlineIndex => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set sdpMlineIndex($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasSdpMlineIndex() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearSdpMlineIndex() => $_clearField(4);
+}
+
+class CallEnd extends $pb.GeneratedMessage {
+  factory CallEnd({
+    $core.String? callId,
+    $core.String? reason,
+  }) {
+    final result = create();
+    if (callId != null) result.callId = callId;
+    if (reason != null) result.reason = reason;
+    return result;
+  }
+
+  CallEnd._();
+
+  factory CallEnd.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CallEnd.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CallEnd',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'callId')
+    ..aOS(2, _omitFieldNames ? '' : 'reason')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallEnd clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CallEnd copyWith(void Function(CallEnd) updates) =>
+      super.copyWith((message) => updates(message as CallEnd)) as CallEnd;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CallEnd create() => CallEnd._();
+  @$core.override
+  CallEnd createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CallEnd getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<CallEnd>(create);
+  static CallEnd? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get callId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set callId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasCallId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearCallId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get reason => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set reason($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasReason() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearReason() => $_clearField(2);
 }
 
 /// 外部传输链路(WebRTC DataChannel 等)的第一个信封:

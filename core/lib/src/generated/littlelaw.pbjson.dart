@@ -332,6 +332,42 @@ const Envelope$json = {
       '9': 0,
       '10': 'fileDataAck'
     },
+    {
+      '1': 'call_offer',
+      '3': 15,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.CallOffer',
+      '9': 0,
+      '10': 'callOffer'
+    },
+    {
+      '1': 'call_answer',
+      '3': 16,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.CallAnswer',
+      '9': 0,
+      '10': 'callAnswer'
+    },
+    {
+      '1': 'call_candidate',
+      '3': 17,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.CallCandidate',
+      '9': 0,
+      '10': 'callCandidate'
+    },
+    {
+      '1': 'call_end',
+      '3': 18,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.CallEnd',
+      '9': 0,
+      '10': 'callEnd'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -353,8 +389,12 @@ final $typed_data.Uint8List envelopeDescriptor = $convert.base64Decode(
     'LmxpdHRsZWxhdy52MS5MaW5rQXV0aEgAUghsaW5rQXV0aBI/CgpmaWxlX2ZldGNoGAwgASgLMh'
     '4ubGl0dGxlbGF3LnYxLkZpbGVGZXRjaFJlcXVlc3RIAFIJZmlsZUZldGNoEjUKCWZpbGVfZGF0'
     'YRgNIAEoCzIWLmxpdHRsZWxhdy52MS5GaWxlRGF0YUgAUghmaWxlRGF0YRI/Cg1maWxlX2RhdG'
-    'FfYWNrGA4gASgLMhkubGl0dGxlbGF3LnYxLkZpbGVEYXRhQWNrSABSC2ZpbGVEYXRhQWNrQgkK'
-    'B3BheWxvYWQ=');
+    'FfYWNrGA4gASgLMhkubGl0dGxlbGF3LnYxLkZpbGVEYXRhQWNrSABSC2ZpbGVEYXRhQWNrEjgK'
+    'CmNhbGxfb2ZmZXIYDyABKAsyFy5saXR0bGVsYXcudjEuQ2FsbE9mZmVySABSCWNhbGxPZmZlch'
+    'I7CgtjYWxsX2Fuc3dlchgQIAEoCzIYLmxpdHRsZWxhdy52MS5DYWxsQW5zd2VySABSCmNhbGxB'
+    'bnN3ZXISRAoOY2FsbF9jYW5kaWRhdGUYESABKAsyGy5saXR0bGVsYXcudjEuQ2FsbENhbmRpZG'
+    'F0ZUgAUg1jYWxsQ2FuZGlkYXRlEjIKCGNhbGxfZW5kGBIgASgLMhUubGl0dGxlbGF3LnYxLkNh'
+    'bGxFbmRIAFIHY2FsbEVuZEIJCgdwYXlsb2Fk');
 
 @$core.Deprecated('Use fileDataAckDescriptor instead')
 const FileDataAck$json = {
@@ -369,6 +409,67 @@ const FileDataAck$json = {
 final $typed_data.Uint8List fileDataAckDescriptor = $convert.base64Decode(
     'CgtGaWxlRGF0YUFjaxIXCgdmaWxlX2lkGAEgASgJUgZmaWxlSWQSIQoMYWNrZWRfb2Zmc2V0GA'
     'IgASgDUgthY2tlZE9mZnNldA==');
+
+@$core.Deprecated('Use callOfferDescriptor instead')
+const CallOffer$json = {
+  '1': 'CallOffer',
+  '2': [
+    {'1': 'call_id', '3': 1, '4': 1, '5': 9, '10': 'callId'},
+    {'1': 'sdp', '3': 2, '4': 1, '5': 9, '10': 'sdp'},
+    {'1': 'video', '3': 3, '4': 1, '5': 8, '10': 'video'},
+  ],
+};
+
+/// Descriptor for `CallOffer`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List callOfferDescriptor = $convert.base64Decode(
+    'CglDYWxsT2ZmZXISFwoHY2FsbF9pZBgBIAEoCVIGY2FsbElkEhAKA3NkcBgCIAEoCVIDc2RwEh'
+    'QKBXZpZGVvGAMgASgIUgV2aWRlbw==');
+
+@$core.Deprecated('Use callAnswerDescriptor instead')
+const CallAnswer$json = {
+  '1': 'CallAnswer',
+  '2': [
+    {'1': 'call_id', '3': 1, '4': 1, '5': 9, '10': 'callId'},
+    {'1': 'sdp', '3': 2, '4': 1, '5': 9, '10': 'sdp'},
+    {'1': 'accepted', '3': 3, '4': 1, '5': 8, '10': 'accepted'},
+  ],
+};
+
+/// Descriptor for `CallAnswer`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List callAnswerDescriptor = $convert.base64Decode(
+    'CgpDYWxsQW5zd2VyEhcKB2NhbGxfaWQYASABKAlSBmNhbGxJZBIQCgNzZHAYAiABKAlSA3NkcB'
+    'IaCghhY2NlcHRlZBgDIAEoCFIIYWNjZXB0ZWQ=');
+
+@$core.Deprecated('Use callCandidateDescriptor instead')
+const CallCandidate$json = {
+  '1': 'CallCandidate',
+  '2': [
+    {'1': 'call_id', '3': 1, '4': 1, '5': 9, '10': 'callId'},
+    {'1': 'candidate', '3': 2, '4': 1, '5': 9, '10': 'candidate'},
+    {'1': 'sdp_mid', '3': 3, '4': 1, '5': 9, '10': 'sdpMid'},
+    {'1': 'sdp_mline_index', '3': 4, '4': 1, '5': 5, '10': 'sdpMlineIndex'},
+  ],
+};
+
+/// Descriptor for `CallCandidate`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List callCandidateDescriptor = $convert.base64Decode(
+    'Cg1DYWxsQ2FuZGlkYXRlEhcKB2NhbGxfaWQYASABKAlSBmNhbGxJZBIcCgljYW5kaWRhdGUYAi'
+    'ABKAlSCWNhbmRpZGF0ZRIXCgdzZHBfbWlkGAMgASgJUgZzZHBNaWQSJgoPc2RwX21saW5lX2lu'
+    'ZGV4GAQgASgFUg1zZHBNbGluZUluZGV4');
+
+@$core.Deprecated('Use callEndDescriptor instead')
+const CallEnd$json = {
+  '1': 'CallEnd',
+  '2': [
+    {'1': 'call_id', '3': 1, '4': 1, '5': 9, '10': 'callId'},
+    {'1': 'reason', '3': 2, '4': 1, '5': 9, '10': 'reason'},
+  ],
+};
+
+/// Descriptor for `CallEnd`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List callEndDescriptor = $convert.base64Decode(
+    'CgdDYWxsRW5kEhcKB2NhbGxfaWQYASABKAlSBmNhbGxJZBIWCgZyZWFzb24YAiABKAlSBnJlYX'
+    'Nvbg==');
 
 @$core.Deprecated('Use linkAuthDescriptor instead')
 const LinkAuth$json = {

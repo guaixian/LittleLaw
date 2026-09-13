@@ -33,6 +33,13 @@ class RendezvousMail {
   final Uint8List envelopeBytes;
 }
 
+/// 对端上线事件(可携带公网直连端点)。
+class RendezvousPeerOnline {
+  RendezvousPeerOnline({required this.id, this.endpoint});
+  final String id;
+  final String? endpoint; // host:port(对端 UPnP 映射,可空)
+}
+
 /// Rendezvous 客户端:连接可选的公网中转服务器。
 ///
 /// 职责:注册(ECDSA 挑战认证)、presence 订阅、信令收发(密文)、
@@ -43,6 +50,7 @@ class RendezvousClient {
     required this.identity,
     required this.store,
     required this.url,
+    this.endpoint,
   });
 
   /// 内置公共中转服务器(默认;可在设置中改为自建地址或 off 关闭)。
@@ -51,6 +59,9 @@ class RendezvousClient {
   final Identity identity;
   final Store store;
   final String url; // ws://host:port/ws 或 wss://domain/ws
+
+  /// 本机公网直连端点(UPnP 映射,注册时上报,可空)。
+  String? endpoint;
 
   /// 回退令牌来源:信令来自未入账设备(远程配对的受邀方)时,
   /// 用进行中的邀请令牌尝试解密(典型场景:一扫即成的应答推回)。
@@ -63,6 +74,7 @@ class RendezvousClient {
   bool _stopping = false;
 
   final _peerOnline = StreamController<String>.broadcast();
+  final _peerOnlineEx = StreamController<RendezvousPeerOnline>.broadcast();
   final _peerOffline = StreamController<String>.broadcast();
   final _signals = StreamController<RendezvousSignal>.broadcast();
   final _mail = StreamController<RendezvousMail>.broadcast();
@@ -70,6 +82,9 @@ class RendezvousClient {
   final _pairAnswers = StreamController<String>.broadcast();
 
   Stream<String> get peerOnline => _peerOnline.stream;
+
+  /// 对端上线(含公网端点,如有)。
+  Stream<RendezvousPeerOnline> get peerOnlineEx => _peerOnlineEx.stream;
   Stream<String> get peerOffline => _peerOffline.stream;
   Stream<RendezvousSignal> get signals => _signals.stream;
   Stream<RendezvousMail> get mail => _mail.stream;
@@ -192,14 +207,33 @@ class RendezvousClient {
         subscribePeers();
         fetchMailbox();
       case 'presence':
-        for (final id in (f['online'] as List? ?? const []).cast<String>()) {
+        for (final raw in (f['online'] as List? ?? const [])) {
+          String id;
+          String? endpoint;
+          if (raw is String) {
+            id = raw; // 旧格式(纯 id 字符串)
+            endpoint = null;
+          } else {
+            final item = raw as Map<String, dynamic>;
+            id = item['id'] as String? ?? '';
+            final ep = item['endpoint'] as String?;
+            endpoint = (ep == null || ep.isEmpty) ? null : ep;
+          }
+          if (id.isEmpty) continue;
           _peerOnline.add(id);
+          _peerOnlineEx.add(RendezvousPeerOnline(id: id, endpoint: endpoint));
         }
         for (final id in (f['offline'] as List? ?? const []).cast<String>()) {
           _peerOffline.add(id);
         }
       case 'peer_online':
-        _peerOnline.add(f['id'] as String? ?? '');
+        final id = f['id'] as String? ?? '';
+        final ep = f['endpoint'] as String?;
+        if (id.isEmpty) break;
+        _peerOnline.add(id);
+        _peerOnlineEx.add(RendezvousPeerOnline(
+            id: id,
+            endpoint: (ep == null || ep.isEmpty) ? null : ep));
       case 'peer_offline':
         _peerOffline.add(f['id'] as String? ?? '');
       case 'signal':
@@ -223,6 +257,7 @@ class RendezvousClient {
       'fingerprint': fingerprint,
       'cert': identity.certPem,
       'sig': sig,
+      if (endpoint != null && endpoint!.isNotEmpty) 'endpoint': endpoint,
     });
   }
 
@@ -379,6 +414,7 @@ class RendezvousClient {
   Future<void> dispose() async {
     await stop();
     await _peerOnline.close();
+    await _peerOnlineEx.close();
     await _peerOffline.close();
     await _signals.close();
     await _mail.close();

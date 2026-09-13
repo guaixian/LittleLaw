@@ -28,9 +28,12 @@
 	<!-- NFC 一碰配对 -->
 	<key>NFCReaderUsageDescription</key>
 	<string>靠近对方手机读取配对信息</string>
-	<!-- 扫码配对/远程邀请需要相机 -->
+	<!-- 扫码配对/视频通话需要相机 -->
 	<key>NSCameraUsageDescription</key>
-	<string>扫描对方的配对二维码</string>
+	<string>扫描对方的配对二维码与视频通话</string>
+	<!-- 音视频通话需要麦克风 -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>语音/视频通话</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
