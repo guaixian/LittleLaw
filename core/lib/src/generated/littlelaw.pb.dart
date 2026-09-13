@@ -814,6 +814,8 @@ enum Envelope_Payload {
   callCandidate,
   callEnd,
   groupSync,
+  readReceipt,
+  reaction,
   notSet
 }
 
@@ -838,6 +840,8 @@ class Envelope extends $pb.GeneratedMessage {
     CallCandidate? callCandidate,
     CallEnd? callEnd,
     GroupSync? groupSync,
+    ReadReceipt? readReceipt,
+    ReactionUpdate? reaction,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -859,6 +863,8 @@ class Envelope extends $pb.GeneratedMessage {
     if (callCandidate != null) result.callCandidate = callCandidate;
     if (callEnd != null) result.callEnd = callEnd;
     if (groupSync != null) result.groupSync = groupSync;
+    if (readReceipt != null) result.readReceipt = readReceipt;
+    if (reaction != null) result.reaction = reaction;
     return result;
   }
 
@@ -890,13 +896,36 @@ class Envelope extends $pb.GeneratedMessage {
     17: Envelope_Payload.callCandidate,
     18: Envelope_Payload.callEnd,
     19: Envelope_Payload.groupSync,
+    20: Envelope_Payload.readReceipt,
+    21: Envelope_Payload.reaction,
     0: Envelope_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'Envelope',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
       createEmptyInstance: create)
-    ..oo(0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
+    ..oo(0, [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<Hello>(2, _omitFieldNames ? '' : 'hello', subBuilder: Hello.create)
     ..aOM<ChatMessage>(3, _omitFieldNames ? '' : 'chat',
@@ -933,6 +962,10 @@ class Envelope extends $pb.GeneratedMessage {
         subBuilder: CallEnd.create)
     ..aOM<GroupSync>(19, _omitFieldNames ? '' : 'groupSync',
         subBuilder: GroupSync.create)
+    ..aOM<ReadReceipt>(20, _omitFieldNames ? '' : 'readReceipt',
+        subBuilder: ReadReceipt.create)
+    ..aOM<ReactionUpdate>(21, _omitFieldNames ? '' : 'reaction',
+        subBuilder: ReactionUpdate.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -971,6 +1004,8 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
   @$pb.TagNumber(19)
+  @$pb.TagNumber(20)
+  @$pb.TagNumber(21)
   Envelope_Payload whichPayload() => _Envelope_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -990,6 +1025,8 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
   @$pb.TagNumber(19)
+  @$pb.TagNumber(20)
+  @$pb.TagNumber(21)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1198,6 +1235,218 @@ class Envelope extends $pb.GeneratedMessage {
   void clearGroupSync() => $_clearField(19);
   @$pb.TagNumber(19)
   GroupSync ensureGroupSync() => $_ensure(18);
+
+  @$pb.TagNumber(20)
+  ReadReceipt get readReceipt => $_getN(19);
+  @$pb.TagNumber(20)
+  set readReceipt(ReadReceipt value) => $_setField(20, value);
+  @$pb.TagNumber(20)
+  $core.bool hasReadReceipt() => $_has(19);
+  @$pb.TagNumber(20)
+  void clearReadReceipt() => $_clearField(20);
+  @$pb.TagNumber(20)
+  ReadReceipt ensureReadReceipt() => $_ensure(19);
+
+  @$pb.TagNumber(21)
+  ReactionUpdate get reaction => $_getN(20);
+  @$pb.TagNumber(21)
+  set reaction(ReactionUpdate value) => $_setField(21, value);
+  @$pb.TagNumber(21)
+  $core.bool hasReaction() => $_has(20);
+  @$pb.TagNumber(21)
+  void clearReaction() => $_clearField(21);
+  @$pb.TagNumber(21)
+  ReactionUpdate ensureReaction() => $_ensure(20);
+}
+
+/// / 已读回执:接收方告知原作者"这些消息我已读"。
+/// / 原作者按 msg_id 置 read 标记(仅自己发的消息生效)。
+class ReadReceipt extends $pb.GeneratedMessage {
+  factory ReadReceipt({
+    $core.String? reader,
+    $core.String? convPeer,
+    $core.String? groupId,
+    $core.Iterable<$core.String>? msgIds,
+  }) {
+    final result = create();
+    if (reader != null) result.reader = reader;
+    if (convPeer != null) result.convPeer = convPeer;
+    if (groupId != null) result.groupId = groupId;
+    if (msgIds != null) result.msgIds.addAll(msgIds);
+    return result;
+  }
+
+  ReadReceipt._();
+
+  factory ReadReceipt.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ReadReceipt.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ReadReceipt',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'reader')
+    ..aOS(2, _omitFieldNames ? '' : 'convPeer')
+    ..aOS(3, _omitFieldNames ? '' : 'groupId')
+    ..pPS(4, _omitFieldNames ? '' : 'msgIds')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ReadReceipt clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ReadReceipt copyWith(void Function(ReadReceipt) updates) =>
+      super.copyWith((message) => updates(message as ReadReceipt))
+          as ReadReceipt;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ReadReceipt create() => ReadReceipt._();
+  @$core.override
+  ReadReceipt createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ReadReceipt getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ReadReceipt>(create);
+  static ReadReceipt? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get reader => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set reader($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasReader() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearReader() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get convPeer => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set convPeer($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasConvPeer() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearConvPeer() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get groupId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set groupId($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasGroupId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearGroupId() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $pb.PbList<$core.String> get msgIds => $_getList(3);
+}
+
+/// / 表情回应:单设备单 emoji 的增量更新(设/取消),天然可交换、幂等,
+/// / 无需 LWW 冲突消解。emoji 为空 = 取消该设备的回应。
+class ReactionUpdate extends $pb.GeneratedMessage {
+  factory ReactionUpdate({
+    $core.String? msgId,
+    $core.String? groupId,
+    $core.String? convPeer,
+    $core.String? deviceId,
+    $core.String? emoji,
+  }) {
+    final result = create();
+    if (msgId != null) result.msgId = msgId;
+    if (groupId != null) result.groupId = groupId;
+    if (convPeer != null) result.convPeer = convPeer;
+    if (deviceId != null) result.deviceId = deviceId;
+    if (emoji != null) result.emoji = emoji;
+    return result;
+  }
+
+  ReactionUpdate._();
+
+  factory ReactionUpdate.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ReactionUpdate.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ReactionUpdate',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'msgId')
+    ..aOS(2, _omitFieldNames ? '' : 'groupId')
+    ..aOS(3, _omitFieldNames ? '' : 'convPeer')
+    ..aOS(4, _omitFieldNames ? '' : 'deviceId')
+    ..aOS(5, _omitFieldNames ? '' : 'emoji')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ReactionUpdate clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ReactionUpdate copyWith(void Function(ReactionUpdate) updates) =>
+      super.copyWith((message) => updates(message as ReactionUpdate))
+          as ReactionUpdate;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ReactionUpdate create() => ReactionUpdate._();
+  @$core.override
+  ReactionUpdate createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ReactionUpdate getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ReactionUpdate>(create);
+  static ReactionUpdate? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get msgId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set msgId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasMsgId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearMsgId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get groupId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set groupId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasGroupId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearGroupId() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get convPeer => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set convPeer($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasConvPeer() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearConvPeer() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get deviceId => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set deviceId($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasDeviceId() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDeviceId() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get emoji => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set emoji($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasEmoji() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearEmoji() => $_clearField(5);
 }
 
 /// 群定义:建群或修改群时扇出给全体成员 + 我的设备。
@@ -1207,12 +1456,14 @@ class GroupSync extends $pb.GeneratedMessage {
     $core.String? name,
     $core.Iterable<$core.String>? memberIds,
     $fixnum.Int64? createdAtMs,
+    $core.bool? dissolved,
   }) {
     final result = create();
     if (groupId != null) result.groupId = groupId;
     if (name != null) result.name = name;
     if (memberIds != null) result.memberIds.addAll(memberIds);
     if (createdAtMs != null) result.createdAtMs = createdAtMs;
+    if (dissolved != null) result.dissolved = dissolved;
     return result;
   }
 
@@ -1233,6 +1484,7 @@ class GroupSync extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..pPS(3, _omitFieldNames ? '' : 'memberIds')
     ..aInt64(4, _omitFieldNames ? '' : 'createdAtMs')
+    ..aOB(5, _omitFieldNames ? '' : 'dissolved')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1282,6 +1534,15 @@ class GroupSync extends $pb.GeneratedMessage {
   $core.bool hasCreatedAtMs() => $_has(3);
   @$pb.TagNumber(4)
   void clearCreatedAtMs() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.bool get dissolved => $_getBF(4);
+  @$pb.TagNumber(5)
+  set dissolved($core.bool value) => $_setBool(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasDissolved() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearDissolved() => $_clearField(5);
 }
 
 /// 信封式文件数据回执:接收方每写入一帧回报已落盘偏移,
@@ -1957,6 +2218,8 @@ class ChatMessage extends $pb.GeneratedMessage {
     $core.String? convPeer,
     $core.String? sender,
     $core.String? groupId,
+    $core.int? durationMs,
+    $core.bool? read,
   }) {
     final result = create();
     if (msgId != null) result.msgId = msgId;
@@ -1972,6 +2235,8 @@ class ChatMessage extends $pb.GeneratedMessage {
     if (convPeer != null) result.convPeer = convPeer;
     if (sender != null) result.sender = sender;
     if (groupId != null) result.groupId = groupId;
+    if (durationMs != null) result.durationMs = durationMs;
+    if (read != null) result.read = read;
     return result;
   }
 
@@ -2001,6 +2266,8 @@ class ChatMessage extends $pb.GeneratedMessage {
     ..aOS(11, _omitFieldNames ? '' : 'convPeer')
     ..aOS(12, _omitFieldNames ? '' : 'sender')
     ..aOS(13, _omitFieldNames ? '' : 'groupId')
+    ..aI(14, _omitFieldNames ? '' : 'durationMs')
+    ..aOB(15, _omitFieldNames ? '' : 'read')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2139,6 +2406,24 @@ class ChatMessage extends $pb.GeneratedMessage {
   $core.bool hasGroupId() => $_has(12);
   @$pb.TagNumber(13)
   void clearGroupId() => $_clearField(13);
+
+  @$pb.TagNumber(14)
+  $core.int get durationMs => $_getIZ(13);
+  @$pb.TagNumber(14)
+  set durationMs($core.int value) => $_setSignedInt32(13, value);
+  @$pb.TagNumber(14)
+  $core.bool hasDurationMs() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearDurationMs() => $_clearField(14);
+
+  @$pb.TagNumber(15)
+  $core.bool get read => $_getBF(14);
+  @$pb.TagNumber(15)
+  set read($core.bool value) => $_setBool(14, value);
+  @$pb.TagNumber(15)
+  $core.bool hasRead() => $_has(14);
+  @$pb.TagNumber(15)
+  void clearRead() => $_clearField(15);
 }
 
 /// 删除操作(墓碑)。Telegram 模式:一端删除,另一端同步硬删除。

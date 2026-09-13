@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
@@ -58,16 +59,21 @@ class Message {
     this.fileSha256,
     this.filePath,
     this.fileState = 0,
-  });
+    this.durationMs = 0,
+    this.read = false,
+    Map<String, String>? reactions,
+  }) : reactions = reactions ?? {};
 
   static const kindText = 0;
   static const kindImage = 1;
   static const kindFile = 2;
   static const kindVideo = 3;
+  static const kindVoice = 4;
 
-  /// 该类型是否携带文件本体(图片/文件/视频)。
+  /// 该类型是否携带文件本体(图片/文件/视频/语音)。
   static bool hasFilePayload(int kind) =>
-      kind == kindImage || kind == kindFile || kind == kindVideo;
+      kind == kindImage || kind == kindFile || kind == kindVideo ||
+      kind == kindVoice;
 
   static const fileStateNone = 0;
   static const fileStatePending = 1;
@@ -88,6 +94,15 @@ class Message {
   String? fileSha256;
   String? filePath;
   int fileState;
+
+  /// 语音时长(kind=4)。
+  final int durationMs;
+
+  /// 语义按行区分:sender=自己 → 对方已读;sender=他人 → 我已读(回执已发)。
+  bool read;
+
+  /// 表情回应:device_id → emoji。增量更新,天然可交换。
+  Map<String, String> reactions;
 }
 
 /// 本端产生的变更操作(同步协议核心)。append-only,对端 ACK 后压缩。
@@ -98,6 +113,8 @@ class Op {
   static const typeDelete = 'delete';
   static const typeClear = 'clear';
   static const typeGroup = 'group';
+  static const typeReaction = 'reaction';
+  static const typeReceipt = 'receipt';
 
   final int seq;
   final String peerId;
@@ -135,6 +152,9 @@ class Store {
   }
 
   void dispose() => _db.close();
+
+  /// WAL 落盘压缩(备份前调用,保证 littlelaw.db 单文件完整)。
+  void checkpoint() => _db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
 
   void _migrate() {
     _db.execute('''
@@ -209,6 +229,17 @@ class Store {
     } catch (_) {}
     try {
       _db.execute("ALTER TABLE peers ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      _db.execute(
+          'ALTER TABLE messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');
+    } catch (_) {}
+    try {
+      _db.execute('ALTER TABLE messages ADD COLUMN read INTEGER NOT NULL DEFAULT 0');
+    } catch (_) {}
+    try {
+      _db.execute(
+          "ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '{}'");
     } catch (_) {}
   }
 
@@ -318,12 +349,14 @@ class Store {
     _db.execute(
       '''INSERT OR IGNORE INTO messages
            (msg_id, conv_id, sender_id, lamport, created_at_ms, kind, text,
-            file_id, file_name, file_size, file_sha256, file_path, file_state)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            file_id, file_name, file_size, file_sha256, file_path, file_state,
+            duration_ms, read, reactions)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
       [
         m.msgId, m.convId, m.senderId, m.lamport, m.createdAtMs, m.kind,
         m.text, m.fileId, m.fileName, m.fileSize, m.fileSha256,
-        m.filePath, m.fileState,
+        m.filePath, m.fileState, m.durationMs, m.read ? 1 : 0,
+        jsonEncode(m.reactions),
       ],
     );
     return _db.updatedRows > 0;
@@ -391,7 +424,75 @@ class Store {
         fileSha256: r['file_sha256'] as String?,
         filePath: r['file_path'] as String?,
         fileState: r['file_state'] as int,
+        durationMs: (r['duration_ms'] as int? ?? 0),
+        read: ((r['read'] as int? ?? 0) == 1),
+        reactions: _decodeReactions(r['reactions'] as String?),
       );
+
+  static Map<String, String> _decodeReactions(String? raw) {
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded.map((k, v) => MapEntry(k, v.toString()));
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  // ------------------------------------------------------ 回执 / 回应 / 搜索
+
+  /// 会话内未回执的入向消息 ID(发送已读回执的依据)。
+  List<String> unreadIncoming(String convId, String myDeviceId) => _db
+      .select(
+          'SELECT msg_id FROM messages WHERE conv_id=? AND sender_id<>? AND read=0',
+          [convId, myDeviceId])
+      .map((r) => r['msg_id'] as String)
+      .toList();
+
+  /// 置已读标记(仅命中 [authors] 里的设备发的消息;镜像副本按原作者命中)。
+  int markRead(List<String> msgIds, List<String> authors) {
+    if (msgIds.isEmpty || authors.isEmpty) return 0;
+    final idMarks = List.filled(msgIds.length, '?').join(',');
+    final authorMarks = List.filled(authors.length, '?').join(',');
+    _db.execute(
+      'UPDATE messages SET read=1 WHERE msg_id IN ($idMarks) AND sender_id IN ($authorMarks)',
+      [...msgIds, ...authors],
+    );
+    return _db.updatedRows;
+  }
+
+  /// 增量更新表情回复(JSON 合并,单设备单 emoji)。
+  void updateReaction(String msgId, String deviceId, String emoji) {
+    final rows = _db
+        .select('SELECT reactions FROM messages WHERE msg_id=?', [msgId]);
+    if (rows.isEmpty) return;
+    final map = _decodeReactions(rows.first['reactions'] as String?);
+    if (emoji.isEmpty) {
+      map.remove(deviceId);
+    } else {
+      if (map[deviceId] == emoji) return; // 幂等
+      map[deviceId] = emoji;
+    }
+    _db.execute('UPDATE messages SET reactions=? WHERE msg_id=?',
+        [jsonEncode(map), msgId]);
+  }
+
+  /// 全库消息搜索(文本 + 文件名 LIKE,已转义)。
+  List<Message> searchMessages(String query, {int limit = 200}) {
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final esc = q.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
+    final like = '%$esc%';
+    return _db
+        .select(
+            r"""SELECT * FROM messages
+                WHERE text LIKE ? ESCAPE '\' OR file_name LIKE ? ESCAPE '\'
+                ORDER BY created_at_ms DESC LIMIT ?""",
+            [like, like, limit])
+        .map(_messageFromRow)
+        .toList();
+  }
 
   /// 按 fileId 反查(传输层用于重启后找回发送源文件)。
   Message? findMessageByFileId(String fileId, {String? senderId}) {
@@ -476,6 +577,19 @@ class Store {
       createdAtMs: r['created_at_ms'] as int,
       memberIds: members,
     );
+  }
+
+  /// 删除群定义 + 群成员表 + 群会话与消息(被移出/解散/自解散)。
+  /// [keepMessages] 退群自删时保留历史。
+  void deleteGroup(String groupId, {bool keepMessages = false}) {
+    final convId = Group.convIdOf(groupId);
+    _db.execute('DELETE FROM groups WHERE group_id=?', [groupId]);
+    _db.execute('DELETE FROM group_members WHERE group_id=?', [groupId]);
+    if (!keepMessages) {
+      _db.execute('DELETE FROM messages WHERE conv_id=?', [convId]);
+      _db.execute('DELETE FROM conversations WHERE conv_id=?', [convId]);
+      _db.execute('DELETE FROM ops WHERE peer_id=?', [groupId]);
+    }
   }
 
   /// 群成员(不含本机)。

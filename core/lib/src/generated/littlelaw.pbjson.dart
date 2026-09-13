@@ -377,6 +377,24 @@ const Envelope$json = {
       '9': 0,
       '10': 'groupSync'
     },
+    {
+      '1': 'read_receipt',
+      '3': 20,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.ReadReceipt',
+      '9': 0,
+      '10': 'readReceipt'
+    },
+    {
+      '1': 'reaction',
+      '3': 21,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.ReactionUpdate',
+      '9': 0,
+      '10': 'reaction'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -404,7 +422,44 @@ final $typed_data.Uint8List envelopeDescriptor = $convert.base64Decode(
     'bnN3ZXISRAoOY2FsbF9jYW5kaWRhdGUYESABKAsyGy5saXR0bGVsYXcudjEuQ2FsbENhbmRpZG'
     'F0ZUgAUg1jYWxsQ2FuZGlkYXRlEjIKCGNhbGxfZW5kGBIgASgLMhUubGl0dGxlbGF3LnYxLkNh'
     'bGxFbmRIAFIHY2FsbEVuZBI4Cgpncm91cF9zeW5jGBMgASgLMhcubGl0dGxlbGF3LnYxLkdyb3'
-    'VwU3luY0gAUglncm91cFN5bmNCCQoHcGF5bG9hZA==');
+    'VwU3luY0gAUglncm91cFN5bmMSPgoMcmVhZF9yZWNlaXB0GBQgASgLMhkubGl0dGxlbGF3LnYx'
+    'LlJlYWRSZWNlaXB0SABSC3JlYWRSZWNlaXB0EjoKCHJlYWN0aW9uGBUgASgLMhwubGl0dGxlbG'
+    'F3LnYxLlJlYWN0aW9uVXBkYXRlSABSCHJlYWN0aW9uQgkKB3BheWxvYWQ=');
+
+@$core.Deprecated('Use readReceiptDescriptor instead')
+const ReadReceipt$json = {
+  '1': 'ReadReceipt',
+  '2': [
+    {'1': 'reader', '3': 1, '4': 1, '5': 9, '10': 'reader'},
+    {'1': 'conv_peer', '3': 2, '4': 1, '5': 9, '10': 'convPeer'},
+    {'1': 'group_id', '3': 3, '4': 1, '5': 9, '10': 'groupId'},
+    {'1': 'msg_ids', '3': 4, '4': 3, '5': 9, '10': 'msgIds'},
+  ],
+};
+
+/// Descriptor for `ReadReceipt`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List readReceiptDescriptor = $convert.base64Decode(
+    'CgtSZWFkUmVjZWlwdBIWCgZyZWFkZXIYASABKAlSBnJlYWRlchIbCgljb252X3BlZXIYAiABKA'
+    'lSCGNvbnZQZWVyEhkKCGdyb3VwX2lkGAMgASgJUgdncm91cElkEhcKB21zZ19pZHMYBCADKAlS'
+    'Bm1zZ0lkcw==');
+
+@$core.Deprecated('Use reactionUpdateDescriptor instead')
+const ReactionUpdate$json = {
+  '1': 'ReactionUpdate',
+  '2': [
+    {'1': 'msg_id', '3': 1, '4': 1, '5': 9, '10': 'msgId'},
+    {'1': 'group_id', '3': 2, '4': 1, '5': 9, '10': 'groupId'},
+    {'1': 'conv_peer', '3': 3, '4': 1, '5': 9, '10': 'convPeer'},
+    {'1': 'device_id', '3': 4, '4': 1, '5': 9, '10': 'deviceId'},
+    {'1': 'emoji', '3': 5, '4': 1, '5': 9, '10': 'emoji'},
+  ],
+};
+
+/// Descriptor for `ReactionUpdate`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List reactionUpdateDescriptor = $convert.base64Decode(
+    'Cg5SZWFjdGlvblVwZGF0ZRIVCgZtc2dfaWQYASABKAlSBW1zZ0lkEhkKCGdyb3VwX2lkGAIgAS'
+    'gJUgdncm91cElkEhsKCWNvbnZfcGVlchgDIAEoCVIIY29udlBlZXISGwoJZGV2aWNlX2lkGAQg'
+    'ASgJUghkZXZpY2VJZBIUCgVlbW9qaRgFIAEoCVIFZW1vamk=');
 
 @$core.Deprecated('Use groupSyncDescriptor instead')
 const GroupSync$json = {
@@ -414,6 +469,7 @@ const GroupSync$json = {
     {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
     {'1': 'member_ids', '3': 3, '4': 3, '5': 9, '10': 'memberIds'},
     {'1': 'created_at_ms', '3': 4, '4': 1, '5': 3, '10': 'createdAtMs'},
+    {'1': 'dissolved', '3': 5, '4': 1, '5': 8, '10': 'dissolved'},
   ],
 };
 
@@ -421,7 +477,7 @@ const GroupSync$json = {
 final $typed_data.Uint8List groupSyncDescriptor = $convert.base64Decode(
     'CglHcm91cFN5bmMSGQoIZ3JvdXBfaWQYASABKAlSB2dyb3VwSWQSEgoEbmFtZRgCIAEoCVIEbm'
     'FtZRIdCgptZW1iZXJfaWRzGAMgAygJUgltZW1iZXJJZHMSIgoNY3JlYXRlZF9hdF9tcxgEIAEo'
-    'A1ILY3JlYXRlZEF0TXM=');
+    'A1ILY3JlYXRlZEF0TXMSHAoJZGlzc29sdmVkGAUgASgIUglkaXNzb2x2ZWQ=');
 
 @$core.Deprecated('Use fileDataAckDescriptor instead')
 const FileDataAck$json = {
@@ -571,6 +627,8 @@ const ChatMessage$json = {
     {'1': 'conv_peer', '3': 11, '4': 1, '5': 9, '10': 'convPeer'},
     {'1': 'sender', '3': 12, '4': 1, '5': 9, '10': 'sender'},
     {'1': 'group_id', '3': 13, '4': 1, '5': 9, '10': 'groupId'},
+    {'1': 'duration_ms', '3': 14, '4': 1, '5': 5, '10': 'durationMs'},
+    {'1': 'read', '3': 15, '4': 1, '5': 8, '10': 'read'},
   ],
 };
 
@@ -582,7 +640,8 @@ final $typed_data.Uint8List chatMessageDescriptor = $convert.base64Decode(
     'lsZV9pZBgHIAEoCVIGZmlsZUlkEhsKCWZpbGVfbmFtZRgIIAEoCVIIZmlsZU5hbWUSGwoJZmls'
     'ZV9zaXplGAkgASgDUghmaWxlU2l6ZRIfCgtmaWxlX3NoYTI1NhgKIAEoCVIKZmlsZVNoYTI1Nh'
     'IbCgljb252X3BlZXIYCyABKAlSCGNvbnZQZWVyEhYKBnNlbmRlchgMIAEoCVIGc2VuZGVyEhkK'
-    'CGdyb3VwX2lkGA0gASgJUgdncm91cElk');
+    'CGdyb3VwX2lkGA0gASgJUgdncm91cElkEh8KC2R1cmF0aW9uX21zGA4gASgFUgpkdXJhdGlvbk'
+    '1zEhIKBHJlYWQYDyABKAhSBHJlYWQ=');
 
 @$core.Deprecated('Use chatDeletedDescriptor instead')
 const ChatDeleted$json = {

@@ -3,9 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  desktop_drop
   flutter_webrtc
   media_kit_libs_linux
   media_kit_video
+  record_linux
   url_launcher_linux
 )
 

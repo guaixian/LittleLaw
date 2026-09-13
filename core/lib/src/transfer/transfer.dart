@@ -123,7 +123,9 @@ class TransferManager extends pbg.TransferServiceBase {
   // ------------------------------------------------------------ 发送侧
 
   /// 发送群文件:元数据扇出给全体成员,各成员向本机拉取文件本体。
-  Future<Message> sendGroupFileTo(String groupId, String filePath) async {
+  /// [kind] 缺省按扩展名识别;语音消息传 [Message.kindVoice] + [durationMs]。
+  Future<Message> sendGroupFileTo(String groupId, String filePath,
+      {int? kind, int durationMs = 0}) async {
     final file = File(filePath);
     if (!await file.exists()) {
       throw ArgumentError('file not found: $filePath');
@@ -135,7 +137,7 @@ class TransferManager extends pbg.TransferServiceBase {
 
     final convId = Group.convIdOf(groupId);
     final msgId = const Uuid().v4();
-    final msgKind = _kindForPath(filePath);
+    final msgKind = kind ?? _kindForPath(filePath);
     final chatMsg = pb.ChatMessage(
       msgId: msgId,
       lamport: Int64(store.nextLamport(convId)),
@@ -145,6 +147,7 @@ class TransferManager extends pbg.TransferServiceBase {
       fileName: file.uri.pathSegments.last,
       fileSize: Int64(size),
       fileSha256: hash,
+      durationMs: durationMs,
       groupId: groupId,
     );
     final msg = await sync.commitGroupFileMessage(groupId, chatMsg);
@@ -164,8 +167,9 @@ class TransferManager extends pbg.TransferServiceBase {
   }
 
   /// 发送文件:提交文件消息(同步到对端),之后等对端来拉取。
-  /// [kind] 缺省按扩展名识别:图片/视频/普通文件。
-  Future<Message> sendFileTo(String peerId, String filePath, {int? kind}) async {
+  /// [kind] 缺省按扩展名识别:图片/视频/普通文件;语音传 [Message.kindVoice]。
+  Future<Message> sendFileTo(String peerId, String filePath,
+      {int? kind, int durationMs = 0}) async {
     final file = File(filePath);
     if (!await file.exists()) {
       throw ArgumentError('file not found: $filePath');
@@ -187,6 +191,7 @@ class TransferManager extends pbg.TransferServiceBase {
       fileName: file.uri.pathSegments.last,
       fileSize: Int64(size),
       fileSha256: hash,
+      durationMs: durationMs,
     );
     final msg = await sync.commitFileMessage(peerId, chatMsg);
     // 本端消息直接标记完成(源文件在本机)。

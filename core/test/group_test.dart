@@ -128,6 +128,89 @@ void main() {
       expect(
           b.loadGroupMessages(group.id).every((m) => m.msgId != reply.msgId),
           isTrue);
+
+      // ---- 已读回执:C 打开会话标记已读 → A 的消息变已读。 ----
+      c.markRead(group.id);
+      await waitFor(
+          () => a.loadGroupMessages(group.id)
+              .firstWhere((m) => m.msgId == msg.msgId)
+              .read,
+          description: 'A 看到 C 的已读回执');
+      // B 的消息(他人消息)不应被置已读。
+      expect(
+          a.loadGroupMessages(group.id)
+              .where((m) => m.senderId == b.identity.deviceId)
+              .every((m) => !m.read),
+          isTrue);
+
+      // ---- 表情回应:B 给 A 的消息点 👍,A/C 都看到。 ----
+      b.setReaction(group.id, msg.msgId, '👍');
+      await waitFor(
+          () => a.loadGroupMessages(group.id)
+                  .firstWhere((m) => m.msgId == msg.msgId)
+                  .reactions[b.identity.deviceId] ==
+              '👍',
+          description: 'A 看到 B 的回应');
+      await waitFor(
+          () => c.loadGroupMessages(group.id)
+                  .firstWhere((m) => m.msgId == msg.msgId)
+                  .reactions[b.identity.deviceId] ==
+              '👍',
+          description: 'C 看到 B 的回应');
+      // A 也点同一个:C 端聚合为两个回应者。
+      a.setReaction(group.id, msg.msgId, '👍');
+      await waitFor(
+          () => c.loadGroupMessages(group.id)
+                  .firstWhere((m) => m.msgId == msg.msgId)
+                  .reactions
+                  .length ==
+              2,
+          description: 'C 看到两个回应者');
+      // B 取消回应。
+      b.setReaction(group.id, msg.msgId, '');
+      await waitFor(
+          () => a.loadGroupMessages(group.id)
+                  .firstWhere((m) => m.msgId == msg.msgId)
+                  .reactions
+                  .length ==
+              1,
+          description: 'B 取消回应后 A 只剩一个回应者');
+
+      // ---- 群管理:改群名 → 全端同步。 ----
+      a.renameGroup(group.id, '家人群2');
+      await waitFor(() => c.groupById(group.id)?.name == '家人群2',
+          description: 'C 收到新群名');
+
+      // ---- 踢人:A 把 C 移出群 → C 本地群与消息被删。 ----
+      a.removeGroupMembers(group.id, [c.identity.deviceId]);
+      await waitFor(() => c.groupById(group.id) == null,
+          description: 'C 本地群被删');
+      await waitFor(() => c.loadGroupMessages(group.id).isEmpty,
+          description: 'C 本地群消息被删');
+      // A/B 仍在群内。
+      expect(a.groupById(group.id)?.memberIds.length, 2);
+
+      // ---- 拉人:A 重新拉 C 入群 → C 恢复群定义(历史消息已清,重新开始)。 ----
+      a.addGroupMembers(group.id, [c.identity.deviceId]);
+      await waitFor(() => c.groupById(group.id) != null,
+          description: 'C 重新入群');
+      expect(c.groupById(group.id)?.memberIds.length, 3);
+
+      // ---- 解散:A 解散 → B/C 群与消息全删。 ----
+      final keep = await a.sendGroupText(group.id, '解散前最后一条');
+      await waitFor(
+          () => b.loadGroupMessages(group.id).any((m) => m.msgId == keep.msgId),
+          description: 'B 收到最后一条');
+      a.dissolveGroup(group.id);
+      await waitFor(
+          () => a.groupById(group.id) == null &&
+              b.groupById(group.id) == null &&
+              c.groupById(group.id) == null,
+          description: '三端群定义全删');
+      await waitFor(
+          () => b.loadGroupMessages(group.id).isEmpty &&
+              c.loadGroupMessages(group.id).isEmpty,
+          description: 'B/C 群消息全删');
     } finally {
       await a.dispose();
       await b.dispose();

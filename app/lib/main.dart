@@ -12,6 +12,7 @@ import 'device_info.dart';
 import 'globals.dart';
 import 'group_create_page.dart';
 import 'hotspot_page.dart';
+import 'search_page.dart';
 import 'push_wake.dart';
 import 'quick_pair_page.dart';
 import 'remote_pair_page.dart';
@@ -559,16 +560,36 @@ class _DevicesPageState extends State<DevicesPage> {
                 ),
               ),
               SafeArea(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text('$online 台在线',
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.white)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text('$online 台在线',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white)),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => SearchPage(engine: _engine!))),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.22),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.search,
+                            size: 18, color: Colors.white),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

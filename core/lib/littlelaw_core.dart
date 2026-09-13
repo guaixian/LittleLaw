@@ -37,6 +37,7 @@ export 'src/rendezvous/rendezvous.dart'
 export 'src/net/upnp.dart' show UpnpMapper;
 export 'src/pairing/pairing.dart' show PairRequestEvent, PairResult;
 export 'src/store/store.dart' show Message, Peer, Store, Group;
+export 'src/crypto/backup_codec.dart' show BackupCodec;
 export 'src/sync/sync_engine.dart'
     show
         EngineEvent,
@@ -53,9 +54,20 @@ export 'src/sync/sync_engine.dart'
         CallAnswerReceived,
         CallCandidateReceived,
         CallEndReceived,
-        GroupSynced;
+        GroupSynced,
+        ReceiptsUpdated,
+        ReactionsChanged;
 export 'src/generated/littlelaw.pb.dart'
-    show Envelope, LinkAuth, CallOffer, CallAnswer, CallCandidate, CallEnd, GroupSync;
+    show
+        Envelope,
+        LinkAuth,
+        CallOffer,
+        CallAnswer,
+        CallCandidate,
+        CallEnd,
+        GroupSync,
+        ReadReceipt,
+        ReactionUpdate;
 export 'src/transport/auth.dart' show Auth;
 export 'src/transfer/transfer.dart' show TransferProgress;
 
@@ -427,6 +439,9 @@ class LittleLawEngine {
   /// 本机收件箱目录。
   String get inboxDir => '$dataDir/inbox';
 
+  /// SQLite WAL 落盘(备份前调用)。
+  void checkpointDb() => store.checkpoint();
+
   // ------------------------------------------------------------ 群聊
 
   /// 创建群(成员含本机自动加入)并扇出群定义给全体成员。
@@ -457,6 +472,91 @@ class LittleLawEngine {
     sync.broadcastGroupSync(updated);
   }
 
+  /// 拉人入群:更新定义并扇出(新成员额外直推)。
+  void addGroupMembers(String groupId, List<String> ids) {
+    final g = store.getGroup(groupId);
+    if (g == null) return;
+    final next = <String>{...g.memberIds, ...ids}.toList();
+    final updated = Group(
+      id: groupId,
+      name: g.name,
+      createdAtMs: g.createdAtMs,
+      memberIds: next,
+    );
+    store.insertGroup(updated);
+    sync.broadcastGroupSync(updated, extraTargets: ids.toSet());
+  }
+
+  /// 踢人:被移出者收到"不含自己"的定义后删除本地群与消息。
+  void removeGroupMembers(String groupId, List<String> ids) {
+    final g = store.getGroup(groupId);
+    if (g == null) return;
+    final removed = ids.where((id) => id != identity.deviceId).toSet();
+    if (removed.isEmpty) return;
+    final next =
+        g.memberIds.where((id) => !removed.contains(id)).toList();
+    final updated = Group(
+      id: groupId,
+      name: g.name,
+      createdAtMs: g.createdAtMs,
+      memberIds: next,
+    );
+    store.insertGroup(updated);
+    sync.broadcastGroupSync(updated, extraTargets: removed);
+  }
+
+  /// 退群:本地删定义保留历史,其余成员收到更新。
+  void leaveGroup(String groupId) {
+    final g = store.getGroup(groupId);
+    if (g == null) return;
+    final next =
+        g.memberIds.where((id) => id != identity.deviceId).toList();
+    if (next.isEmpty) {
+      dissolveGroup(groupId); // 只剩自己:直接解散
+      return;
+    }
+    final updated = Group(
+      id: groupId,
+      name: g.name,
+      createdAtMs: g.createdAtMs,
+      memberIds: next,
+    );
+    store.deleteGroup(groupId, keepMessages: true);
+    sync.broadcastGroupSync(updated);
+    sync.emitLocal(GroupSynced(groupId));
+  }
+
+  /// 解散群:通知全体成员 + 我的设备,各端删除群与消息。
+  void dissolveGroup(String groupId) {
+    final g = store.getGroup(groupId);
+    if (g == null) return;
+    sync.broadcastGroupSync(g, dissolve: true);
+    store.deleteGroup(groupId);
+    sync.emitLocal(GroupSynced(groupId));
+  }
+
+  // ------------------------------------------------ 已读回执 / 表情回应
+
+  /// 标记会话已读(convKey:群 ID 或对方设备 ID)。
+  void markRead(String convKey) => sync.markRead(convKey);
+
+  /// 设置/取消表情回应(emoji 空串=取消)。
+  void setReaction(String convKey, String msgId, String emoji) =>
+      sync.setReaction(convKey, msgId, emoji);
+  /// 全库消息搜索(文本 + 文件名)。
+  List<Message> searchMessages(String query, {int limit = 200}) =>
+      store.searchMessages(query, limit: limit);
+
+  /// 发送语音消息(1:1)。
+  Future<Message> sendVoice(String peerId, String filePath, int durationMs) =>
+      transfer.sendFileTo(peerId, filePath,
+          kind: Message.kindVoice, durationMs: durationMs);
+
+  /// 发送语音消息(群)。
+  Future<Message> sendGroupVoice(String groupId, String filePath, int durationMs) =>
+      transfer.sendGroupFileTo(groupId, filePath,
+          kind: Message.kindVoice, durationMs: durationMs);
+
   /// 群剪贴板同步(扇出)。
   void sendGroupClipboard(String groupId, String text) =>
       sync.sendGroupClipboard(groupId, text);
@@ -470,6 +570,11 @@ class LittleLawEngine {
 
   Future<Message> sendGroupFile(String groupId, String filePath) =>
       transfer.sendGroupFileTo(groupId, filePath);
+
+  Future<Message> sendGroupFileAs(String groupId, String filePath,
+          {required int kind, int durationMs = 0}) =>
+      transfer.sendGroupFileTo(groupId, filePath,
+          kind: kind, durationMs: durationMs);
 
   Future<void> deleteGroupMessages(String groupId, List<String> msgIds,
           {bool clearAll = false}) =>

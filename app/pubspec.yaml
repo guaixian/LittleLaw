@@ -54,6 +54,10 @@ dependencies:
   firebase_core: ^4.14.0
   firebase_messaging: ^16.6.0
   uuid: ^4.6.0
+  record: ^7.1.1
+  desktop_drop: ^0.8.4
+  archive: ^4.2.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

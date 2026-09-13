@@ -108,10 +108,24 @@ class CallEndReceived extends EngineEvent {
   final pb.CallEnd end;
 }
 
-/// 收到群定义(建群/改群)。
+/// 收到群定义(建群/改群/解散)。
 class GroupSynced extends EngineEvent {
   GroupSynced(this.groupId);
   final String groupId;
+}
+
+/// 已读回执到达(自己发出的消息被对方读了)。
+class ReceiptsUpdated extends EngineEvent {
+  ReceiptsUpdated(this.convKey, this.msgIds);
+  final String convKey; // 群 ID 或对方设备 ID
+  final List<String> msgIds;
+}
+
+/// 表情回应更新(单条消息)。
+class ReactionsChanged extends EngineEvent {
+  ReactionsChanged(this.convKey, this.msgId);
+  final String convKey; // 群 ID 或对方设备 ID
+  final String msgId;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +153,9 @@ class SyncEngine extends pbg.SyncServiceBase {
 
   final _events = StreamController<EngineEvent>.broadcast();
   Stream<EngineEvent> get events => _events.stream;
+
+  /// 门面层本地点火事件(不经网络)。
+  void emitLocal(EngineEvent e) => _events.add(e);
 
   /// peerId → 该设备所有开放中的信封流(我方连出的 + 对方连入的)。
   final _sinks = <String, Set<StreamController<pb.Envelope>>>{};
@@ -196,6 +213,7 @@ class SyncEngine extends pbg.SyncServiceBase {
       fileName: fileMsg.fileName,
       fileSize: fileMsg.fileSize.toInt(),
       fileSha256: fileMsg.fileSha256.isEmpty ? null : fileMsg.fileSha256,
+      durationMs: fileMsg.durationMs,
       fileState: Message.fileStatePending,
     ));
     _mirrorChat(peerId, msg);
@@ -348,16 +366,21 @@ class SyncEngine extends pbg.SyncServiceBase {
   // ------------------------------------------------------------ 群聊
 
   /// 群定义扇出(建群/改群):全体成员 + 我的设备。
-  void broadcastGroupSync(Group group) {
+  /// [extraTargets] 追加接收方(新拉入的成员 / 被移出者,用于告知变更)。
+  /// [dissolve] true 时通知成员解散并删除本地群数据。
+  void broadcastGroupSync(Group group,
+      {Set<String>? extraTargets, bool dissolve = false}) {
     final targets = <String>{
       ...group.memberIds.where((id) => id != identity.deviceId),
       ...store.selfPeers().map((s) => s.deviceId),
+      ...?extraTargets,
     };
     final def = pb.GroupSync(
       groupId: group.id,
       name: group.name,
       memberIds: group.memberIds,
       createdAtMs: Int64(group.createdAtMs),
+      dissolved: dissolve,
     );
     for (final target in targets) {
       store.appendOp(target, Op.typeGroup, def.writeToBuffer());
@@ -368,15 +391,29 @@ class SyncEngine extends pbg.SyncServiceBase {
           name: group.name,
           memberIds: group.memberIds,
           createdAtMs: Int64(group.createdAtMs),
+          dissolved: dissolve,
         ),
       ));
     }
   }
 
   void _applyGroupSync(String peerId, pb.GroupSync gs) {
-    if (gs.groupId.isEmpty || gs.memberIds.isEmpty) return;
+    if (gs.groupId.isEmpty) return;
+    if (gs.dissolved) {
+      // 解散:删除本地群与群消息。
+      if (store.getGroup(gs.groupId) != null) {
+        store.deleteGroup(gs.groupId);
+        _events.add(GroupSynced(gs.groupId));
+      }
+      return;
+    }
+    if (gs.memberIds.isEmpty) return;
     if (!gs.memberIds.contains(identity.deviceId)) {
-      // 被移出群:忽略。
+      // 被移出群:删除本地群与群消息(保留 ops 供幂等)。
+      if (store.getGroup(gs.groupId) != null) {
+        store.deleteGroup(gs.groupId);
+        _events.add(GroupSynced(gs.groupId));
+      }
       return;
     }
     store.insertGroup(Group(
@@ -429,6 +466,7 @@ class SyncEngine extends pbg.SyncServiceBase {
       fileName: fileMsg.fileName,
       fileSize: fileMsg.fileSize.toInt(),
       fileSha256: fileMsg.fileSha256.isEmpty ? null : fileMsg.fileSha256,
+      durationMs: fileMsg.durationMs,
       fileState: Message.fileStatePending,
     );
     store.insertMessage(msg);
@@ -484,6 +522,95 @@ class SyncEngine extends pbg.SyncServiceBase {
       ));
     }
     _events.add(MessagesDeleted(groupId, msgIds, clearAll));
+  }
+
+  // ------------------------------------------------------ 已读回执 / 回应
+
+  /// 标记会话已读(convKey:群 ID 或对方设备 ID)。
+  /// 给会话内所有入向消息的原作者们发送 ReadReceipt;离线走 ops 补发。
+  void markRead(String convKey) {
+    final isGroup = store.getGroup(convKey) != null;
+    final convId = isGroup
+        ? Group.convIdOf(convKey)
+        : Store.convIdFor(identity.deviceId, convKey);
+    final unread = store.unreadIncoming(convId, identity.deviceId);
+    if (unread.isEmpty) return;
+    final receipt = pb.ReadReceipt(
+      reader: identity.deviceId,
+      msgIds: unread,
+      convPeer: isGroup ? '' : convKey,
+      groupId: isGroup ? convKey : '',
+    );
+    // 本地立刻置已读(入向语义:回执已发,避免重复回执)。
+    store.markRead(unread, [identity.deviceId]);
+    final targets = isGroup ? store.groupRecipients(convKey) : [convKey];
+    for (final t in targets) {
+      if (t == identity.deviceId) continue;
+      store.appendOp(t, Op.typeReceipt, receipt.writeToBuffer());
+      _push(t, pb.Envelope(id: const Uuid().v4(), readReceipt: receipt));
+    }
+  }
+
+  /// 应用已读回执:仅命中"我(或我的设备)发出的消息"。
+  void _applyReadReceipt(String peerId, pb.ReadReceipt rr) {
+    if (rr.msgIds.isEmpty) return;
+    final authors = <String>{
+      identity.deviceId,
+      ...store.selfPeers().map((s) => s.deviceId),
+    };
+    final changed = store.markRead(rr.msgIds, authors.toList());
+    final convKey = rr.groupId.isNotEmpty
+        ? rr.groupId
+        : (rr.convPeer.isNotEmpty ? rr.convPeer : peerId);
+    if (changed > 0) {
+      _events.add(ReceiptsUpdated(convKey, rr.msgIds));
+    }
+    // 转发给我的其他设备(镜像副本按原作者 ID 命中,各自更新气泡)。
+    for (final self in store.selfPeers()) {
+      if (self.deviceId == peerId) continue;
+      _push(self.deviceId,
+          pb.Envelope(id: const Uuid().v4(), readReceipt: rr));
+    }
+  }
+
+  /// 设置/取消表情回应(emoji 空串 = 取消自己的回应)。
+  /// convKey:群 ID 或对方设备 ID。
+  void setReaction(String convKey, String msgId, String emoji) {
+    final isGroup = store.getGroup(convKey) != null;
+    final update = pb.ReactionUpdate(
+      msgId: msgId,
+      groupId: isGroup ? convKey : '',
+      convPeer: isGroup ? '' : convKey,
+      deviceId: identity.deviceId,
+      emoji: emoji,
+    );
+    _applyReaction(identity.deviceId, update, local: true);
+    final targets = <String>{
+      ...isGroup ? store.groupRecipients(convKey) : [convKey],
+      ...store.selfPeers().map((s) => s.deviceId),
+    };
+    for (final t in targets) {
+      if (t == identity.deviceId) continue;
+      store.appendOp(t, Op.typeReaction, update.writeToBuffer());
+      _push(t, pb.Envelope(id: const Uuid().v4(), reaction: update));
+    }
+  }
+
+  void _applyReaction(String peerId, pb.ReactionUpdate ru, {bool local = false}) {
+    if (ru.msgId.isEmpty || ru.deviceId.isEmpty) return;
+    store.updateReaction(ru.msgId, ru.deviceId, ru.emoji);
+    final convKey = ru.groupId.isNotEmpty
+        ? ru.groupId
+        : (ru.convPeer.isNotEmpty ? ru.convPeer : peerId);
+    _events.add(ReactionsChanged(convKey, ru.msgId));
+    // 转发给我的其他设备(收到他人回应时)。
+    if (!local) {
+      for (final self in store.selfPeers()) {
+        if (self.deviceId == peerId) continue;
+        _push(self.deviceId,
+            pb.Envelope(id: const Uuid().v4(), reaction: ru));
+      }
+    }
   }
 
   @override
@@ -586,6 +713,10 @@ class SyncEngine extends pbg.SyncServiceBase {
         _events.add(CallEndReceived(peerId, env.callEnd));
       case pb.Envelope_Payload.groupSync:
         _applyGroupSync(peerId, env.groupSync);
+      case pb.Envelope_Payload.readReceipt:
+        _applyReadReceipt(peerId, env.readReceipt);
+      case pb.Envelope_Payload.reaction:
+        _applyReaction(peerId, env.reaction);
       case pb.Envelope_Payload.linkAuth:
         break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
       case pb.Envelope_Payload.heartbeat:
@@ -650,6 +781,12 @@ class SyncEngine extends pbg.SyncServiceBase {
       } else if (op.type == Op.typeGroup) {
         final gs = pb.GroupSync.fromBuffer(op.payload);
         env = pb.Envelope(id: const Uuid().v4(), groupSync: gs);
+      } else if (op.type == Op.typeReaction) {
+        final ru = pb.ReactionUpdate.fromBuffer(op.payload);
+        env = pb.Envelope(id: const Uuid().v4(), reaction: ru);
+      } else if (op.type == Op.typeReceipt) {
+        final rr = pb.ReadReceipt.fromBuffer(op.payload);
+        env = pb.Envelope(id: const Uuid().v4(), readReceipt: rr);
       } else {
         final del = pb.ChatDeleted.fromBuffer(op.payload);
         env = pb.Envelope(
@@ -690,6 +827,7 @@ class SyncEngine extends pbg.SyncServiceBase {
         fileName: chat.fileName.isEmpty ? null : chat.fileName,
         fileSize: chat.fileSize == Int64.ZERO ? null : chat.fileSize.toInt(),
         fileSha256: chat.fileSha256.isEmpty ? null : chat.fileSha256,
+        durationMs: chat.durationMs,
         fileState:
             Message.hasFilePayload(chat.kind) ? Message.fileStatePending : 0,
       );
@@ -711,6 +849,7 @@ class SyncEngine extends pbg.SyncServiceBase {
         fileName: chat.fileName.isEmpty ? null : chat.fileName,
         fileSize: chat.fileSize == Int64.ZERO ? null : chat.fileSize.toInt(),
         fileSha256: chat.fileSha256.isEmpty ? null : chat.fileSha256,
+        durationMs: chat.durationMs,
         fileState:
             Message.hasFilePayload(chat.kind) ? Message.fileStatePending : 0,
       );
@@ -824,6 +963,7 @@ class SyncEngine extends pbg.SyncServiceBase {
         fileName: m.fileName ?? '',
         fileSize: Int64(m.fileSize ?? 0),
         fileSha256: m.fileSha256 ?? '',
+        durationMs: m.durationMs,
       );
 
   /// 供会话内部使用:连出通道打开时发送 Hello。

@@ -1,14 +1,19 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import 'media_viewers.dart';
 import 'globals.dart';
 import 'call_page.dart';
+import 'group_info_page.dart';
 import 'remote_pair_page.dart';
 import 'theme/app_theme.dart';
 
@@ -37,6 +42,13 @@ class _ChatPageState extends State<ChatPage> {
   final _selection = <String>{};
   bool _online = false;
   bool _attachOpen = false; // 附件面板展开态(输入栏上方内联撑开)
+  bool _dragOver = false; // 桌面拖拽文件悬停高亮
+  bool _recording = false; // 语音录制中
+  int _recordMs = 0; // 录制时长(毫秒)
+  Timer? _recordTicker;
+  final AudioRecorder _recorder = AudioRecorder();
+  String? _recordPath;
+  final Stopwatch _recordWatch = Stopwatch();
 
   bool get _selecting => _selection.isNotEmpty;
 
@@ -51,17 +63,23 @@ class _ChatPageState extends State<ChatPage> {
     final engine = widget.engine;
     _messages = _isGroup ? engine.loadGroupMessages(_convKey) : engine.loadMessages(_convKey);
     _online = !_isGroup && engine.isOnline(_convKey);
+    engine.markRead(_convKey); // 打开即已读
 
     _subscriptions.add(engine.events.listen((e) {
       var changed = false;
       if (e is MessageAdded && e.peerId == _convKey) {
         changed = true;
+        engine.markRead(_convKey); // 会话打开时新消息自动已读
       } else if (e is MessagesDeleted && e.peerId == _convKey) {
         if (e.clearAll) _selection.clear();
         changed = true;
       } else if (e is PeerStatusChanged && !_isGroup && e.peerId == _convKey) {
         _online = e.online;
         changed = true;
+      } else if (e is ReceiptsUpdated && e.convKey == _convKey) {
+        changed = true; // 自己的消息被对方读了
+      } else if (e is ReactionsChanged && e.convKey == _convKey) {
+        changed = true; // 表情回应更新
       } else if (e is ClipboardReceived && !_isGroup && e.peerId == _convKey) {
         Clipboard.setData(ClipboardData(text: e.text));
         if (mounted) {
@@ -89,6 +107,13 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    widget.engine.markRead(_convKey);
+    _recordTicker?.cancel();
+    if (_recording) {
+      // 页面销毁时终止录制并丢弃草稿。
+      unawaited(_recorder.stop());
+      unawaited(_recorder.dispose());
+    }
     for (final s in _subscriptions) {
       s.cancel();
     }
@@ -150,6 +175,10 @@ class _ChatPageState extends State<ChatPage> {
     if (files.isEmpty) return;
     final path = files.single.path;
     if (path == null) return;
+    await _sendPath(path);
+  }
+
+  Future<void> _sendPath(String path) async {
     try {
       _isGroup ? await widget.engine.sendGroupFile(_convKey, path) : await widget.engine.sendFile(_convKey, path);
     } catch (e) {
@@ -158,6 +187,71 @@ class _ChatPageState extends State<ChatPage> {
             .showSnackBar(SnackBar(content: Text('发送失败: $e')));
       }
     }
+  }
+
+  // ------------------------------------------------------------ 语音消息
+
+  Future<void> _toggleRecord() async {
+    if (_recording) {
+      await _stopRecord(send: true);
+    } else {
+      await _startRecord();
+    }
+  }
+
+  Future<void> _startRecord() async {
+    try {
+      final granted = await _recorder.hasPermission();
+      if (!granted) return;
+      final tmp = await getTemporaryDirectory();
+      _recordPath =
+          '${tmp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, numChannels: 1),
+        path: _recordPath!,
+      );
+      _recordWatch
+        ..reset()
+        ..start();
+      _recordTicker?.cancel();
+      _recordTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        if (mounted) setState(() => _recordMs = _recordWatch.elapsedMilliseconds);
+      });
+      setState(() {
+        _recording = true;
+        _recordMs = 0;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('无法启动录音(缺少麦克风权限)')));
+      }
+    }
+  }
+
+  Future<void> _stopRecord({required bool send}) async {
+    _recordTicker?.cancel();
+    _recordWatch.stop();
+    final ms = _recordWatch.elapsedMilliseconds;
+    setState(() => _recording = false);
+    try {
+      final path = await _recorder.stop();
+      if (send && path != null && ms >= 600) {
+        // 短于 0.6s 的录音视为误触丢弃。
+        _isGroup
+            ? await widget.engine.sendGroupVoice(_convKey, path, ms)
+            : await widget.engine.sendVoice(_convKey, path, ms);
+      }
+    } catch (_) {}
+  }
+
+  // ------------------------------------------------------------ 表情回应
+
+  static const _quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  void _react(Message m, String emoji) {
+    final mine = m.reactions[widget.engine.identity.deviceId];
+    widget.engine.setReaction(_convKey, m.msgId, mine == emoji ? '' : emoji);
   }
 
   void _showAttachSheet() {
@@ -270,43 +364,94 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// 长按/右键上下文菜单。
-  void _showMessageMenu(Message m, Offset position) {
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
-    showMenu<String>(
+  /// 长按/右键:消息动作面板(快捷表情回应 + 常规操作)。
+  Future<void> _showMessageMenu(Message m, Offset position) async {
+    final scheme = Theme.of(context).colorScheme;
+    final myId = widget.engine.identity.deviceId;
+    await showModalBottomSheet<void>(
       context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(position.dx, position.dy, 0, 0),
-        Offset.zero & overlay.size,
+      backgroundColor: scheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      items: [
-        if (m.kind == Message.kindText)
-          const PopupMenuItem(value: 'copy', child: _MenuRow(Icons.copy, '复制')),
-        if (Message.hasFilePayload(m.kind) &&
-            m.fileState == Message.fileStateDone)
-          const PopupMenuItem(value: 'open', child: _MenuRow(Icons.open_in_new, '打开')),
-        const PopupMenuItem(value: 'select', child: _MenuRow(Icons.checklist, '多选')),
-        const PopupMenuItem(
-            value: 'delete',
-            child: _MenuRow(Icons.delete_outline, '删除(双端)', danger: true)),
-      ],
-    ).then((value) {
-      if (!mounted || value == null) return;
-      switch (value) {
-        case 'copy':
-          _copyMessage(m);
-        case 'open':
-          _openMessage(m);
-        case 'select':
-          _toggleSelect(m.msgId);
-        case 'delete':
-          _isGroup ? widget.engine.deleteGroupMessages(_convKey, [m.msgId]) : widget.engine.deleteMessages(_convKey, [m.msgId]);
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('已在双端删除')));
-      }
-    });
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            // 快捷回应行。
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final emoji in _quickReactions)
+                  GestureDetector(
+                    onTap: () {
+                      _react(m, emoji);
+                      Navigator.of(ctx).pop();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: m.reactions[myId] == emoji
+                            ? scheme.primaryContainer
+                            : Colors.transparent,
+                      ),
+                      child: Text(emoji,
+                          style: const TextStyle(fontSize: 26)),
+                    ),
+                  ),
+              ],
+            ),
+            const Divider(height: 24),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.copy_outlined),
+              title: const Text('复制'),
+              enabled: m.kind == Message.kindText,
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _copyMessage(m);
+              },
+            ),
+            if (Message.hasFilePayload(m.kind) &&
+                m.fileState == Message.fileStateDone)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.open_in_new),
+                title: const Text('打开'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _openMessage(m);
+                },
+              ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.checklist),
+              title: const Text('多选'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _toggleSelect(m.msgId);
+              },
+            ),
+            ListTile(
+              dense: true,
+              leading:
+                  Icon(Icons.delete_outline, color: scheme.error),
+              title: Text('删除(双端)',
+                  style: TextStyle(color: scheme.error)),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _isGroup ? widget.engine.deleteGroupMessages(_convKey, [m.msgId]) : widget.engine.deleteMessages(_convKey, [m.msgId]);
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('已在双端删除')));
+              },
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
   }
 
   // ------------------------------------------------------------ 构建
@@ -315,8 +460,9 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     final myId = widget.engine.identity.deviceId;
     final engine = widget.engine;
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+    final scheme = Theme.of(context).colorScheme;
+    Widget page = Scaffold(
+      backgroundColor: scheme.surfaceContainerLowest,
       appBar: _selecting ? _selectionBar() : _normalBar(),
       body: Column(
         children: [
@@ -345,6 +491,34 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
     );
+    // 桌面:拖拽文件进窗口直接发送。
+    return DropTarget(
+      onDragDone: (details) {
+        for (final f in details.files) {
+          unawaited(_sendPath(f.path));
+        }
+      },
+      onDragEntered: (_) => setState(() => _dragOver = true),
+      onDragExited: (_) => setState(() => _dragOver = false),
+      onDragUpdated: (_) {},
+      child: Stack(
+        children: [
+          page,
+          if (_dragOver)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  color: scheme.primary.withValues(alpha: 0.08),
+                  child: Center(
+                    child: Icon(Icons.download_rounded,
+                        size: 64, color: scheme.primary.withValues(alpha: 0.5)),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   PreferredSizeWidget _normalBar() {
@@ -361,40 +535,48 @@ class _ChatPageState extends State<ChatPage> {
             ? Icons.smartphone
             : Icons.computer);
     return AppBar(
-      title: Row(
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: scheme.primaryContainer,
-            child: Icon(avatarIcon,
-                size: 20, color: scheme.onPrimaryContainer),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontSize: 16)),
-              Row(
-                children: [
-                  if (group == null) ...[
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _online ? Colors.green : Colors.grey,
+      title: GestureDetector(
+        onTap: _isGroup
+            ? () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) =>
+                      GroupInfoPage(engine: widget.engine, groupId: widget.group!.id),
+                ))
+            : null,
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: scheme.primaryContainer,
+              child: Icon(avatarIcon,
+                  size: 20, color: scheme.onPrimaryContainer),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 16)),
+                Row(
+                  children: [
+                    if (group == null) ...[
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _online ? Colors.green : Colors.grey,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 5),
+                      const SizedBox(width: 5),
+                    ],
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey.shade600)),
                   ],
-                  Text(subtitle,
-                      style:
-                          TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-                ],
-              ),
-            ],
-          ),
-        ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
       actions: [
         // 语音/视频通话(仅 1:1,任意已连接通道可用)。
@@ -491,9 +673,13 @@ class _ChatPageState extends State<ChatPage> {
     children.add(_MessageBubble(
       message: m,
       mine: engine.isFromMe(m.senderId),
+      senderName: _isGroup && !engine.isFromMe(m.senderId)
+          ? (engine.peerById(m.senderId)?.deviceName ?? '群成员')
+          : null,
       progress: _transfers[m.msgId],
       selected: _selection.contains(m.msgId),
       selecting: _selecting,
+      onReaction: (emoji) => _react(m, emoji),
       onTap: () {
         if (_selecting) {
           _toggleSelect(m.msgId);
@@ -510,6 +696,40 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _inputBar() {
     final scheme = Theme.of(context).colorScheme;
+    if (_recording) {
+      // 录音态:红色脉冲 + 时长 + 取消/发送。
+      return Container(
+        margin: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: scheme.error.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.fiber_manual_record,
+                color: scheme.error, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              '录音中 ${(_recordMs / 1000).toStringAsFixed(1)}s',
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => _stopRecord(send: false),
+              child: const Text('取消'),
+            ),
+            const SizedBox(width: 4),
+            FilledButton.icon(
+              onPressed: () => _stopRecord(send: true),
+              icon: const Icon(Icons.send_rounded, size: 16),
+              label: const Text('发送'),
+            ),
+          ],
+        ),
+      );
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -558,6 +778,13 @@ class _ChatPageState extends State<ChatPage> {
                   onSubmitted: (_) => _sendText(),
                 ),
               ),
+              // 麦克风:点击开始录音,再点完成发送。
+              IconButton(
+                tooltip: '语音消息',
+                icon: Icon(Icons.mic_none_rounded, color: scheme.primary),
+                onPressed: _toggleRecord,
+              ),
+              const SizedBox(width: 2),
               CircleAvatar(
                 radius: 19,
                 backgroundColor: scheme.primary,
@@ -610,29 +837,6 @@ class _ChatPageState extends State<ChatPage> {
 }
 
 // ---------------------------------------------------------------------------
-// 菜单行
-// ---------------------------------------------------------------------------
-
-class _MenuRow extends StatelessWidget {
-  const _MenuRow(this.icon, this.label, {this.danger = false});
-  final IconData icon;
-  final String label;
-  final bool danger;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = danger ? Colors.red : null;
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 10),
-        Text(label, style: TextStyle(color: color)),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // 时间分隔条
 // ---------------------------------------------------------------------------
 
@@ -677,15 +881,19 @@ class _MessageBubble extends StatelessWidget {
     required this.selecting,
     required this.onTap,
     required this.onLongPress,
+    this.senderName,
+    this.onReaction,
   });
 
   final Message message;
   final bool mine;
+  final String? senderName; // 群消息:发送者名(自己为 null)
   final TransferProgress? progress;
   final bool selected;
   final bool selecting;
   final VoidCallback onTap;
   final void Function(Offset position) onLongPress;
+  final void Function(String emoji)? onReaction;
 
   @override
   Widget build(BuildContext context) {
@@ -717,11 +925,81 @@ class _MessageBubble extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
               padding: selected ? const EdgeInsets.all(4) : EdgeInsets.zero,
-              child: _content(context, scheme),
+              child: Column(
+                crossAxisAlignment: mine
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (senderName != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 1),
+                      child: Text(senderName!,
+                          style: TextStyle(
+                              fontSize: 11, color: scheme.primary)),
+                    ),
+                  _content(context, scheme),
+                  if (message.reactions.isNotEmpty)
+                    _reactionChips(context, scheme),
+                ],
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  /// 表情回应角标:按 emoji 聚合计数,点击切换自己的回应。
+  Widget _reactionChips(BuildContext context, ColorScheme scheme) {
+    final aggregated = <String, List<String>>{};
+    message.reactions.forEach((device, emoji) {
+      aggregated.putIfAbsent(emoji, () => []).add(device);
+    });
+    final entries = aggregated.entries.toList()
+      ..sort((a, b) => b.value.length.compareTo(a.value.length));
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Wrap(
+        spacing: 4,
+        children: [
+          for (final e in entries)
+            GestureDetector(
+              onTap: onReaction != null ? () => onReaction!(e.key) : null,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(e.key, style: const TextStyle(fontSize: 13)),
+                    if (e.value.length > 1) ...[
+                      const SizedBox(width: 3),
+                      Text('${e.value.length}',
+                          style: TextStyle(
+                              fontSize: 11, color: scheme.outline)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 自己消息的已读状态(✓ 已送达 / ✓✓ 已读)。
+  Widget _statusIcon() {
+    if (!mine) return const SizedBox.shrink();
+    return Icon(
+      message.read ? Icons.done_all : Icons.done,
+      size: 13,
+      color: message.read ? Colors.lightBlueAccent : Colors.white60,
     );
   }
 
@@ -733,6 +1011,8 @@ class _MessageBubble extends StatelessWidget {
         return _media(context, scheme, image: false);
       case Message.kindFile:
         return _fileCard(context, scheme);
+      case Message.kindVoice:
+        return _voiceBubble(context, scheme);
       default:
         return _textBubble(context, scheme);
     }
@@ -765,14 +1045,23 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          Text(
-            _timeText(message.createdAtMs),
-            style: TextStyle(
-              fontSize: 10,
-              color: mine
-                  ? Colors.white.withValues(alpha: 0.75)
-                  : scheme.outline,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _timeText(message.createdAtMs),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: mine
+                      ? Colors.white.withValues(alpha: 0.75)
+                      : scheme.outline,
+                ),
+              ),
+              if (mine) ...[
+                const SizedBox(width: 3),
+                _statusIcon(),
+              ],
+            ],
           ),
         ],
       ),
@@ -936,13 +1225,32 @@ class _MessageBubble extends StatelessWidget {
           else
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                _fileStateText(),
-                style: TextStyle(fontSize: 10, color: fgDim),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _fileStateText(),
+                    style: TextStyle(fontSize: 10, color: fgDim),
+                  ),
+                  if (mine) ...[
+                    const SizedBox(width: 3),
+                    _statusIcon(),
+                  ],
+                ],
               ),
             ),
         ],
       ),
+    );
+  }
+
+  /// 语音气泡:播放按钮 + 时长 + 播放进度。
+  Widget _voiceBubble(BuildContext context, ColorScheme scheme) {
+    return _VoiceBubble(
+      message: message,
+      mine: mine,
+      transferring: progress != null &&
+          progress!.state == TransferProgress.stateRunning,
     );
   }
 
@@ -973,5 +1281,159 @@ class _MessageBubble extends StatelessWidget {
     final t = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int v) => v.toString().padLeft(2, '0');
     return '${two(t.hour)}:${two(t.minute)}';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 语音气泡(独立 StatefulWidget:持有 media_kit 播放器)
+// ---------------------------------------------------------------------------
+
+class _VoiceBubble extends StatefulWidget {
+  const _VoiceBubble(
+      {required this.message, required this.mine, required this.transferring});
+  final Message message;
+  final bool mine;
+  final bool transferring;
+
+  @override
+  State<_VoiceBubble> createState() => _VoiceBubbleState();
+}
+
+class _VoiceBubbleState extends State<_VoiceBubble> {
+  Player? _player;
+  bool _playing = false;
+  double _progress = 0;
+  StreamSubscription? _sub;
+
+  static String _durationText(int ms) {
+    final s = (ms / 1000).ceil();
+    return '$s"';
+  }
+
+  Future<void> _toggle() async {
+    final path = widget.message.filePath;
+    if (path == null || widget.message.fileState != Message.fileStateDone) {
+      return;
+    }
+    if (_playing) {
+      await _player?.pause();
+      return;
+    }
+    _player ??= () {
+      final p = Player();
+      _sub = p.stream.position.listen((pos) {
+        final dur = widget.message.durationMs > 0
+            ? widget.message.durationMs / 1000
+            : (p.state.duration.inMilliseconds / 1000);
+        if (dur > 0 && mounted) {
+          setState(() => _progress = (pos.inMilliseconds / 1000 / dur)
+              .clamp(0.0, 1.0));
+        }
+      });
+      return p;
+    }();
+    if (_player!.state.playlist.medias.isEmpty ||
+        _player!.state.playlist.medias.first.uri != path) {
+      await _player!.open(Media(path));
+    } else {
+      await _player!.play();
+    }
+    if (mounted) setState(() => _playing = true);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_sub?.cancel() ?? Future.value());
+    unawaited(_player?.dispose() ?? Future.value());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fgDim =
+        widget.mine ? Colors.white.withValues(alpha: 0.75) : scheme.outline;
+    final dur = _durationText(
+        widget.message.durationMs > 0 ? widget.message.durationMs : 1000);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: widget.mine ? themeController.skin.gradient : null,
+        color: widget.mine ? null : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: _toggle,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.mine
+                    ? Colors.white.withValues(alpha: 0.2)
+                    : scheme.primary.withValues(alpha: 0.12),
+              ),
+              child: Icon(
+                _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: widget.mine ? Colors.white : scheme.primary,
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // 语音波形示意(静态条) + 进度高亮。
+          SizedBox(
+            width: 90,
+            height: 22,
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    for (final h in const [8.0, 14.0, 10.0, 18.0, 12.0, 16.0, 9.0])
+                      Container(
+                        width: 3,
+                        height: h,
+                        decoration: BoxDecoration(
+                          color: fgDim,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                  ],
+                ),
+                FractionallySizedBox(
+                  widthFactor: _progress,
+                  child: Container(
+                    height: 22,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [
+                        scheme.primary.withValues(alpha: 0.65),
+                        scheme.primary.withValues(alpha: 0.2),
+                      ]),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(dur, style: TextStyle(fontSize: 12, color: fgDim)),
+          if (widget.mine) ...[
+            const SizedBox(width: 4),
+            widget.message.read
+                ? const Icon(Icons.done_all,
+                    size: 13, color: Colors.lightBlueAccent)
+                : Icon(Icons.done, size: 13, color: fgDim),
+          ],
+          if (widget.transferring)
+            const SizedBox(
+                width: 12, height: 12,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+        ],
+      ),
+    );
   }
 }

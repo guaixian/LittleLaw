@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'backup.dart';
 import 'toast.dart';
 import 'webrtc_link.dart';
 
@@ -200,6 +203,119 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 16),
           FilledButton(onPressed: _save, child: const Text('保存')),
+          const SizedBox(height: 28),
+          const Text('备份与恢复',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          const Text('把设备身份、全部配对与聊天记录打成加密包(AES-256-GCM,'
+              '口令派生密钥)。恢复到新设备后沿用原身份,好友无需重新配对。',
+              style: TextStyle(fontSize: 12)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.backup_outlined),
+                  label: const Text('创建备份'),
+                  onPressed: _createBackup,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.restore_outlined),
+                  label: const Text('恢复备份'),
+                  onPressed: _restoreBackup,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------ 备份 / 恢复
+
+  Future<void> _createBackup() async {
+    final pass = await _askPassphrase(confirm: true);
+    if (pass == null || pass.isEmpty) return;
+    try {
+      await BackupManager(widget.rtc.engine).createBackup(pass);
+    } catch (e) {
+      showToast('备份失败: $e', type: ToastType.error);
+    }
+  }
+
+  Future<void> _restoreBackup() async {
+    final files = await FilePicker.pickFiles(type: FileType.any);
+    if (files.isEmpty) return;
+    final path = files.single.path;
+    if (path == null || !mounted) return;
+    final pass = await _askPassphrase(confirm: false);
+    if (pass == null || pass.isEmpty || !mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认恢复?'),
+        content: const Text('当前设备上的身份、配对与聊天记录将被备份内容'
+            '完全覆盖,恢复完成后应用将退出,重新打开即生效。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('覆盖恢复')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final restored =
+          await BackupManager(widget.rtc.engine).restoreBackup(path, pass);
+      if (restored) {
+        showToast('恢复完成,应用即将退出', type: ToastType.success);
+        await Future<void>.delayed(const Duration(seconds: 2));
+        exit(0);
+      }
+    } catch (e) {
+      // 解密失败(口令错/文件坏)在这里兜底。
+      showToast('恢复失败: $e', type: ToastType.error);
+    }
+  }
+
+  /// 口令输入对话框。[confirm] = true 时二次确认。
+  Future<String?> _askPassphrase({required bool confirm}) {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(confirm ? '设置备份口令' : '输入备份口令'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: ctrl,
+              obscureText: true,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: '口令(至少 6 个字符)'),
+            ),
+            if (confirm)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('口令丢失将无法恢复备份,请务必牢记。',
+                    style: TextStyle(fontSize: 12, color: Colors.red)),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: const Text('确定')),
         ],
       ),
     );
