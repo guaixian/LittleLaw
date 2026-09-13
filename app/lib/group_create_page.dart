@@ -35,7 +35,6 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
       return;
     }
     final group = widget.engine.createGroup(name, _selected.toList());
-    showToast('群「$name」已创建', type: ToastType.success);
     if (!mounted) return;
     Navigator.of(context).pop();
     Navigator.of(context).push(MaterialPageRoute(

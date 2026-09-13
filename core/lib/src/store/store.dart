@@ -328,6 +328,13 @@ class Store {
     );
   }
 
+  /// 对端资料同步里的名称更新(仅展示名,不动信任关系)。
+  void updatePeerName(String deviceId, String name) {
+    if (name.isEmpty) return;
+    _db.execute('UPDATE peers SET device_name=? WHERE device_id=?',
+        [name, deviceId]);
+  }
+
   void setMyAppliedSeq(String deviceId, int seq) {
     _db.execute('UPDATE peers SET my_applied_seq=? WHERE device_id=?',
         [seq, deviceId]);

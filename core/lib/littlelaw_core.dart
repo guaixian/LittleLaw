@@ -59,7 +59,8 @@ export 'src/sync/sync_engine.dart'
         CallEndReceived,
         GroupSynced,
         ReceiptsUpdated,
-        ReactionsChanged;
+        ReactionsChanged,
+        ProfileUpdated;
 export 'src/generated/littlelaw.pb.dart'
     show
         Envelope,
@@ -189,6 +190,39 @@ class LittleLawEngine {
     );
 
     transfer.start();
+
+    // 资料/头像同步接线:会话建立互推 + 变更广播;收到即落盘并通知 UI。
+    sync.profileProvider = () {
+      try {
+        final f = File('${engine.avatarDir}/me.png');
+        if (f.existsSync() && f.lengthSync() <= 96 * 1024) {
+          return pb.ProfileUpdate(
+              deviceName: identity.deviceName,
+              avatarPng: f.readAsBytesSync());
+        }
+      } catch (_) {}
+      return pb.ProfileUpdate(deviceName: identity.deviceName);
+    };
+    sync.onProfileUpdate = (peerId, profile) {
+      if (profile.deviceName.isNotEmpty) {
+        store.updatePeerName(peerId, profile.deviceName);
+      }
+      if (profile.avatarPng.isNotEmpty) {
+        try {
+          final f = File(engine.peerAvatarPath(peerId));
+          f.parent.createSync(recursive: true);
+          f.writeAsBytesSync(profile.avatarPng);
+        } catch (_) {}
+      }
+      sync.emitLocal(ProfileUpdated(peerId));
+    };
+    sync.onGroupAvatar = (groupId, png) {
+      try {
+        final f = File(engine.groupAvatarPath(groupId));
+        f.parent.createSync(recursive: true);
+        f.writeAsBytesSync(png);
+      } catch (_) {}
+    };
 
     // 可选:挂接中转服务器(离线邮箱兜底 + presence + 信令)。
     if (rendezvousUrl != null && rendezvousUrl.isNotEmpty) {
@@ -454,6 +488,44 @@ class LittleLawEngine {
   /// SQLite WAL 落盘(备份前调用)。
   void checkpointDb() => store.checkpoint();
 
+  // ------------------------------------------------------------ 头像 / 资料
+
+  /// 头像目录:<dataDir>/avatars/{me,peer_<id>,group_<id>}.png
+  String get avatarDir => '$dataDir/avatars';
+
+  String myAvatarPath() => '$avatarDir/me.png';
+  String peerAvatarPath(String deviceId) => '$avatarDir/peer_$deviceId.png';
+  String groupAvatarPath(String groupId) => '$avatarDir/group_$groupId.png';
+
+  /// 设置我的头像(PNG ≤96KB)并广播。
+  Future<void> setMyAvatar(List<int> pngBytes) async {
+    final f = File(myAvatarPath());
+    await f.parent.create(recursive: true);
+    await f.writeAsBytes(pngBytes);
+    sync.broadcastProfile();
+  }
+
+  /// 设置群头像并扇出群定义。
+  Future<void> setGroupAvatar(String groupId, List<int> pngBytes) async {
+    final g = store.getGroup(groupId);
+    if (g == null) return;
+    final f = File(groupAvatarPath(groupId));
+    await f.parent.create(recursive: true);
+    await f.writeAsBytes(pngBytes);
+    sync.broadcastGroupSync(g, avatarPng: pngBytes);
+  }
+
+  /// 当前群头像字节(扇出用),无则 null。
+  List<int>? _groupAvatarBytes(String groupId) {
+    try {
+      final f = File(groupAvatarPath(groupId));
+      if (f.existsSync() && f.lengthSync() <= 96 * 1024) {
+        return f.readAsBytesSync();
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// 文件落盘加密(encryptFilesAtRest 开启时非空)。
   FileVault? get vault => transfer.vault;
 
@@ -499,7 +571,8 @@ class LittleLawEngine {
       memberIds: g.memberIds,
     );
     store.insertGroup(updated);
-    sync.broadcastGroupSync(updated);
+    sync.broadcastGroupSync(updated,
+        avatarPng: _groupAvatarBytes(groupId));
   }
 
   /// 拉人入群:更新定义并扇出(新成员额外直推)。
@@ -514,7 +587,8 @@ class LittleLawEngine {
       memberIds: next,
     );
     store.insertGroup(updated);
-    sync.broadcastGroupSync(updated, extraTargets: ids.toSet());
+    sync.broadcastGroupSync(updated,
+        extraTargets: ids.toSet(), avatarPng: _groupAvatarBytes(groupId));
   }
 
   /// 踢人:被移出者收到"不含自己"的定义后删除本地群与消息。
@@ -532,7 +606,8 @@ class LittleLawEngine {
       memberIds: next,
     );
     store.insertGroup(updated);
-    sync.broadcastGroupSync(updated, extraTargets: removed);
+    sync.broadcastGroupSync(updated,
+        extraTargets: removed, avatarPng: _groupAvatarBytes(groupId));
   }
 
   /// 退群:本地删定义保留历史,其余成员收到更新。

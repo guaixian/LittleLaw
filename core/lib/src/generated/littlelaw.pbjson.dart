@@ -395,6 +395,15 @@ const Envelope$json = {
       '9': 0,
       '10': 'reaction'
     },
+    {
+      '1': 'profile_update',
+      '3': 22,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.ProfileUpdate',
+      '9': 0,
+      '10': 'profileUpdate'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -424,7 +433,23 @@ final $typed_data.Uint8List envelopeDescriptor = $convert.base64Decode(
     'bGxFbmRIAFIHY2FsbEVuZBI4Cgpncm91cF9zeW5jGBMgASgLMhcubGl0dGxlbGF3LnYxLkdyb3'
     'VwU3luY0gAUglncm91cFN5bmMSPgoMcmVhZF9yZWNlaXB0GBQgASgLMhkubGl0dGxlbGF3LnYx'
     'LlJlYWRSZWNlaXB0SABSC3JlYWRSZWNlaXB0EjoKCHJlYWN0aW9uGBUgASgLMhwubGl0dGxlbG'
-    'F3LnYxLlJlYWN0aW9uVXBkYXRlSABSCHJlYWN0aW9uQgkKB3BheWxvYWQ=');
+    'F3LnYxLlJlYWN0aW9uVXBkYXRlSABSCHJlYWN0aW9uEkQKDnByb2ZpbGVfdXBkYXRlGBYgASgL'
+    'MhsubGl0dGxlbGF3LnYxLlByb2ZpbGVVcGRhdGVIAFINcHJvZmlsZVVwZGF0ZUIJCgdwYXlsb2'
+    'Fk');
+
+@$core.Deprecated('Use profileUpdateDescriptor instead')
+const ProfileUpdate$json = {
+  '1': 'ProfileUpdate',
+  '2': [
+    {'1': 'device_name', '3': 1, '4': 1, '5': 9, '10': 'deviceName'},
+    {'1': 'avatar_png', '3': 2, '4': 1, '5': 12, '10': 'avatarPng'},
+  ],
+};
+
+/// Descriptor for `ProfileUpdate`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List profileUpdateDescriptor = $convert.base64Decode(
+    'Cg1Qcm9maWxlVXBkYXRlEh8KC2RldmljZV9uYW1lGAEgASgJUgpkZXZpY2VOYW1lEh0KCmF2YX'
+    'Rhcl9wbmcYAiABKAxSCWF2YXRhclBuZw==');
 
 @$core.Deprecated('Use readReceiptDescriptor instead')
 const ReadReceipt$json = {
@@ -470,6 +495,7 @@ const GroupSync$json = {
     {'1': 'member_ids', '3': 3, '4': 3, '5': 9, '10': 'memberIds'},
     {'1': 'created_at_ms', '3': 4, '4': 1, '5': 3, '10': 'createdAtMs'},
     {'1': 'dissolved', '3': 5, '4': 1, '5': 8, '10': 'dissolved'},
+    {'1': 'avatar_png', '3': 6, '4': 1, '5': 12, '10': 'avatarPng'},
   ],
 };
 
@@ -477,7 +503,8 @@ const GroupSync$json = {
 final $typed_data.Uint8List groupSyncDescriptor = $convert.base64Decode(
     'CglHcm91cFN5bmMSGQoIZ3JvdXBfaWQYASABKAlSB2dyb3VwSWQSEgoEbmFtZRgCIAEoCVIEbm'
     'FtZRIdCgptZW1iZXJfaWRzGAMgAygJUgltZW1iZXJJZHMSIgoNY3JlYXRlZF9hdF9tcxgEIAEo'
-    'A1ILY3JlYXRlZEF0TXMSHAoJZGlzc29sdmVkGAUgASgIUglkaXNzb2x2ZWQ=');
+    'A1ILY3JlYXRlZEF0TXMSHAoJZGlzc29sdmVkGAUgASgIUglkaXNzb2x2ZWQSHQoKYXZhdGFyX3'
+    'BuZxgGIAEoDFIJYXZhdGFyUG5n');
 
 @$core.Deprecated('Use fileDataAckDescriptor instead')
 const FileDataAck$json = {

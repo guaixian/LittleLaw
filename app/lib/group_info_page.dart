@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
+import 'avatar.dart';
 import 'i18n.dart';
 import 'toast.dart';
 
@@ -142,11 +143,35 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: scheme.primaryContainer,
-                    child: Icon(Icons.groups_outlined,
-                        size: 30, color: scheme.onPrimaryContainer),
+                  // 群头像:点击更换(扇出给全体成员)。
+                  GestureDetector(
+                    onTap: () async {
+                      final bytes = await Avatars.pickResized();
+                      if (bytes != null) {
+                        await engine.setGroupAvatar(widget.groupId, bytes);
+                        if (mounted) setState(() {});
+                      }
+                    },
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: scheme.primaryContainer,
+                        image: Avatars.imageOf(engine, groupId: widget.groupId) !=
+                                null
+                            ? DecorationImage(
+                                image: Avatars.imageOf(
+                                    engine, groupId: widget.groupId)!,
+                                fit: BoxFit.cover)
+                            : null,
+                      ),
+                      child: Avatars.imageOf(engine, groupId: widget.groupId) ==
+                              null
+                          ? Icon(Icons.groups_outlined,
+                              size: 28, color: scheme.onPrimaryContainer)
+                          : null,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(

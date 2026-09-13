@@ -816,6 +816,7 @@ enum Envelope_Payload {
   groupSync,
   readReceipt,
   reaction,
+  profileUpdate,
   notSet
 }
 
@@ -842,6 +843,7 @@ class Envelope extends $pb.GeneratedMessage {
     GroupSync? groupSync,
     ReadReceipt? readReceipt,
     ReactionUpdate? reaction,
+    ProfileUpdate? profileUpdate,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -865,6 +867,7 @@ class Envelope extends $pb.GeneratedMessage {
     if (groupSync != null) result.groupSync = groupSync;
     if (readReceipt != null) result.readReceipt = readReceipt;
     if (reaction != null) result.reaction = reaction;
+    if (profileUpdate != null) result.profileUpdate = profileUpdate;
     return result;
   }
 
@@ -898,6 +901,7 @@ class Envelope extends $pb.GeneratedMessage {
     19: Envelope_Payload.groupSync,
     20: Envelope_Payload.readReceipt,
     21: Envelope_Payload.reaction,
+    22: Envelope_Payload.profileUpdate,
     0: Envelope_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -924,7 +928,8 @@ class Envelope extends $pb.GeneratedMessage {
       18,
       19,
       20,
-      21
+      21,
+      22
     ])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<Hello>(2, _omitFieldNames ? '' : 'hello', subBuilder: Hello.create)
@@ -966,6 +971,8 @@ class Envelope extends $pb.GeneratedMessage {
         subBuilder: ReadReceipt.create)
     ..aOM<ReactionUpdate>(21, _omitFieldNames ? '' : 'reaction',
         subBuilder: ReactionUpdate.create)
+    ..aOM<ProfileUpdate>(22, _omitFieldNames ? '' : 'profileUpdate',
+        subBuilder: ProfileUpdate.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1006,6 +1013,7 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(19)
   @$pb.TagNumber(20)
   @$pb.TagNumber(21)
+  @$pb.TagNumber(22)
   Envelope_Payload whichPayload() => _Envelope_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -1027,6 +1035,7 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(19)
   @$pb.TagNumber(20)
   @$pb.TagNumber(21)
+  @$pb.TagNumber(22)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1257,6 +1266,85 @@ class Envelope extends $pb.GeneratedMessage {
   void clearReaction() => $_clearField(21);
   @$pb.TagNumber(21)
   ReactionUpdate ensureReaction() => $_ensure(20);
+
+  @$pb.TagNumber(22)
+  ProfileUpdate get profileUpdate => $_getN(21);
+  @$pb.TagNumber(22)
+  set profileUpdate(ProfileUpdate value) => $_setField(22, value);
+  @$pb.TagNumber(22)
+  $core.bool hasProfileUpdate() => $_has(21);
+  @$pb.TagNumber(22)
+  void clearProfileUpdate() => $_clearField(22);
+  @$pb.TagNumber(22)
+  ProfileUpdate ensureProfileUpdate() => $_ensure(21);
+}
+
+/// / 个人资料:名称 + 头像 PNG(≤96KB),会话建立时互推,变更时广播。
+class ProfileUpdate extends $pb.GeneratedMessage {
+  factory ProfileUpdate({
+    $core.String? deviceName,
+    $core.List<$core.int>? avatarPng,
+  }) {
+    final result = create();
+    if (deviceName != null) result.deviceName = deviceName;
+    if (avatarPng != null) result.avatarPng = avatarPng;
+    return result;
+  }
+
+  ProfileUpdate._();
+
+  factory ProfileUpdate.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ProfileUpdate.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ProfileUpdate',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'deviceName')
+    ..a<$core.List<$core.int>>(
+        2, _omitFieldNames ? '' : 'avatarPng', $pb.PbFieldType.OY)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProfileUpdate clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ProfileUpdate copyWith(void Function(ProfileUpdate) updates) =>
+      super.copyWith((message) => updates(message as ProfileUpdate))
+          as ProfileUpdate;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ProfileUpdate create() => ProfileUpdate._();
+  @$core.override
+  ProfileUpdate createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ProfileUpdate getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ProfileUpdate>(create);
+  static ProfileUpdate? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get deviceName => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set deviceName($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasDeviceName() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearDeviceName() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get avatarPng => $_getN(1);
+  @$pb.TagNumber(2)
+  set avatarPng($core.List<$core.int> value) => $_setBytes(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasAvatarPng() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearAvatarPng() => $_clearField(2);
 }
 
 /// / 已读回执:接收方告知原作者"这些消息我已读"。
@@ -1457,6 +1545,7 @@ class GroupSync extends $pb.GeneratedMessage {
     $core.Iterable<$core.String>? memberIds,
     $fixnum.Int64? createdAtMs,
     $core.bool? dissolved,
+    $core.List<$core.int>? avatarPng,
   }) {
     final result = create();
     if (groupId != null) result.groupId = groupId;
@@ -1464,6 +1553,7 @@ class GroupSync extends $pb.GeneratedMessage {
     if (memberIds != null) result.memberIds.addAll(memberIds);
     if (createdAtMs != null) result.createdAtMs = createdAtMs;
     if (dissolved != null) result.dissolved = dissolved;
+    if (avatarPng != null) result.avatarPng = avatarPng;
     return result;
   }
 
@@ -1485,6 +1575,8 @@ class GroupSync extends $pb.GeneratedMessage {
     ..pPS(3, _omitFieldNames ? '' : 'memberIds')
     ..aInt64(4, _omitFieldNames ? '' : 'createdAtMs')
     ..aOB(5, _omitFieldNames ? '' : 'dissolved')
+    ..a<$core.List<$core.int>>(
+        6, _omitFieldNames ? '' : 'avatarPng', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1543,6 +1635,15 @@ class GroupSync extends $pb.GeneratedMessage {
   $core.bool hasDissolved() => $_has(4);
   @$pb.TagNumber(5)
   void clearDissolved() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.List<$core.int> get avatarPng => $_getN(5);
+  @$pb.TagNumber(6)
+  set avatarPng($core.List<$core.int> value) => $_setBytes(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasAvatarPng() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearAvatarPng() => $_clearField(6);
 }
 
 /// 信封式文件数据回执:接收方每写入一帧回报已落盘偏移,

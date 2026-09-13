@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'chat_page.dart';
+import 'avatar.dart';
 import 'globals.dart';
 import 'group_create_page.dart';
 import 'group_info_page.dart';
@@ -38,7 +39,8 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           ev is PeerStatusChanged ||
           ev is GroupSynced ||
           ev is ReceiptsUpdated ||
-          ev is ReactionsChanged) {
+          ev is ReactionsChanged ||
+          ev is ProfileUpdated) {
         if (mounted) setState(() {});
       }
     }));
@@ -264,22 +266,23 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
   }
 
   Widget _convTile(_ConvEntry e, bool selected, ColorScheme scheme) {
-    Widget avatar;
-    if (e.isGroup) {
-      avatar = CircleAvatar(
-        radius: 21,
-        backgroundColor: scheme.primaryContainer,
-        child: Icon(Icons.groups_outlined,
-            size: 21, color: scheme.onPrimaryContainer),
-      );
-    } else {
-      avatar = CircleAvatar(
-        radius: 21,
-        backgroundColor: scheme.secondaryContainer,
-        child: Icon(Icons.smartphone,
-            size: 20, color: scheme.onSecondaryContainer),
-      );
-    }
+    final engine = this.engine;
+    final img = e.isGroup
+        ? Avatars.imageOf(engine, groupId: e.key)
+        : Avatars.imageOf(engine, peerId: e.key);
+    final Widget avatar = CircleAvatar(
+      radius: 21,
+      backgroundColor:
+          e.isGroup ? scheme.primaryContainer : scheme.secondaryContainer,
+      backgroundImage: img,
+      child: img == null
+          ? Icon(e.isGroup ? Icons.groups_outlined : Icons.smartphone,
+              size: 20,
+              color: e.isGroup
+                  ? scheme.onPrimaryContainer
+                  : scheme.onSecondaryContainer)
+          : null,
+    );
     return InkWell(
       onTap: () => setState(() {
         _tab = 0;

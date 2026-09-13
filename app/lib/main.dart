@@ -6,16 +6,19 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'call.dart';
 import 'call_page.dart';
 import 'chat_page.dart';
 import 'device_info.dart';
 import 'adaptive_shell.dart';
+import 'avatar.dart';
 import 'globals.dart';
 import 'i18n.dart';
 import 'group_create_page.dart';
 import 'hotspot_page.dart';
+import 'intro_page.dart';
 import 'search_page.dart';
 import 'push_wake.dart';
 import 'quick_pair_page.dart';
@@ -96,6 +99,22 @@ class _BootPageState extends State<BootPage> {
     _boot();
   }
 
+  Future<void> _maybeShowIntro() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('intro_done') == true) return;
+      await prefs.setBool('intro_done', true);
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null) return;
+      if (!ctx.mounted) return;
+      await Navigator.of(ctx).push(MaterialPageRoute(
+        builder: (_) => IntroPage(
+          onDone: () => Navigator.of(ctx).pop(),
+        ),
+      ));
+    } catch (_) {}
+  }
+
   Future<void> _boot() async {
     try {
       final dataDir =
@@ -126,6 +145,8 @@ class _BootPageState extends State<BootPage> {
       });
       ShareHandler.attach(engine); // 系统分享面板接入
       PushWake.attach(engine); // FCM 离线推送唤醒(可选,无配置自动禁用)
+      // 首次使用:展示引导(一次)。
+      unawaited(_maybeShowIntro());
       final calls = CallManager(engine: engine, iceServers: iceServers)
         ..start();
       callManager = calls;
@@ -1022,7 +1043,36 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.fingerprint, color: Colors.white, size: 32),
+                  // 头像:点击设置(选择图片,自动缩放;同步给已配对设备)。
+                  GestureDetector(
+                    onTap: () async {
+                      final bytes = await Avatars.pickResized();
+                      if (bytes != null) {
+                        await engine.setMyAvatar(bytes);
+                        setState(() {});
+                      }
+                    },
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.22),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            width: 2),
+                        image: Avatars.imageOf(engine) != null
+                            ? DecorationImage(
+                                image: Avatars.imageOf(engine)!,
+                                fit: BoxFit.cover)
+                            : null,
+                      ),
+                      child: Avatars.imageOf(engine) == null
+                          ? const Icon(Icons.person,
+                              color: Colors.white, size: 28)
+                          : null,
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -1162,6 +1212,14 @@ class _ProfilePageState extends State<ProfilePage> {
         Card(
           child: Column(
             children: [
+              ListTile(
+                leading: const Icon(Icons.school_outlined),
+                title: Text(L10n.t('intro.replay')),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => IntroPage(onDone: () => Navigator.of(context).pop()),
+                )),
+              ),
+              const Divider(indent: 16, endIndent: 16),
               ListTile(
                 leading: const Icon(Icons.shield_outlined),
                 title: const Text('加密与安全'),

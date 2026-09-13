@@ -10,6 +10,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+import 'avatar.dart';
 import 'media_viewers.dart';
 import 'globals.dart';
 import 'call_page.dart';
@@ -532,8 +533,6 @@ class _ChatPageState extends State<ChatPage> {
               onTap: () {
                 Navigator.of(ctx).pop();
                 _isGroup ? widget.engine.deleteGroupMessages(_convKey, [m.msgId]) : widget.engine.deleteMessages(_convKey, [m.msgId]);
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text(L10n.t('chat.deletedToast'))));
               },
             ),
             const SizedBox(height: 6),
@@ -618,6 +617,9 @@ class _ChatPageState extends State<ChatPage> {
     final subtitle = group != null
         ? '${group.memberIds.length} 名成员'
         : (_online ? L10n.t('common.online') : L10n.t('chat.offlineHint'));
+    final avatarImg = group != null
+        ? Avatars.imageOf(widget.engine, groupId: group.id)
+        : Avatars.imageOf(widget.engine, peerId: widget.peer.deviceId);
     final avatarIcon = group != null
         ? Icons.groups_outlined
         : (widget.peer.platform == 'android' || widget.peer.platform == 'ios'
@@ -634,8 +636,8 @@ class _ChatPageState extends State<ChatPage> {
       title: GestureDetector(
         onTap: _isGroup
             ? () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) =>
-                      GroupInfoPage(engine: widget.engine, groupId: widget.group!.id),
+                  builder: (_) => GroupInfoPage(
+                      engine: widget.engine, groupId: widget.group!.id),
                 ))
             : null,
         child: Row(
@@ -643,8 +645,11 @@ class _ChatPageState extends State<ChatPage> {
             CircleAvatar(
               radius: 18,
               backgroundColor: scheme.primaryContainer,
-              child: Icon(avatarIcon,
-                  size: 20, color: scheme.onPrimaryContainer),
+              backgroundImage: avatarImg,
+              child: avatarImg == null
+                  ? Icon(avatarIcon,
+                      size: 20, color: scheme.onPrimaryContainer)
+                  : null,
             ),
             const SizedBox(width: 10),
             Column(
@@ -783,6 +788,9 @@ class _ChatPageState extends State<ChatPage> {
       selected: _selection.contains(m.msgId),
       selecting: _selecting,
       avatarIcon: _avatarIcon(mine, m.senderId),
+      avatarImage: mine
+          ? Avatars.imageOf(engine)
+          : Avatars.imageOf(engine, peerId: m.senderId),
       onReaction: (emoji) => _react(m, emoji),
       onTap: () {
         if (_selecting) {
@@ -994,6 +1002,7 @@ class _MessageBubble extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     required this.avatarIcon,
+    this.avatarImage,
     this.senderName,
     this.showSender = true,
     this.onReaction,
@@ -1004,6 +1013,7 @@ class _MessageBubble extends StatelessWidget {
   final String? senderName; // 群消息:发送者名(自己为 null)
   final bool showSender; // 分组中隐藏发送者名(头像仍显示)
   final IconData avatarIcon;
+  final ImageProvider? avatarImage;
   final TransferProgress? progress;
   final bool selected;
   final bool selecting;

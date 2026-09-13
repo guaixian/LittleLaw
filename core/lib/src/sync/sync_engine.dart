@@ -128,6 +128,12 @@ class ReactionsChanged extends EngineEvent {
   final String msgId;
 }
 
+/// 对端资料(名称/头像)到达。
+class ProfileUpdated extends EngineEvent {
+  ProfileUpdated(this.peerId);
+  final String peerId;
+}
+
 // ---------------------------------------------------------------------------
 // 同步引擎:1:1 会话的端到端一致同步。
 //
@@ -368,32 +374,30 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// 群定义扇出(建群/改群):全体成员 + 我的设备。
   /// [extraTargets] 追加接收方(新拉入的成员 / 被移出者,用于告知变更)。
   /// [dissolve] true 时通知成员解散并删除本地群数据。
+  /// [avatarPng] 群头像(门面从 avatars/group_<id>.png 读取)。
   void broadcastGroupSync(Group group,
-      {Set<String>? extraTargets, bool dissolve = false}) {
+      {Set<String>? extraTargets,
+      bool dissolve = false,
+      List<int>? avatarPng}) {
     final targets = <String>{
       ...group.memberIds.where((id) => id != identity.deviceId),
       ...store.selfPeers().map((s) => s.deviceId),
       ...?extraTargets,
     };
+    final avatar = (avatarPng != null && avatarPng.length <= 96 * 1024)
+        ? avatarPng
+        : const <int>[];
     final def = pb.GroupSync(
       groupId: group.id,
       name: group.name,
       memberIds: group.memberIds,
       createdAtMs: Int64(group.createdAtMs),
       dissolved: dissolve,
+      avatarPng: avatar,
     );
     for (final target in targets) {
       store.appendOp(target, Op.typeGroup, def.writeToBuffer());
-      _push(target, pb.Envelope(
-        id: const Uuid().v4(),
-        groupSync: pb.GroupSync(
-          groupId: group.id,
-          name: group.name,
-          memberIds: group.memberIds,
-          createdAtMs: Int64(group.createdAtMs),
-          dissolved: dissolve,
-        ),
-      ));
+      _push(target, pb.Envelope(id: const Uuid().v4(), groupSync: def));
     }
   }
 
@@ -422,6 +426,9 @@ class SyncEngine extends pbg.SyncServiceBase {
       createdAtMs: gs.createdAtMs.toInt(),
       memberIds: gs.memberIds,
     ));
+    if (gs.avatarPng.isNotEmpty) {
+      onGroupAvatar?.call(gs.groupId, gs.avatarPng);
+    }
     _events.add(GroupSynced(gs.groupId));
   }
 
@@ -644,6 +651,31 @@ class SyncEngine extends pbg.SyncServiceBase {
     final wasOffline = !isOnline(peerId);
     _sinks.putIfAbsent(peerId, () => {}).add(sink);
     if (wasOffline) _events.add(PeerStatusChanged(peerId, true));
+    // 会话建立即互推个人资料(名称/头像),对端 UI 立即可用。
+    final profile = profileProvider?.call();
+    if (profile != null) {
+      _push(peerId,
+          pb.Envelope(id: const Uuid().v4(), profileUpdate: profile));
+    }
+  }
+
+  /// 个人资料提供器(门面注入:名称 + 头像 PNG)。
+  pb.ProfileUpdate? Function()? profileProvider;
+
+  /// 收到对端资料(门面负责落盘与事件)。
+  void Function(String peerId, pb.ProfileUpdate profile)? onProfileUpdate;
+
+  /// 收到群头像(随 GroupSync 到达,门面落盘)。
+  void Function(String groupId, List<int> avatarPng)? onGroupAvatar;
+
+  /// 头像/名称变更后广播给全部已配对设备。
+  void broadcastProfile() {
+    final profile = profileProvider?.call();
+    if (profile == null) return;
+    for (final p in store.allPeers()) {
+      _push(p.deviceId,
+          pb.Envelope(id: const Uuid().v4(), profileUpdate: profile));
+    }
   }
 
   void _unregisterSink(String peerId, StreamController<pb.Envelope> sink) {
@@ -725,6 +757,11 @@ class SyncEngine extends pbg.SyncServiceBase {
         _applyReadReceipt(peerId, env.readReceipt);
       case pb.Envelope_Payload.reaction:
         _applyReaction(peerId, env.reaction);
+      case pb.Envelope_Payload.profileUpdate:
+        if (env.profileUpdate.deviceName.isNotEmpty ||
+            env.profileUpdate.avatarPng.isNotEmpty) {
+          onProfileUpdate?.call(peerId, env.profileUpdate);
+        }
       case pb.Envelope_Payload.linkAuth:
         break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
       case pb.Envelope_Payload.heartbeat:
