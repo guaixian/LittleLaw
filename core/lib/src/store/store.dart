@@ -483,6 +483,15 @@ class Store {
     return _db.updatedRows;
   }
 
+  /// 按 msg_id 无条件置已读(本地"我已读"语义:入向消息,防重复回执)。
+  int markReadByIds(List<String> msgIds) {
+    if (msgIds.isEmpty) return 0;
+    final marks = List.filled(msgIds.length, '?').join(',');
+    _db.execute(
+        'UPDATE messages SET read=1 WHERE msg_id IN ($marks)', msgIds);
+    return _db.updatedRows;
+  }
+
   /// 增量更新表情回复(JSON 合并,单设备单 emoji)。
   void updateReaction(String msgId, String deviceId, String emoji) {
     final rows = _db

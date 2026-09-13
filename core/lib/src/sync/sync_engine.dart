@@ -542,13 +542,15 @@ class SyncEngine extends pbg.SyncServiceBase {
       groupId: isGroup ? convKey : '',
     );
     // 本地立刻置已读(入向语义:回执已发,避免重复回执)。
-    store.markRead(unread, [identity.deviceId]);
+    store.markReadByIds(unread);
     final targets = isGroup ? store.groupRecipients(convKey) : [convKey];
     for (final t in targets) {
       if (t == identity.deviceId) continue;
       store.appendOp(t, Op.typeReceipt, receipt.writeToBuffer());
       _push(t, pb.Envelope(id: const Uuid().v4(), readReceipt: receipt));
     }
+    // 本地点火:刷新会话未读徽标等 UI。
+    _events.add(ReceiptsUpdated(convKey, unread));
   }
 
   /// 应用已读回执:仅命中"我(或我的设备)发出的消息"。
