@@ -13,6 +13,9 @@ class UpnpMapper {
   static const _ssdpAddr = '239.255.255.250';
   static const _ssdpPort = 1900;
 
+  /// 最近一次成功映射的控制信息(退出时回收用)。
+  static ({Uri url, String serviceType, int externalPort})? _lastMapping;
+
   /// 尝试映射。成功返回公网 (host, port);失败/无 IGD 返回 null。
   /// [timeout] 整体超时(路由器发现+两次 SOAP)。
   static Future<({String host, int port})?> mapPort(int internalPort,
@@ -22,6 +25,23 @@ class UpnpMapper {
       return await _mapPort(internalPort, description).timeout(timeout);
     } catch (_) {
       return null;
+    }
+  }
+
+  /// 回收映射(引擎退出时调用,避免路由器残留端口)。
+  /// 幂等:没有映射或已回收时静默返回。
+  static Future<void> unmapPort() async {
+    final m = _lastMapping;
+    _lastMapping = null;
+    if (m == null) return;
+    try {
+      await _soapCall(m.url, m.serviceType, 'DeletePortMapping', {
+        'NewRemoteHost': '',
+        'NewExternalPort': '${m.externalPort}',
+        'NewProtocol': 'TCP',
+      }).timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // 路由器不响应/已重启:映射自然过期,忽略。
     }
   }
 
@@ -52,6 +72,13 @@ class UpnpMapper {
       'NewLeaseDuration': '0',
     });
     if (ok == null) return null;
+
+    // 记录映射信息,退出时可回收。
+    _lastMapping = (
+      url: controlUrl.url,
+      serviceType: controlUrl.serviceType,
+      externalPort: internalPort
+    );
 
     // 5) 公网 IP。
     final externalIp = await _soapCall(controlUrl.url, controlUrl.serviceType,

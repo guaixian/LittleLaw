@@ -232,6 +232,8 @@ class LittleLawEngine {
     await _discoveryExpiredSub?.cancel();
     await rendezvous?.dispose();
     await discovery.dispose();
+    // 回收 UPnP 端口映射(避免路由器残留)。
+    await UpnpMapper.unmapPort();
     // 先关闭全部通道(客户端 + 服务端流),再关停 server,避免挂起。
     await sync.dispose();
     await transfer.dispose();

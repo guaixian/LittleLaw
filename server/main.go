@@ -24,6 +24,9 @@ func main() {
 	addr := flag.String("addr", ":47600", "监听地址")
 	dbPath := flag.String("db", "rendezvous.db", "邮箱数据库文件路径")
 	fcmKey := flag.String("fcm-key", "", "Firebase serviceAccount.json 路径(可选,启用离线推送唤醒)")
+	maxConns := flag.Int("max-conns", 4096, "全局并发连接上限")
+	connBurst := flag.Int("conn-burst", 30, "每 IP 每分钟新建连接数上限")
+	msgBurst := flag.Int("msg-burst", 200, "每连接 10 秒消息数上限(防刷屏)")
 	flag.Parse()
 
 	mb, err := OpenMailbox(*dbPath)
@@ -34,6 +37,7 @@ func main() {
 
 	push := NewPushService(mb.db, *fcmKey)
 	hub := NewHub()
+	limiter := NewLimiter(*maxConns, *connBurst, *msgBurst)
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -41,12 +45,18 @@ func main() {
 	})
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		// 建连准入:IP 令牌桶 + 全局并发上限。
+		if !limiter.AllowConn(r) {
+			writeTooMany(w)
+			return
+		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			limiter.ConnClosed()
 			log.Printf("upgrade: %v", err)
 			return
 		}
-		client := newClient(hub, mb, push, conn)
+		client := newClient(hub, mb, push, conn, limiter)
 		go client.writePump()
 		go client.readPump()
 	})

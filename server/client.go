@@ -20,6 +20,8 @@ type Client struct {
 	nonce    string
 	endpoint string
 	authed   bool
+	limiter  *Limiter
+	msgs     msgWindow // 每客户端消息窗口(防刷屏)
 
 	closeOnce sync.Once
 }
@@ -30,15 +32,17 @@ const (
 	pingPeriod     = 45 * time.Second
 	maxMessageSize = 1 << 20 // 1 MiB
 	authTimeout    = 15 * time.Second
+	maxSubscribe   = 512     // 单连接订阅设备数上限
 )
 
-func newClient(h *Hub, mb *Mailbox, push *PushService, conn *websocket.Conn) *Client {
+func newClient(h *Hub, mb *Mailbox, push *PushService, conn *websocket.Conn, limiter *Limiter) *Client {
 	return &Client{
 		hub:     h,
 		mailbox: mb,
 		push:    push,
 		conn:    conn,
 		send:    make(chan []byte, 64),
+		limiter: limiter,
 	}
 }
 
@@ -69,6 +73,7 @@ func (c *Client) readPump() {
 		if c.authed {
 			c.hub.unregister(c)
 		}
+		c.limiter.ConnClosed()
 		c.conn.Close()
 	}()
 
@@ -123,6 +128,12 @@ func (c *Client) handleHello(message []byte) bool {
 }
 
 func (c *Client) handleFrame(message []byte) {
+	// 每客户端滑动窗口:10 秒 200 帧,超限断连(刷屏攻击者直接踢)。
+	if !c.msgs.allow(c.limiter.msgWindow, c.limiter.msgBurst) {
+		c.sendJSON(ErrorFrame{Type: "error", Message: "rate limit exceeded"})
+		c.kick()
+		return
+	}
 	var f Frame
 	if err := json.Unmarshal(message, &f); err != nil {
 		return
@@ -131,11 +142,14 @@ func (c *Client) handleFrame(message []byte) {
 	case "subscribe":
 		var sub SubscribeFrame
 		if json.Unmarshal(message, &sub) == nil {
+			if len(sub.IDs) > maxSubscribe {
+				sub.IDs = sub.IDs[:maxSubscribe]
+			}
 			c.hub.subscribe(c, sub.IDs)
 		}
 	case "signal":
 		var sig SignalFromClientFrame
-		if json.Unmarshal(message, &sig) == nil && sig.To != "" {
+		if json.Unmarshal(message, &sig) == nil && sig.To != "" && len(sig.Data) <= 256<<10 {
 			if !c.hub.forwardTo(sig.To, SignalToClientFrame{
 				Type: "signal", From: c.deviceID, Data: sig.Data,
 			}) {
@@ -145,11 +159,20 @@ func (c *Client) handleFrame(message []byte) {
 	case "mailbox_push":
 		var push MailboxPushFrame
 		if json.Unmarshal(message, &push) == nil && push.To != "" {
-			if _, err := c.mailbox.Push(push.To, c.deviceID, push.Data); err != nil {
+			_, err := c.mailbox.Push(push.To, c.deviceID, push.Data)
+			switch {
+			case err == ErrBoxFull:
+				c.sendJSON(ErrorFrame{Type: "error",
+					Message: "mailbox of " + push.To + " is full (recipient must come online)"})
+			case err == ErrTotalFull:
+				c.sendJSON(ErrorFrame{Type: "error", Message: "server mailbox storage is full"})
+			case err != nil:
 				log.Printf("mailbox push: %v", err)
-			} else if !c.hub.isOnline(push.To) {
-				// 接收方离线:代发推送唤醒(仅信号,无内容)。
-				c.push.NotifyDevice(push.To)
+			default:
+				if !c.hub.isOnline(push.To) {
+					// 接收方离线:代发推送唤醒(仅信号,无内容)。
+					c.push.NotifyDevice(push.To)
+				}
 			}
 		}
 	case "push_register":

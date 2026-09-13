@@ -212,17 +212,45 @@ class TransferManager extends pbg.TransferServiceBase {
   // ------------------------------------------------------------ 接收侧
 
   /// 拉取对端文件(可重复调用,断点续传)。
+  /// 群消息自动启用多源:发送者失败时改从其他在线成员拉取。
   Future<void> receiveFile(String peerId, Message msg) async {
     final fileId = msg.fileId;
     if (fileId == null) return;
+    if (msg.convId.startsWith('g:')) {
+      return _guardReceiving(fileId,
+          () => _receiveGroupFileMulti(msg.convId.substring(2), peerId, msg));
+    }
+    return _guardReceiving(fileId, () => _doReceive(peerId, msg));
+  }
+
+  Future<void> _guardReceiving(
+      String fileId, Future<void> Function() task) {
     final existing = _receiving[fileId];
     if (existing != null) return existing;
-
-    final task = _doReceive(peerId, msg).whenComplete(() {
+    final t = task().whenComplete(() {
       _receiving.remove(fileId);
     });
-    _receiving[fileId] = task;
-    return task;
+    _receiving[fileId] = t;
+    return t;
+  }
+
+  /// 群文件多源拉取:发送者离线/无文件时,从已下载成功的其他在线成员拉。
+  /// 服务侧无文件会快速失败或 30s 超时,逐源尝试有界。
+  Future<void> _receiveGroupFileMulti(
+      String groupId, String sender, Message msg) async {
+    final candidates = <String>[sender];
+    for (final m in store.groupRecipients(groupId)) {
+      if (m != sender && sync.isOnline(m)) candidates.add(m);
+    }
+    for (final candidate in candidates) {
+      await _doReceive(candidate, msg);
+      final state = store.getMessage(msg.msgId)?.fileState;
+      if (state == Message.fileStateDone) return;
+      if (state == Message.fileStateFailed) {
+        // 本源失败:复位待传输,尝试下一源(.part 续传保留)。
+        store.updateFileState(msg.msgId, Message.fileStatePending);
+      }
+    }
   }
 
   Future<void> _doReceive(String peerId, Message msg) async {
@@ -545,10 +573,15 @@ class TransferManager extends pbg.TransferServiceBase {
     final mine = store.findMessageByFileId(fileId,
         senderId: identity.deviceId);
     if (mine?.filePath != null) return mine!.filePath;
-    // 我的设备镜像来的(文件本体在对端,可按普通配对通道拉取)。
+    // 我的设备发送的(文件本体在对端,可按通道中转拉取)。
     for (final self in store.selfPeers()) {
       final m = store.findMessageByFileId(fileId, senderId: self.deviceId);
       if (m?.filePath != null) return m!.filePath;
+    }
+    // 群文件:我可能只是接收方,已下载完成即可为其他成员供源。
+    final any = store.findMessageByFileId(fileId);
+    if (any?.fileState == Message.fileStateDone && any?.filePath != null) {
+      return any!.filePath;
     }
     return null;
   }

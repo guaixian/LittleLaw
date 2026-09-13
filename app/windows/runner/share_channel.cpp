@@ -10,8 +10,13 @@
 #include <flutter/standard_method_codec.h>
 
 #include <windows.h>
+#include <shlwapi.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "windowscodecs.lib")
 
 namespace {
 
@@ -69,9 +74,48 @@ bool CopyFileToClipboard(HWND hwnd, const std::wstring& path) {
   return ok;
 }
 
-// 剪贴板位图(CF_DIBV5/CF_DIB)→ BMP 文件(DIB 前补 BITMAPFILEHEADER 即可,
-// 无需编码库;Flutter/Skia 可直接解码 BMP)。返回 UTF-8 路径,无图返回空。
-std::string ClipboardImageToBmpFile(HWND hwnd) {
+// HBITMAP → PNG 文件(WIC 编码)。失败返回 false(调用方回退 BMP)。
+bool SaveHbitmapToPng(HBITMAP bmp, const wchar_t* path) {
+  // COM 已初始化或并发模式不符均可继续使用 STA 工厂。
+  HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  bool ok = false;
+  IWICImagingFactory* factory = nullptr;
+  IWICBitmap* wicBmp = nullptr;
+  IStream* fileStream = nullptr;
+  IWICBitmapEncoder* encoder = nullptr;
+  if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                 CLSCTX_INPROC_SERVER,
+                                 IID_PPV_ARGS(&factory))) &&
+      SUCCEEDED(factory->CreateBitmapFromHBITMAP(
+          bmp, nullptr, WICBitmapIgnoreAlpha, &wicBmp)) &&
+      SUCCEEDED(SHCreateStreamOnFileW(path, STGM_CREATE | STGM_WRITE,
+                                      &fileStream)) &&
+      SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr,
+                                       &encoder)) &&
+      SUCCEEDED(encoder->Initialize(fileStream, WICBitmapEncoderNoCache))) {
+    IWICBitmapFrameEncode* frame = nullptr;
+    IPropertyBag2* props = nullptr;
+    if (SUCCEEDED(encoder->CreateNewFrame(&frame, &props)) &&
+        SUCCEEDED(frame->Initialize(props)) &&
+        SUCCEEDED(frame->WriteSource(wicBmp, nullptr)) &&
+        SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit())) {
+      ok = true;
+    }
+    if (props) props->Release();
+    if (frame) frame->Release();
+  }
+  if (encoder) encoder->Release();
+  if (fileStream) fileStream->Release();
+  if (wicBmp) wicBmp->Release();
+  if (factory) factory->Release();
+  if (SUCCEEDED(hrInit)) CoUninitialize();
+  return ok;
+}
+
+// 剪贴板位图(CF_DIBV5/CF_DIB)→ 图片文件。
+// 首选 PNG(WIC,体积小);WIC 不可用时回退 BMP(直接拼文件头)。
+// 返回 UTF-8 路径,无图返回空。
+std::string ClipboardImageToFile(HWND hwnd) {
   UINT format = 0;
   if (IsClipboardFormatAvailable(CF_DIBV5)) {
     format = CF_DIBV5;
@@ -111,32 +155,51 @@ std::string ClipboardImageToBmpFile(HWND hwnd) {
                                       4);
   const size_t total = headerSize + imageSize;
 
+  HDC hdc = GetDC(nullptr);
+  HBITMAP bmp = CreateDIBitmap(hdc, bih, CBM_INIT,
+                               reinterpret_cast<const BYTE*>(data) + headerSize,
+                               reinterpret_cast<BITMAPINFO*>(bih),
+                               DIB_RGB_COLORS);
+  ReleaseDC(nullptr, hdc);
+
   std::string outPath;
-  {
+  if (bmp) {
     wchar_t dir[MAX_PATH + 1] = {0};
     GetTempPathW(MAX_PATH, dir);
-    wchar_t file[MAX_PATH + 1] = {0};
-    swprintf_s(file, L"%slittlelaw_paste_%lld.bmp", dir,
-               static_cast<long long>(GetTickCount64()));
+    wchar_t pngFile[MAX_PATH + 1] = {0};
+    wchar_t bmpFile[MAX_PATH + 1] = {0};
+    const long long stamp = static_cast<long long>(GetTickCount64());
+    swprintf_s(pngFile, L"%slittlelaw_paste_%lld.png", dir, stamp);
+    swprintf_s(bmpFile, L"%slittlelaw_paste_%lld.bmp", dir, stamp);
 
-    BITMAPFILEHEADER fh{};
-    fh.bfType = 0x4D42;  // "BM"
-    fh.bfSize = static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + total);
-    fh.bfOffBits = static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + headerSize);
-
-    HANDLE out = CreateFileW(file, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                             FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (out != INVALID_HANDLE_VALUE) {
-      DWORD written = 0;
-      WriteFile(out, &fh, sizeof(fh), &written, nullptr);
-      WriteFile(out, data, static_cast<DWORD>(total), &written, nullptr);
-      CloseHandle(out);
-      int len =
-          WideCharToMultiByte(CP_UTF8, 0, file, -1, nullptr, 0, nullptr, nullptr);
+    const wchar_t* chosen = nullptr;
+    if (SaveHbitmapToPng(bmp, pngFile)) {
+      chosen = pngFile;
+    } else {
+      // BMP 兜底:文件头 + 原始 DIB 直接落盘。
+      BITMAPFILEHEADER fh{};
+      fh.bfType = 0x4D42;  // "BM"
+      fh.bfSize = static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + total);
+      fh.bfOffBits =
+          static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + headerSize);
+      HANDLE out = CreateFileW(bmpFile, GENERIC_WRITE, 0, nullptr,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (out != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        WriteFile(out, &fh, sizeof(fh), &written, nullptr);
+        WriteFile(out, data, static_cast<DWORD>(total), &written, nullptr);
+        CloseHandle(out);
+        chosen = bmpFile;
+      }
+    }
+    DeleteObject(bmp);
+    if (chosen) {
+      int len = WideCharToMultiByte(CP_UTF8, 0, chosen, -1, nullptr, 0,
+                                    nullptr, nullptr);
       outPath.resize(len > 0 ? len - 1 : 0);
       if (len > 0) {
-        WideCharToMultiByte(CP_UTF8, 0, file, -1, outPath.data(), len, nullptr,
-                            nullptr);
+        WideCharToMultiByte(CP_UTF8, 0, chosen, -1, outPath.data(), len,
+                            nullptr, nullptr);
       }
     }
   }
@@ -215,7 +278,7 @@ void FlutterWindow::RegisterShareChannel() {
             result->Success(EncodableValue(ok ? "clipboard" : "failed"));
           }
         } else if (method == "readClipboardImage") {
-          const std::string path = ClipboardImageToBmpFile(hwnd);
+          const std::string path = ClipboardImageToFile(hwnd);
           if (path.empty()) {
             result->Success(EncodableValue());
           } else {
