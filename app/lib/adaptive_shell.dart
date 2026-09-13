@@ -7,7 +7,7 @@ import 'chat_page.dart';
 import 'globals.dart';
 import 'group_create_page.dart';
 import 'i18n.dart';
-import 'main.dart' show ConnectPage, ProfilePage;
+import 'main.dart' show ProfilePage;
 import 'search_page.dart';
 import 'theme/app_theme.dart';
 
@@ -54,11 +54,35 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 设置页独占剩余全部宽度(不出现右侧空栏)。
+    if (_tab == 1) {
+      return Scaffold(
+        body: Row(
+          children: [
+            _iconRail(scheme),
+            VerticalDivider(width: 1, thickness: 1, color: scheme.outlineVariant),
+            Expanded(
+              child: Scaffold(
+                backgroundColor: scheme.surfaceContainerLowest,
+                appBar: AppBar(title: Text(L10n.t('nav.settings'))),
+                // 宽屏限宽居中,避免卡片横贯整屏。
+                body: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: const ProfilePage(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       body: Row(
         children: [
           _iconRail(scheme),
-          SizedBox(width: 320, child: _middlePane(scheme)),
+          SizedBox(width: 320, child: _conversationPane(scheme)),
           VerticalDivider(width: 1, thickness: 1, color: scheme.outlineVariant),
           Expanded(child: _rightPane(scheme)),
         ],
@@ -118,10 +142,29 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           ),
           const SizedBox(height: 14),
           item(Icons.forum_outlined, L10n.t('nav.chats'), 0),
-          item(Icons.hub_outlined, L10n.t('nav.connect'), 1),
-          item(Icons.person_outline, L10n.t('nav.profile'), 2),
+          item(Icons.settings_outlined, L10n.t('nav.settings'), 1),
           const Spacer(),
-          item(Icons.search, L10n.t('common.search'), 3),
+          // 搜索:弹独立窗口页(不占栏)。
+          Tooltip(
+            message: L10n.t('common.search'),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => SearchPage(engine: engine),
+              )),
+              child: Container(
+                width: 44,
+                height: 44,
+                margin: const EdgeInsets.symmetric(vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.search,
+                    size: 22, color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
         ],
       ),
@@ -129,19 +172,6 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
   }
 
   // ------------------------------------------------------------ 中栏
-
-  Widget _middlePane(ColorScheme scheme) {
-    switch (_tab) {
-      case 0:
-        return _conversationPane(scheme);
-      case 1:
-        return const ConnectPage();
-      case 2:
-        return const ProfilePage();
-      default:
-        return const SizedBox.shrink();
-    }
-  }
 
   /// 会话列表:群 + 已配对设备,按最后消息时间排序。
   Widget _conversationPane(ColorScheme scheme) {
@@ -352,7 +382,7 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
   // ------------------------------------------------------------ 右栏
 
   Widget _rightPane(ColorScheme scheme) {
-    if (_tab != 0 || _activeKey == null) {
+    if (_activeKey == null) {
       return Container(
         color: scheme.surfaceContainerLowest,
         child: Center(

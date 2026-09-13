@@ -266,7 +266,6 @@ class _HomeShellState extends State<HomeShell> {
     }
     final pages = [
       const DevicesPage(),
-      const ConnectPage(),
       const ProfilePage(),
     ];
     return Scaffold(
@@ -277,19 +276,14 @@ class _HomeShellState extends State<HomeShell> {
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [
           NavigationDestination(
-            icon: Icon(Icons.devices_outlined),
-            selectedIcon: Icon(Icons.devices),
+            icon: const Icon(Icons.devices_outlined),
+            selectedIcon: const Icon(Icons.devices),
             label: L10n.t('nav.devices'),
           ),
           NavigationDestination(
-            icon: Icon(Icons.hub_outlined),
-            selectedIcon: Icon(Icons.hub),
-            label: L10n.t('nav.connect'),
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: L10n.t('nav.profile'),
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings),
+            label: L10n.t('nav.settings'),
           ),
         ],
       ),
@@ -843,155 +837,118 @@ class _SectionLabel extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 连接页:四种连接方式
+// 设置页:身份卡 + 连接方式 + 语言 + 主题 + 关于
 // ---------------------------------------------------------------------------
 
-class ConnectPage extends StatelessWidget {
-  const ConnectPage({super.key});
+/// 连接方式紧凑网格(设置页内嵌):手机 2 列 / 宽屏 4 列。
+class ConnectGrid extends StatelessWidget {
+  const ConnectGrid({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final engine = _engine;
+    final rtc = rtcManager;
+    if (engine == null || rtc == null) {
+      return const SizedBox.shrink();
+    }
     final items = [
-      _ConnectItem(
+      _ConnectTile(
         icon: Icons.qr_code_2_outlined,
-        title: '碰一碰 / 扫一扫',
-        subtitle: '同局域网免 PIN 快速配对',
+        title: L10n.t('connect.qr'),
         color: const Color(0xFF0EBB9C),
         onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
-          builder: (_) => QuickPairPage(engine: _engine!),
+          builder: (_) => QuickPairPage(engine: engine),
         )),
       ),
-      _ConnectItem(
+      _ConnectTile(
         icon: Icons.wifi_tethering_outlined,
-        title: '热点直传',
-        subtitle: '没有路由器时直连互传',
+        title: L10n.t('connect.hotspot'),
         color: const Color(0xFFFF7A3D),
-        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
-          builder: (_) => const HotspotPage(),
-        )),
+        onTap: (ctx) => Navigator.of(ctx).push(
+            MaterialPageRoute(builder: (_) => const HotspotPage())),
       ),
-      _ConnectItem(
+      _ConnectTile(
         icon: Icons.travel_explore_outlined,
-        title: '远程连接',
-        subtitle: '不在同一网络?WebRTC 跨网互联',
+        title: L10n.t('connect.remote'),
         color: const Color(0xFF4F7CFF),
-        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
-          builder: (_) => RemotePairPage(rtc: rtcManager!),
-        )),
+        onTap: (ctx) => Navigator.of(ctx).push(
+            MaterialPageRoute(builder: (_) => RemotePairPage(rtc: rtc))),
       ),
-      _ConnectItem(
+      _ConnectTile(
         icon: Icons.tune_outlined,
-        title: '连接设置',
-        subtitle: 'STUN / TURN 服务器配置',
+        title: L10n.t('connect.servers'),
         color: const Color(0xFF8B5CF6),
-        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
-          builder: (_) => SettingsPage(rtc: rtcManager!),
-        )),
+        onTap: (ctx) => Navigator.of(ctx).push(
+            MaterialPageRoute(builder: (_) => SettingsPage(rtc: rtc))),
       ),
     ];
-
     return LayoutBuilder(
       builder: (ctx, constraints) {
-        // 响应式列数:手机单列 / 平板双列 / 桌面四列。
         final w = constraints.maxWidth;
-        final cols = w > 1100 ? 4 : w > 700 ? 2 : 1;
-        return CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('连接方式',
-                        style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(ctx).colorScheme.onSurface)),
-                    const SizedBox(height: 4),
-                    Text('根据所处的网络环境选择',
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey.shade500)),
-                  ],
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: cols,
-                  mainAxisExtent: 132,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                ),
-                itemCount: items.length,
-                itemBuilder: (ctx, i) => items[i],
-              ),
-            ),
-          ],
+        final cols = w > 900 ? 4 : 2;
+        return GridView.count(
+          crossAxisCount: cols,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 1.55, // 紧凑竖排卡片
+          children: items,
         );
       },
     );
   }
 }
 
-class _ConnectItem extends StatelessWidget {
-  const _ConnectItem({
+class _ConnectTile extends StatelessWidget {
+  const _ConnectTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.color,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final Color color;
   final void Function(BuildContext) onTap;
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: EdgeInsets.zero,
       child: InkWell(
         onTap: () => onTap(context),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Row(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: color, size: 26),
+                child: Icon(icon, color: color, size: 20),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 3),
-                    Text(subtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 12,
-                            height: 1.25,
-                            color: Colors.grey.shade500)),
-                  ],
+              const SizedBox(height: 8),
+              Text(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Container(
+                width: 26,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade400),
             ],
           ),
         ),
@@ -999,10 +956,6 @@ class _ConnectItem extends StatelessWidget {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// 我的页:身份卡 + 主题 + 关于
-// ---------------------------------------------------------------------------
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -1078,6 +1031,13 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
         ),
+        const SizedBox(height: 14),
+        // 连接方式(紧凑网格:碰一碰/热点/远程/服务器)
+        Text(L10n.t('connect.title'),
+            style:
+                const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        const ConnectGrid(),
         const SizedBox(height: 14),
         // 语言
         Card(
@@ -1168,7 +1128,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('关于 LittleLaw'),
-                subtitle: const Text('v1.0.2 · NoServer 架构 · 协议 v1'),
+                subtitle: const Text('v1.1.0 · NoServer 架构 · 协议 v1'),
                 onTap: () {},
               ),
             ],
