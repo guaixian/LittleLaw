@@ -266,6 +266,7 @@ class _HomeShellState extends State<HomeShell> {
     }
     final pages = [
       const DevicesPage(),
+      const ConnectPage(),
       const ProfilePage(),
     ];
     return Scaffold(
@@ -279,6 +280,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: const Icon(Icons.devices_outlined),
             selectedIcon: const Icon(Icons.devices),
             label: L10n.t('nav.devices'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.hub_outlined),
+            selectedIcon: const Icon(Icons.hub),
+            label: L10n.t('nav.connect'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.settings_outlined),
@@ -837,12 +843,11 @@ class _SectionLabel extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 设置页:身份卡 + 连接方式 + 语言 + 主题 + 关于
+// 连接页:三种连接方式(服务器设置在设置页)
 // ---------------------------------------------------------------------------
 
-/// 连接方式紧凑网格(设置页内嵌):手机 2 列 / 宽屏 4 列。
-class ConnectGrid extends StatelessWidget {
-  const ConnectGrid({super.key});
+class ConnectPage extends StatelessWidget {
+  const ConnectPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -855,6 +860,7 @@ class ConnectGrid extends StatelessWidget {
       _ConnectTile(
         icon: Icons.qr_code_2_outlined,
         title: L10n.t('connect.qr'),
+        subtitle: L10n.t('connect.qrSub'),
         color: const Color(0xFF0EBB9C),
         onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
           builder: (_) => QuickPairPage(engine: engine),
@@ -863,6 +869,7 @@ class ConnectGrid extends StatelessWidget {
       _ConnectTile(
         icon: Icons.wifi_tethering_outlined,
         title: L10n.t('connect.hotspot'),
+        subtitle: L10n.t('connect.hotspotSub'),
         color: const Color(0xFFFF7A3D),
         onTap: (ctx) => Navigator.of(ctx).push(
             MaterialPageRoute(builder: (_) => const HotspotPage())),
@@ -870,30 +877,51 @@ class ConnectGrid extends StatelessWidget {
       _ConnectTile(
         icon: Icons.travel_explore_outlined,
         title: L10n.t('connect.remote'),
+        subtitle: L10n.t('connect.remoteSub'),
         color: const Color(0xFF4F7CFF),
         onTap: (ctx) => Navigator.of(ctx).push(
             MaterialPageRoute(builder: (_) => RemotePairPage(rtc: rtc))),
       ),
-      _ConnectTile(
-        icon: Icons.tune_outlined,
-        title: L10n.t('connect.servers'),
-        color: const Color(0xFF8B5CF6),
-        onTap: (ctx) => Navigator.of(ctx).push(
-            MaterialPageRoute(builder: (_) => SettingsPage(rtc: rtc))),
-      ),
     ];
     return LayoutBuilder(
       builder: (ctx, constraints) {
-        final w = constraints.maxWidth;
-        final cols = w > 900 ? 4 : 2;
-        return GridView.count(
-          crossAxisCount: cols,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 1.55, // 紧凑竖排卡片
-          children: items,
+        // 紧凑网格:手机 2 列 / 宽屏 3 列。
+        final cols = constraints.maxWidth > 900 ? 3 : 2;
+        return CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(L10n.t('connect.title'),
+                        style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(ctx).colorScheme.onSurface)),
+                    const SizedBox(height: 4),
+                    Text(L10n.t('connect.subtitle'),
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  mainAxisExtent: 110,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                ),
+                itemCount: items.length,
+                itemBuilder: (ctx, i) => items[i],
+              ),
+            ),
+          ],
         );
       },
     );
@@ -904,12 +932,14 @@ class _ConnectTile extends StatelessWidget {
   const _ConnectTile({
     required this.icon,
     required this.title,
+    required this.subtitle,
     required this.color,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
+  final String subtitle;
   final Color color;
   final void Function(BuildContext) onTap;
 
@@ -926,29 +956,32 @@ class _ConnectTile extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: 20),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: color, size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(title,
+              const SizedBox(height: 6),
+              Text(subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Container(
-                width: 26,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.grey.shade500)),
             ],
           ),
         ),
@@ -956,6 +989,10 @@ class _ConnectTile extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// 设置页:身份卡 + 服务器设置 + 语言 + 主题 + 关于
+// ---------------------------------------------------------------------------
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -1032,12 +1069,19 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
         const SizedBox(height: 14),
-        // 连接方式(紧凑网格:碰一碰/热点/远程/服务器)
-        Text(L10n.t('connect.title'),
-            style:
-                const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        const ConnectGrid(),
+        // 服务器设置(中转 / STUN / TURN / 备份)
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.dns_outlined),
+            title: Text(L10n.t('connect.servers')),
+            subtitle: Text(L10n.t('connect.serversSub'),
+                style: const TextStyle(fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => SettingsPage(rtc: rtcManager!),
+            )),
+          ),
+        ),
         const SizedBox(height: 14),
         // 语言
         Card(

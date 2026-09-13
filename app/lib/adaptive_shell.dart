@@ -7,7 +7,7 @@ import 'chat_page.dart';
 import 'globals.dart';
 import 'group_create_page.dart';
 import 'i18n.dart';
-import 'main.dart' show ProfilePage;
+import 'main.dart' show ConnectPage, ProfilePage;
 import 'search_page.dart';
 import 'theme/app_theme.dart';
 
@@ -54,8 +54,30 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 设置页独占剩余全部宽度(不出现右侧空栏)。
+    // 连接/设置页独占剩余全部宽度(不出现右侧空栏)。
     if (_tab == 1) {
+      return Scaffold(
+        body: Row(
+          children: [
+            _iconRail(scheme),
+            VerticalDivider(width: 1, thickness: 1, color: scheme.outlineVariant),
+            Expanded(
+              child: Scaffold(
+                backgroundColor: scheme.surfaceContainerLowest,
+                appBar: AppBar(title: Text(L10n.t('nav.connect'))),
+                body: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 860),
+                    child: const ConnectPage(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_tab == 2) {
       return Scaffold(
         body: Row(
           children: [
@@ -142,7 +164,8 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           ),
           const SizedBox(height: 14),
           item(Icons.forum_outlined, L10n.t('nav.chats'), 0),
-          item(Icons.settings_outlined, L10n.t('nav.settings'), 1),
+          item(Icons.hub_outlined, L10n.t('nav.connect'), 1),
+          item(Icons.settings_outlined, L10n.t('nav.settings'), 2),
           const Spacer(),
           // 搜索:弹独立窗口页(不占栏)。
           Tooltip(
