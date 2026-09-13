@@ -182,33 +182,40 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
+          set +e
           KS="$RUNNER_TEMP/littlelaw-release.keystore"
           GENERATED=no
+          SOURCE=secret
           if [ -n "$KEYSTORE_BASE64" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KS" 2>/dev/null || true
-            if keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
-              echo "secret keystore: OK"
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KS" 2>/dev/null
+            if keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" > "$RUNNER_TEMP/ks.list" 2>&1; then
+              GENERATED=no
             else
-              echo "secret keystore: INVALID -> generate fresh"
               GENERATED=yes
             fi
           else
             GENERATED=yes
           fi
           if [ "$GENERATED" = "yes" ]; then
+            SOURCE=generated
             rm -f "$KS"
             keytool -genkeypair -keystore "$KS" -alias "$KEY_ALIAS" \
               -keyalg RSA -keysize 2048 -validity 10950 \
               -storepass "$KEYSTORE_PASSWORD" -keypass "$KEYSTORE_PASSWORD" \
-              -dname "CN=LittleLaw, O=LittleLaw, C=CN"
+              -dname "CN=LittleLaw, O=LittleLaw, C=CN" > /dev/null 2>&1
+            keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" > "$RUNNER_TEMP/ks.list" 2>&1
+          fi
+          # 校验最终库必须可读;诊断全部打进 annotation(公开 API 可见)。
+          if keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" > /dev/null 2>&1; then
+            FP=$(keytool -list -v -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -m1 "SHA256:")
+            echo "::notice title=keystore::source=$SOURCE generated=$GENERATED $FP"
+            echo "generated=$GENERATED" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "generated=$GENERATED" >> "$GITHUB_OUTPUT"
-          {
-            echo "## 签名密钥"
-            echo "- 现场生成: $GENERATED"
-            keytool -list -v -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" 2>/dev/null \
-              | grep -E "别名|Alias|SHA256:" | head -n 4
-          } >> "$GITHUB_STEP_SUMMARY"
+          ERR=$(tail -n 3 "$RUNNER_TEMP/ks.list" | tr '\n' ' ' | cut -c1-200)
+          echo "::error title=keystore-unusable::source=$SOURCE java=$(java -version 2>&1 | head -n1 | cut -c1-60) err=$ERR"
+          exit 1
       - name: 构建签名 APK
         env:
           KEYSTORE_FILE: ${{ runner.temp }}/littlelaw-release.keystore
@@ -218,16 +225,8 @@ jobs:
         run: |
           set -o pipefail
           if ! flutter build apk --release --split-per-abi 2>&1 | tee "$RUNNER_TEMP/build.log"; then
-            {
-              echo "## Java 版本"
-              echo '```'
-              java -version 2>&1
-              echo '```'
-              echo "## Gradle 错误摘要"
-              echo '```'
-              grep -iE -B 2 -A 10 "tag number|keytool|integrity|keystore|password|signing|failed" "$RUNNER_TEMP/build.log" | head -n 100
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            ERR=$(grep -iE -m 3 "exception|failed|error" "$RUNNER_TEMP/build.log" | tr '\n' ' | ' | cut -c1-220)
+            echo "::error title=apk-build::$ERR"
             exit 1
           fi
         working-directory: app
