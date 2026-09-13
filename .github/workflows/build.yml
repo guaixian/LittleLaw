@@ -175,7 +175,7 @@ jobs:
       - uses: android-actions/setup-android@v3
       - run: flutter pub get
         working-directory: app
-      - name: 解码签名密钥(无效则现场生成)
+      - name: 解码签名密钥(无效则用固定凭据现场生成)
         id: ks
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -184,11 +184,15 @@ jobs:
         run: |
           set +e
           KS="$RUNNER_TEMP/littlelaw-release.keystore"
+          # 固定凭据兜底(Secret 缺失/损坏时使用;密钥库以产物形式回传本地保存)
+          FALLBACK_PASS="littlelaw2026"
+          FALLBACK_ALIAS="littlelaw"
+          USE_PASS="$KEYSTORE_PASSWORD"; [ -z "$USE_PASS" ] && USE_PASS="$FALLBACK_PASS"
+          USE_ALIAS="$KEY_ALIAS"; [ -z "$USE_ALIAS" ] && USE_ALIAS="$FALLBACK_ALIAS"
           GENERATED=no
-          SOURCE=secret
           if [ -n "$KEYSTORE_BASE64" ]; then
             printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KS" 2>/dev/null
-            if keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" > "$RUNNER_TEMP/ks.list" 2>&1; then
+            if keytool -list -keystore "$KS" -storepass "$USE_PASS" >/dev/null 2>&1; then
               GENERATED=no
             else
               GENERATED=yes
@@ -197,31 +201,35 @@ jobs:
             GENERATED=yes
           fi
           if [ "$GENERATED" = "yes" ]; then
-            SOURCE=generated
             rm -f "$KS"
-            keytool -genkeypair -keystore "$KS" -alias "$KEY_ALIAS" \
+            USE_PASS="$FALLBACK_PASS"; USE_ALIAS="$FALLBACK_ALIAS"
+            keytool -genkeypair -keystore "$KS" -alias "$USE_ALIAS" \
               -keyalg RSA -keysize 2048 -validity 10950 \
-              -storepass "$KEYSTORE_PASSWORD" -keypass "$KEYSTORE_PASSWORD" \
-              -dname "CN=LittleLaw, O=LittleLaw, C=CN" > /dev/null 2>&1
-            keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" > "$RUNNER_TEMP/ks.list" 2>&1
+              -storepass "$USE_PASS" -keypass "$USE_PASS" \
+              -dname "CN=LittleLaw, O=LittleLaw, C=CN" > "$RUNNER_TEMP/gen.log" 2>&1
+            if [ ! -f "$KS" ]; then
+              echo "::error title=genkeypair-failed::$(tail -n 2 "$RUNNER_TEMP/gen.log" | tr '\n' ' ' | cut -c1-200)"
+              exit 1
+            fi
           fi
-          # 校验最终库必须可读;诊断全部打进 annotation(公开 API 可见)。
-          if keytool -list -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" > /dev/null 2>&1; then
-            FP=$(keytool -list -v -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -m1 "SHA256:")
-            echo "::notice title=keystore::source=$SOURCE generated=$GENERATED $FP"
-            echo "generated=$GENERATED" >> "$GITHUB_OUTPUT"
+          if keytool -list -keystore "$KS" -storepass "$USE_PASS" >/dev/null 2>&1; then
+            FP=$(keytool -list -v -keystore "$KS" -storepass "$USE_PASS" 2>/dev/null | grep -m1 "SHA256:")
+            echo "::notice title=keystore::generated=$GENERATED alias=$USE_ALIAS $FP"
+            {
+              echo "generated=$GENERATED"
+              echo "SIGN_ALIAS=$USE_ALIAS"
+            } >> "$GITHUB_OUTPUT"
+            echo "SIGN_PASS=$USE_PASS" >> "$GITHUB_ENV"
             exit 0
           fi
-          echo "generated=$GENERATED" >> "$GITHUB_OUTPUT"
-          ERR=$(tail -n 3 "$RUNNER_TEMP/ks.list" | tr '\n' ' ' | cut -c1-200)
-          echo "::error title=keystore-unusable::source=$SOURCE java=$(java -version 2>&1 | head -n1 | cut -c1-60) err=$ERR"
+          echo "::error title=keystore-unusable::generated=$GENERATED alias=$USE_ALIAS java=$(java -version 2>&1 | head -n1 | cut -c1-50)"
           exit 1
       - name: 构建签名 APK
         env:
           KEYSTORE_FILE: ${{ runner.temp }}/littlelaw-release.keystore
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ env.SIGN_PASS }}
+          KEY_ALIAS: ${{ steps.ks.outputs.SIGN_ALIAS }}
+          KEY_PASSWORD: ${{ env.SIGN_PASS }}
         run: |
           set -o pipefail
           if ! flutter build apk --release --split-per-abi 2>&1 | tee "$RUNNER_TEMP/build.log"; then
