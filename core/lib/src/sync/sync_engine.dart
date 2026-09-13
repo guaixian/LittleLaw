@@ -108,6 +108,12 @@ class CallEndReceived extends EngineEvent {
   final pb.CallEnd end;
 }
 
+/// 收到群定义(建群/改群)。
+class GroupSynced extends EngineEvent {
+  GroupSynced(this.groupId);
+  final String groupId;
+}
+
 // ---------------------------------------------------------------------------
 // 同步引擎:1:1 会话的端到端一致同步。
 //
@@ -341,6 +347,54 @@ class SyncEngine extends pbg.SyncServiceBase {
 
   // ------------------------------------------------------------ 群聊
 
+  /// 群定义扇出(建群/改群):全体成员 + 我的设备。
+  void broadcastGroupSync(Group group) {
+    final targets = <String>{
+      ...group.memberIds.where((id) => id != identity.deviceId),
+      ...store.selfPeers().map((s) => s.deviceId),
+    };
+    final def = pb.GroupSync(
+      groupId: group.id,
+      name: group.name,
+      memberIds: group.memberIds,
+      createdAtMs: Int64(group.createdAtMs),
+    );
+    for (final target in targets) {
+      store.appendOp(target, Op.typeGroup, def.writeToBuffer());
+      _push(target, pb.Envelope(
+        id: const Uuid().v4(),
+        groupSync: pb.GroupSync(
+          groupId: group.id,
+          name: group.name,
+          memberIds: group.memberIds,
+          createdAtMs: Int64(group.createdAtMs),
+        ),
+      ));
+    }
+  }
+
+  void _applyGroupSync(String peerId, pb.GroupSync gs) {
+    if (gs.groupId.isEmpty || gs.memberIds.isEmpty) return;
+    if (!gs.memberIds.contains(identity.deviceId)) {
+      // 被移出群:忽略。
+      return;
+    }
+    store.insertGroup(Group(
+      id: gs.groupId,
+      name: gs.name,
+      createdAtMs: gs.createdAtMs.toInt(),
+      memberIds: gs.memberIds,
+    ));
+    _events.add(GroupSynced(gs.groupId));
+  }
+
+  /// 群剪贴板同步(扇出)。
+  void sendGroupClipboard(String groupId, String text) {
+    for (final memberId in store.groupRecipients(groupId)) {
+      sendClipboard(memberId, text);
+    }
+  }
+
   /// 发送群消息:同一 msg_id 扇出给每个成员(每条链路独立 E2E 加密),
   /// 重复到达按 msg_id 幂等去重;同时镜像给自己的其他设备。
   Future<Message> sendGroupText(String groupId, String text) async {
@@ -530,6 +584,8 @@ class SyncEngine extends pbg.SyncServiceBase {
         _events.add(CallCandidateReceived(peerId, env.callCandidate));
       case pb.Envelope_Payload.callEnd:
         _events.add(CallEndReceived(peerId, env.callEnd));
+      case pb.Envelope_Payload.groupSync:
+        _applyGroupSync(peerId, env.groupSync);
       case pb.Envelope_Payload.linkAuth:
         break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
       case pb.Envelope_Payload.heartbeat:
@@ -591,6 +647,9 @@ class SyncEngine extends pbg.SyncServiceBase {
         final chat = pb.ChatMessage.fromBuffer(op.payload);
         chat.opSeq = Int64(op.seq);
         env = pb.Envelope(id: const Uuid().v4(), chat: chat);
+      } else if (op.type == Op.typeGroup) {
+        final gs = pb.GroupSync.fromBuffer(op.payload);
+        env = pb.Envelope(id: const Uuid().v4(), groupSync: gs);
       } else {
         final del = pb.ChatDeleted.fromBuffer(op.payload);
         env = pb.Envelope(
@@ -599,6 +658,8 @@ class SyncEngine extends pbg.SyncServiceBase {
               opSeq: Int64(op.seq),
               msgIds: del.msgIds,
               clearAll: del.clearAll,
+              convPeer: del.convPeer,
+              groupId: del.groupId,
             ));
       }
       _push(peer.deviceId, env);

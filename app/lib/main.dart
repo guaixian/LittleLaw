@@ -10,6 +10,7 @@ import 'call_page.dart';
 import 'chat_page.dart';
 import 'device_info.dart';
 import 'globals.dart';
+import 'group_create_page.dart';
 import 'hotspot_page.dart';
 import 'push_wake.dart';
 import 'quick_pair_page.dart';
@@ -304,6 +305,7 @@ class _DevicesPageState extends State<DevicesPage> {
     }));
     _subscriptions.add(engine.events.listen((e) {
       if (e is PeerStatusChanged) setState(() {});
+      if (e is GroupSynced) setState(() {}); // 群列表刷新(建群/改群扇出)
     }));
     _subscriptions.add(engine.pairRequests.listen(_showPairRequest));
   }
@@ -451,6 +453,14 @@ class _DevicesPageState extends State<DevicesPage> {
                 itemBuilder: (ctx, i) => _peerCard(engine, peers[i]),
               ),
             ],
+            // 群聊
+            const _SectionLabel('群聊'),
+            SliverList.builder(
+              itemCount: engine.groups.length + 1,
+              itemBuilder: (ctx, i) => i == engine.groups.length
+                  ? _createGroupCard(engine)
+                  : _groupCard(engine, engine.groups[i]),
+            ),
             const _SectionLabel('附近的设备'),
             if (discovered.isEmpty)
               SliverToBoxAdapter(
@@ -645,6 +655,66 @@ class _DevicesPageState extends State<DevicesPage> {
                 onPressed: () => _confirmUnpair(peer),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _createGroupCard(LittleLawEngine engine) {
+    final skin = themeController.skin;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Card(
+        child: ListTile(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => GroupCreatePage(engine: engine),
+          )),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: skin.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.add, color: skin.primary, size: 22),
+          ),
+          title: const Text('新建群聊',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text('把多个已配对设备拉到一个会话',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        ),
+      ),
+    );
+  }
+
+  Widget _groupCard(LittleLawEngine engine, Group group) {
+    final onlineCount = group.memberIds
+        .where((id) => id != engine.identity.deviceId && engine.isOnline(id))
+        .length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Card(
+        child: ListTile(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => ChatPage(
+              peer: engine.peers.first,
+              engine: engine,
+              group: group,
+            ),
+          )),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: themeController.skin.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.groups_outlined, size: 22),
+          ),
+          title: Text(group.name,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(
+            '${group.memberIds.length} 名成员 · $onlineCount 在线',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
           ),
         ),
       ),

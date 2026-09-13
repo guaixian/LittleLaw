@@ -14,10 +14,14 @@ import 'theme/app_theme.dart';
 
 /// 聊天页:气泡消息、长按/右键菜单、多选删除、图片/视频内联显示、
 /// 时间分隔条、空状态、输入栏附件面板。
+/// 支持两种目标:1:1(peer)与群聊(group)。
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key, required this.peer, required this.engine});
+  const ChatPage({super.key, required this.peer, required this.engine, this.group});
   final Peer peer;
   final LittleLawEngine engine;
+
+  /// 非空 = 群聊模式。
+  final Group? group;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -35,26 +39,30 @@ class _ChatPageState extends State<ChatPage> {
   bool _attachOpen = false; // 附件面板展开态(输入栏上方内联撑开)
 
   bool get _selecting => _selection.isNotEmpty;
-  String get _peerId => widget.peer.deviceId;
+
+  /// 会话标识:群 ID 或对方设备 ID(事件流的 key)。
+  String get _convKey => widget.group?.id ?? widget.peer.deviceId;
+
+  bool get _isGroup => widget.group != null;
 
   @override
   void initState() {
     super.initState();
     final engine = widget.engine;
-    _messages = engine.loadMessages(_peerId);
-    _online = engine.isOnline(_peerId);
+    _messages = _isGroup ? engine.loadGroupMessages(_convKey) : engine.loadMessages(_convKey);
+    _online = !_isGroup && engine.isOnline(_convKey);
 
     _subscriptions.add(engine.events.listen((e) {
       var changed = false;
-      if (e is MessageAdded && e.peerId == _peerId) {
+      if (e is MessageAdded && e.peerId == _convKey) {
         changed = true;
-      } else if (e is MessagesDeleted && e.peerId == _peerId) {
+      } else if (e is MessagesDeleted && e.peerId == _convKey) {
         if (e.clearAll) _selection.clear();
         changed = true;
-      } else if (e is PeerStatusChanged && e.peerId == _peerId) {
+      } else if (e is PeerStatusChanged && !_isGroup && e.peerId == _convKey) {
         _online = e.online;
         changed = true;
-      } else if (e is ClipboardReceived && e.peerId == _peerId) {
+      } else if (e is ClipboardReceived && !_isGroup && e.peerId == _convKey) {
         Clipboard.setData(ClipboardData(text: e.text));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -63,16 +71,16 @@ class _ChatPageState extends State<ChatPage> {
         }
       }
       if (changed && mounted) {
-        setState(() => _messages = widget.engine.loadMessages(_peerId));
+        setState(() => _messages = _isGroup ? widget.engine.loadGroupMessages(_convKey) : widget.engine.loadMessages(_convKey));
         _scrollToBottom();
       }
     }));
 
     _subscriptions.add(widget.engine.transferProgress.listen((p) {
-      if (p.peerId != _peerId) return;
+      if (p.peerId != _convKey && !_messages.any((m) => m.msgId == p.msgId)) return;
       setState(() {
         _transfers[p.msgId] = p;
-        _messages = widget.engine.loadMessages(_peerId);
+        _messages = _isGroup ? widget.engine.loadGroupMessages(_convKey) : widget.engine.loadMessages(_convKey);
       });
     }));
 
@@ -107,7 +115,8 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _startCall({required bool video}) async {
     final calls = callManager;
     if (calls == null) return;
-    await calls.startCall(_peerId, video: video);
+    if (_isGroup) return;
+    await calls.startCall(_convKey, video: video);
     if (!mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
@@ -119,7 +128,7 @@ class _ChatPageState extends State<ChatPage> {
     final text = _input.text.trim();
     if (text.isEmpty) return;
     _input.clear();
-    await widget.engine.sendText(_peerId, text);
+    _isGroup ? await widget.engine.sendGroupText(_convKey, text) : await widget.engine.sendText(_convKey, text);
   }
 
   Future<void> _sendClipboard() async {
@@ -131,7 +140,7 @@ class _ChatPageState extends State<ChatPage> {
           .showSnackBar(const SnackBar(content: Text('剪贴板为空')));
       return;
     }
-    widget.engine.sendClipboard(_peerId, text);
+    _isGroup ? widget.engine.sendGroupClipboard(_convKey, text) : widget.engine.sendClipboard(_convKey, text);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('剪贴板已发送给对方')));
   }
@@ -142,7 +151,7 @@ class _ChatPageState extends State<ChatPage> {
     final path = files.single.path;
     if (path == null) return;
     try {
-      await widget.engine.sendFile(_peerId, path);
+      _isGroup ? await widget.engine.sendGroupFile(_convKey, path) : await widget.engine.sendFile(_convKey, path);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -240,7 +249,7 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _deleteSelection() async {
     final ids = _selection.toList();
     setState(() => _selection.clear());
-    await widget.engine.deleteMessages(_peerId, ids);
+    _isGroup ? await widget.engine.deleteGroupMessages(_convKey, ids) : await widget.engine.deleteMessages(_convKey, ids);
     if (mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('已在双端删除 ${ids.length} 条消息')));
@@ -293,7 +302,7 @@ class _ChatPageState extends State<ChatPage> {
         case 'select':
           _toggleSelect(m.msgId);
         case 'delete':
-          widget.engine.deleteMessages(_peerId, [m.msgId]);
+          _isGroup ? widget.engine.deleteGroupMessages(_convKey, [m.msgId]) : widget.engine.deleteMessages(_convKey, [m.msgId]);
           ScaffoldMessenger.of(context)
               .showSnackBar(const SnackBar(content: Text('已在双端删除')));
       }
@@ -339,40 +348,48 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   PreferredSizeWidget _normalBar() {
+    final scheme = Theme.of(context).colorScheme;
+    final group = widget.group;
+    // 群模式头部信息。
+    final title = group?.name ?? widget.peer.deviceName;
+    final subtitle = group != null
+        ? '${group.memberIds.length} 名成员'
+        : (_online ? '在线' : '离线(消息将在对方上线后送达)');
+    final avatarIcon = group != null
+        ? Icons.groups_outlined
+        : (widget.peer.platform == 'android' || widget.peer.platform == 'ios'
+            ? Icons.smartphone
+            : Icons.computer);
     return AppBar(
       title: Row(
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor:
-                Theme.of(context).colorScheme.primaryContainer,
-            child: Icon(
-              widget.peer.platform == 'android' || widget.peer.platform == 'ios'
-                  ? Icons.smartphone
-                  : Icons.computer,
-              size: 20,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
-            ),
+            backgroundColor: scheme.primaryContainer,
+            child: Icon(avatarIcon,
+                size: 20, color: scheme.onPrimaryContainer),
           ),
           const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(widget.peer.deviceName,
-                  style: const TextStyle(fontSize: 16)),
+              Text(title, style: const TextStyle(fontSize: 16)),
               Row(
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _online ? Colors.green : Colors.grey,
+                  if (group == null) ...[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _online ? Colors.green : Colors.grey,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(_online ? '在线' : '离线(消息将在对方上线后送达)',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                    const SizedBox(width: 5),
+                  ],
+                  Text(subtitle,
+                      style:
+                          TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                 ],
               ),
             ],
@@ -380,8 +397,8 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       actions: [
-        // 语音/视频通话(任意已连接通道可用)。
-        if (_online) ...[
+        // 语音/视频通话(仅 1:1,任意已连接通道可用)。
+        if (_online && !_isGroup) ...[
           IconButton(
             tooltip: '语音通话',
             icon: const Icon(Icons.call_outlined),
@@ -394,7 +411,8 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
         // 远程设备(WebRTC 配对,无局域网地址)且离线:提供重连入口。
-        if (!_online &&
+        if (!_isGroup &&
+            !_online &&
             (widget.peer.lastHost == null || widget.peer.lastHost!.isEmpty))
           IconButton(
             tooltip: '重新连接(远程配对)',
@@ -586,7 +604,7 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
     if (ok == true) {
-      await widget.engine.deleteMessages(_peerId, const [], clearAll: true);
+      _isGroup ? await widget.engine.deleteGroupMessages(_convKey, const [], clearAll: true) : await widget.engine.deleteMessages(_convKey, const [], clearAll: true);
     }
   }
 }

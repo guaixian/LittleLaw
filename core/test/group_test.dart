@@ -79,23 +79,14 @@ void main() {
       await pair(b, c, nameA: '成员B', nameB: '成员C');
       await connectAll([a, b, c]);
 
-      // A 建群(A/B/C)。
+      // A 建群(A/B/C),群定义自动扇出。
       final group = a.createGroup('家人群',
           [b.identity.deviceId, c.identity.deviceId]);
       expect(group.memberIds.length, 3);
-      // B/C 各自建同 ID 群(演示环境手动同步群定义;正式版走群管理信封)。
-      b.store.insertGroup(Group(
-          id: group.id,
-          name: '家人群',
-          createdAtMs: group.createdAtMs,
-          memberIds: [a.identity.deviceId, b.identity.deviceId, c.identity.deviceId]));
-      b.store.selfDeviceId = b.identity.deviceId;
-      c.store.insertGroup(Group(
-          id: group.id,
-          name: '家人群',
-          createdAtMs: group.createdAtMs,
-          memberIds: [a.identity.deviceId, b.identity.deviceId, c.identity.deviceId]));
-      c.store.selfDeviceId = c.identity.deviceId;
+      await waitFor(() => b.groupById(group.id) != null,
+          description: 'B 自动收到群定义');
+      await waitFor(() => c.groupById(group.id) != null,
+          description: 'C 自动收到群定义');
 
       // A 发群消息。
       final msg = await a.sendGroupText(group.id, '大家好,这是第一条群消息');

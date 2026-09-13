@@ -368,6 +368,15 @@ const Envelope$json = {
       '9': 0,
       '10': 'callEnd'
     },
+    {
+      '1': 'group_sync',
+      '3': 19,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.GroupSync',
+      '9': 0,
+      '10': 'groupSync'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -394,7 +403,25 @@ final $typed_data.Uint8List envelopeDescriptor = $convert.base64Decode(
     'I7CgtjYWxsX2Fuc3dlchgQIAEoCzIYLmxpdHRsZWxhdy52MS5DYWxsQW5zd2VySABSCmNhbGxB'
     'bnN3ZXISRAoOY2FsbF9jYW5kaWRhdGUYESABKAsyGy5saXR0bGVsYXcudjEuQ2FsbENhbmRpZG'
     'F0ZUgAUg1jYWxsQ2FuZGlkYXRlEjIKCGNhbGxfZW5kGBIgASgLMhUubGl0dGxlbGF3LnYxLkNh'
-    'bGxFbmRIAFIHY2FsbEVuZEIJCgdwYXlsb2Fk');
+    'bGxFbmRIAFIHY2FsbEVuZBI4Cgpncm91cF9zeW5jGBMgASgLMhcubGl0dGxlbGF3LnYxLkdyb3'
+    'VwU3luY0gAUglncm91cFN5bmNCCQoHcGF5bG9hZA==');
+
+@$core.Deprecated('Use groupSyncDescriptor instead')
+const GroupSync$json = {
+  '1': 'GroupSync',
+  '2': [
+    {'1': 'group_id', '3': 1, '4': 1, '5': 9, '10': 'groupId'},
+    {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'member_ids', '3': 3, '4': 3, '5': 9, '10': 'memberIds'},
+    {'1': 'created_at_ms', '3': 4, '4': 1, '5': 3, '10': 'createdAtMs'},
+  ],
+};
+
+/// Descriptor for `GroupSync`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List groupSyncDescriptor = $convert.base64Decode(
+    'CglHcm91cFN5bmMSGQoIZ3JvdXBfaWQYASABKAlSB2dyb3VwSWQSEgoEbmFtZRgCIAEoCVIEbm'
+    'FtZRIdCgptZW1iZXJfaWRzGAMgAygJUgltZW1iZXJJZHMSIgoNY3JlYXRlZF9hdF9tcxgEIAEo'
+    'A1ILY3JlYXRlZEF0TXM=');
 
 @$core.Deprecated('Use fileDataAckDescriptor instead')
 const FileDataAck$json = {

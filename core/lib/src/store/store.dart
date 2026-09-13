@@ -97,6 +97,7 @@ class Op {
   static const typeMsg = 'msg';
   static const typeDelete = 'delete';
   static const typeClear = 'clear';
+  static const typeGroup = 'group';
 
   final int seq;
   final String peerId;

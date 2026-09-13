@@ -813,6 +813,7 @@ enum Envelope_Payload {
   callAnswer,
   callCandidate,
   callEnd,
+  groupSync,
   notSet
 }
 
@@ -836,6 +837,7 @@ class Envelope extends $pb.GeneratedMessage {
     CallAnswer? callAnswer,
     CallCandidate? callCandidate,
     CallEnd? callEnd,
+    GroupSync? groupSync,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -856,6 +858,7 @@ class Envelope extends $pb.GeneratedMessage {
     if (callAnswer != null) result.callAnswer = callAnswer;
     if (callCandidate != null) result.callCandidate = callCandidate;
     if (callEnd != null) result.callEnd = callEnd;
+    if (groupSync != null) result.groupSync = groupSync;
     return result;
   }
 
@@ -886,13 +889,14 @@ class Envelope extends $pb.GeneratedMessage {
     16: Envelope_Payload.callAnswer,
     17: Envelope_Payload.callCandidate,
     18: Envelope_Payload.callEnd,
+    19: Envelope_Payload.groupSync,
     0: Envelope_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'Envelope',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
       createEmptyInstance: create)
-    ..oo(0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])
+    ..oo(0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<Hello>(2, _omitFieldNames ? '' : 'hello', subBuilder: Hello.create)
     ..aOM<ChatMessage>(3, _omitFieldNames ? '' : 'chat',
@@ -927,6 +931,8 @@ class Envelope extends $pb.GeneratedMessage {
         subBuilder: CallCandidate.create)
     ..aOM<CallEnd>(18, _omitFieldNames ? '' : 'callEnd',
         subBuilder: CallEnd.create)
+    ..aOM<GroupSync>(19, _omitFieldNames ? '' : 'groupSync',
+        subBuilder: GroupSync.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -964,6 +970,7 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(16)
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
+  @$pb.TagNumber(19)
   Envelope_Payload whichPayload() => _Envelope_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -982,6 +989,7 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(16)
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
+  @$pb.TagNumber(19)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1179,6 +1187,101 @@ class Envelope extends $pb.GeneratedMessage {
   void clearCallEnd() => $_clearField(18);
   @$pb.TagNumber(18)
   CallEnd ensureCallEnd() => $_ensure(17);
+
+  @$pb.TagNumber(19)
+  GroupSync get groupSync => $_getN(18);
+  @$pb.TagNumber(19)
+  set groupSync(GroupSync value) => $_setField(19, value);
+  @$pb.TagNumber(19)
+  $core.bool hasGroupSync() => $_has(18);
+  @$pb.TagNumber(19)
+  void clearGroupSync() => $_clearField(19);
+  @$pb.TagNumber(19)
+  GroupSync ensureGroupSync() => $_ensure(18);
+}
+
+/// 群定义:建群或修改群时扇出给全体成员 + 我的设备。
+class GroupSync extends $pb.GeneratedMessage {
+  factory GroupSync({
+    $core.String? groupId,
+    $core.String? name,
+    $core.Iterable<$core.String>? memberIds,
+    $fixnum.Int64? createdAtMs,
+  }) {
+    final result = create();
+    if (groupId != null) result.groupId = groupId;
+    if (name != null) result.name = name;
+    if (memberIds != null) result.memberIds.addAll(memberIds);
+    if (createdAtMs != null) result.createdAtMs = createdAtMs;
+    return result;
+  }
+
+  GroupSync._();
+
+  factory GroupSync.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GroupSync.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GroupSync',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupId')
+    ..aOS(2, _omitFieldNames ? '' : 'name')
+    ..pPS(3, _omitFieldNames ? '' : 'memberIds')
+    ..aInt64(4, _omitFieldNames ? '' : 'createdAtMs')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GroupSync clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GroupSync copyWith(void Function(GroupSync) updates) =>
+      super.copyWith((message) => updates(message as GroupSync)) as GroupSync;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GroupSync create() => GroupSync._();
+  @$core.override
+  GroupSync createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GroupSync getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<GroupSync>(create);
+  static GroupSync? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get name => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set name($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasName() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearName() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $pb.PbList<$core.String> get memberIds => $_getList(2);
+
+  @$pb.TagNumber(4)
+  $fixnum.Int64 get createdAtMs => $_getI64(3);
+  @$pb.TagNumber(4)
+  set createdAtMs($fixnum.Int64 value) => $_setInt64(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasCreatedAtMs() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCreatedAtMs() => $_clearField(4);
 }
 
 /// 信封式文件数据回执:接收方每写入一帧回报已落盘偏移,

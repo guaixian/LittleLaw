@@ -138,7 +138,16 @@ message Envelope {
     CallAnswer call_answer = 16;          // 通话应答
     CallCandidate call_candidate = 17;    // 通话 ICE 候选(Trickle)
     CallEnd call_end = 18;                // 挂断/拒绝/失败
+    GroupSync group_sync = 19;            // 群定义同步(建群/改群扇出)
   }
+}
+
+// 群定义:建群或修改群时扇出给全体成员 + 我的设备。
+message GroupSync {
+  string group_id = 1;
+  string name = 2;
+  repeated string member_ids = 3;  // 全部成员(含创建者)
+  int64 created_at_ms = 4;
 }
 
 // 信封式文件数据回执:接收方每写入一帧回报已落盘偏移,

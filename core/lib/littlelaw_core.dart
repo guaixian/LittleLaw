@@ -52,9 +52,10 @@ export 'src/sync/sync_engine.dart'
         CallOfferReceived,
         CallAnswerReceived,
         CallCandidateReceived,
-        CallEndReceived;
+        CallEndReceived,
+        GroupSynced;
 export 'src/generated/littlelaw.pb.dart'
-    show Envelope, LinkAuth, CallOffer, CallAnswer, CallCandidate, CallEnd;
+    show Envelope, LinkAuth, CallOffer, CallAnswer, CallCandidate, CallEnd, GroupSync;
 export 'src/transport/auth.dart' show Auth;
 export 'src/transfer/transfer.dart' show TransferProgress;
 
@@ -428,7 +429,7 @@ class LittleLawEngine {
 
   // ------------------------------------------------------------ 群聊
 
-  /// 创建群(成员含本机自动加入)。
+  /// 创建群(成员含本机自动加入)并扇出群定义给全体成员。
   Group createGroup(String name, List<String> memberDeviceIds) {
     final id = const Uuid().v4();
     final group = Group(
@@ -438,8 +439,27 @@ class LittleLawEngine {
       memberIds: [identity.deviceId, ...memberDeviceIds],
     );
     store.insertGroup(group);
+    sync.broadcastGroupSync(group);
     return group;
   }
+
+  /// 改群名并扇出。
+  void renameGroup(String groupId, String newName) {
+    final g = store.getGroup(groupId);
+    if (g == null) return;
+    final updated = Group(
+      id: groupId,
+      name: newName,
+      createdAtMs: g.createdAtMs,
+      memberIds: g.memberIds,
+    );
+    store.insertGroup(updated);
+    sync.broadcastGroupSync(updated);
+  }
+
+  /// 群剪贴板同步(扇出)。
+  void sendGroupClipboard(String groupId, String text) =>
+      sync.sendGroupClipboard(groupId, text);
 
   List<Group> get groups => store.allGroups();
 
