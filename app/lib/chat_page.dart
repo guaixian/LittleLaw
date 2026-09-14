@@ -121,7 +121,7 @@ class _ChatPageState extends State<ChatPage> {
       });
     }));
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _forceScrollToBottom());
   }
 
   @override
@@ -141,14 +141,26 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
+  /// 自动滚底(仅当用户已接近底部时跟随;上翻读历史时不强拉)。
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final pos = _scroll.position;
+      final nearBottom = pos.pixels >= pos.maxScrollExtent - 80;
+      if (!nearBottom) return;
+      pos.animateTo(
+        pos.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  /// 强制滚到底(用户主动发送/打开会话时用)。
+  void _forceScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
     });
   }
@@ -173,6 +185,7 @@ class _ChatPageState extends State<ChatPage> {
     if (text.isEmpty) return;
     _input.clear();
     _isGroup ? await widget.engine.sendGroupText(_convKey, text) : await widget.engine.sendText(_convKey, text);
+    _forceScrollToBottom();
   }
 
   Future<void> _sendClipboard() async {
@@ -310,19 +323,23 @@ class _ChatPageState extends State<ChatPage> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: scheme.outlineVariant),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _attachAction(Icons.photo_outlined, L10n.t('chat.image'),
-              () => _pickAndSend(FileType.image)),
-          _attachAction(Icons.videocam_outlined, L10n.t('chat.video'),
-              () => _pickAndSend(FileType.video)),
-          _attachAction(Icons.attach_file_outlined, L10n.t('chat.file'),
-              () => _pickAndSend(FileType.any)),
-          _attachAction(Icons.content_paste_go_outlined, L10n.t('chat.clipboard'),
-              _sendClipboard),
-          _attachAction(Icons.content_paste_outlined, L10n.t('chat.pasteSend'), _pasteAndSend),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _attachAction(Icons.photo_outlined, L10n.t('chat.image'),
+                () => _pickAndSend(FileType.image)),
+            _attachAction(Icons.videocam_outlined, L10n.t('chat.video'),
+                () => _pickAndSend(FileType.video)),
+            _attachAction(Icons.attach_file_outlined, L10n.t('chat.file'),
+                () => _pickAndSend(FileType.any)),
+            _attachAction(Icons.content_paste_go_outlined,
+                L10n.t('chat.clipboard'), _sendClipboard),
+            _attachAction(Icons.content_paste_outlined,
+                L10n.t('chat.pasteSend'), _pasteAndSend),
+          ],
+        ),
       ),
     );
   }
@@ -651,29 +668,38 @@ class _ChatPageState extends State<ChatPage> {
                   : null,
             ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontSize: 16)),
-                Row(
-                  children: [
-                    if (group == null) ...[
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _online ? Colors.green : Colors.grey,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16)),
+                  Row(
+                    children: [
+                      if (group == null) ...[
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _online ? Colors.green : Colors.grey,
+                          ),
                         ),
+                        const SizedBox(width: 5),
+                      ],
+                      Expanded(
+                        child: Text(subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11, color: scheme.onSurfaceVariant)),
                       ),
-                      const SizedBox(width: 5),
                     ],
-                    Text(subtitle,
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade600)),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -740,22 +766,24 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _emptyState() {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.lock_outline,
-              size: 56, color: Colors.grey.shade400),
+              size: 56, color: scheme.outline),
           const SizedBox(height: 12),
           Text(L10n.t('chat.e2eTitle'),
               style: TextStyle(
                   fontSize: 16,
-                  color: Colors.grey.shade600,
+                  color: scheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
           Text(L10n.t('chat.e2eBody'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              style:
+                  TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -804,6 +832,7 @@ class _ChatPageState extends State<ChatPage> {
       },
     );
     // 工具条悬浮在消息上方(覆盖式,不挤占布局)。
+    // 对齐气泡一侧(自己的消息靠右),并限制最大宽度防止超出屏幕。
     children.add(_menuMsgId == m.msgId
         ? Stack(
             clipBehavior: Clip.none,
@@ -811,8 +840,13 @@ class _ChatPageState extends State<ChatPage> {
               bubble,
               Positioned(
                 top: -34,
-                left: 0,
-                child: _inlineToolbar(m),
+                left: mine ? null : 0,
+                right: mine ? 0 : null,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width - 24),
+                  child: _inlineToolbar(m),
+                ),
               ),
             ],
           )
@@ -845,11 +879,17 @@ class _ChatPageState extends State<ChatPage> {
             Icon(Icons.fiber_manual_record,
                 color: scheme.error, size: 16),
             const SizedBox(width: 8),
-            Text(
-              '录音中 ${(_recordMs / 1000).toStringAsFixed(1)}s',
-              style: const TextStyle(fontWeight: FontWeight.w500),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '录音中 ${(_recordMs / 1000).toStringAsFixed(1)}s',
+                  maxLines: 1,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
             TextButton(
               onPressed: () => _stopRecord(send: false),
               child: Text(L10n.t('common.cancel')),
@@ -926,11 +966,11 @@ class _ChatPageState extends State<ChatPage> {
                 child: InkWell(
                   onTap: _sendText,
                   borderRadius: BorderRadius.circular(10),
-                  child: const Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 9),
                     child: Icon(Icons.send_rounded,
-                        color: Colors.white, size: 17),
+                        color: scheme.onPrimary, size: 17),
                   ),
                 ),
               ),
@@ -1001,7 +1041,9 @@ class _TimeDivider extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(text,
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ),
     );
   }
@@ -1041,6 +1083,14 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback onTap;
   final void Function(Offset position) onLongPress;
   final void Function(String emoji)? onReaction;
+
+  /// 皮肤渐变上的前景色:浅色渐变(白桃/青提等)用深字,深色渐变用白字。
+  static Color skinOn() {
+    final primary = themeController.skin.primary;
+    return ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+        ? Colors.white
+        : const Color(0xFF2E2A28);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1170,6 +1220,7 @@ class _MessageBubble extends StatelessWidget {
   /// 自己消息的发送状态:⏱发送中 / !失败(点击重发) / ✓送达 / ✓✓已读。
   Widget _statusIcon() {
     if (!mine) return const SizedBox.shrink();
+    final on = skinOn();
     if (message.sendState == Message.sendFailed) {
       return GestureDetector(
         onTap: onResend,
@@ -1178,12 +1229,14 @@ class _MessageBubble extends StatelessWidget {
       );
     }
     if (message.sendState == Message.sendSending) {
-      return const Icon(Icons.schedule, size: 12, color: Colors.white60);
+      return Icon(Icons.schedule, size: 12, color: on.withValues(alpha: 0.6));
     }
     return Icon(
       message.read ? Icons.done_all : Icons.done,
       size: 13,
-      color: message.read ? Colors.lightBlueAccent : Colors.white60,
+      color: message.read
+          ? (on == Colors.white ? Colors.lightBlueAccent : const Color(0xFF0B6BCB))
+          : on.withValues(alpha: 0.6),
     );
   }
 
@@ -1203,6 +1256,7 @@ class _MessageBubble extends StatelessWidget {
   }
 
   Widget _textBubble(BuildContext context, ColorScheme scheme) {
+    final on = skinOn();
     return Container(
       constraints:
           BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
@@ -1225,7 +1279,7 @@ class _MessageBubble extends StatelessWidget {
             message.text,
             style: TextStyle(
               fontSize: 15,
-              color: mine ? Colors.white : scheme.onSurface,
+              color: mine ? on : scheme.onSurface,
             ),
           ),
           const SizedBox(height: 2),
@@ -1236,9 +1290,7 @@ class _MessageBubble extends StatelessWidget {
                 _timeText(message.createdAtMs),
                 style: TextStyle(
                   fontSize: 10,
-                  color: mine
-                      ? Colors.white.withValues(alpha: 0.75)
-                      : scheme.outline,
+                  color: mine ? on.withValues(alpha: 0.78) : scheme.outline,
                 ),
               ),
               if (mine) ...[
@@ -1265,7 +1317,7 @@ class _MessageBubble extends StatelessWidget {
         File(path),
         fit: BoxFit.cover,
         cacheWidth: 640, // 缩略解码,避免大图吃内存
-        errorBuilder: (_, _, _) => _brokenMedia(),
+        errorBuilder: (_, _, _) => _brokenMedia(context),
       );
     } else {
       inner = Container(
@@ -1342,11 +1394,13 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _brokenMedia() {
+  Widget _brokenMedia(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.grey.shade300,
+      color: scheme.surfaceContainerHighest,
       alignment: Alignment.center,
-      child: const Icon(Icons.broken_image_outlined, size: 40),
+      child: Icon(Icons.broken_image_outlined,
+          size: 40, color: scheme.onSurfaceVariant),
     );
   }
 
@@ -1354,9 +1408,9 @@ class _MessageBubble extends StatelessWidget {
   Widget _fileCard(BuildContext context, ColorScheme scheme) {
     final transferring = progress != null &&
         progress!.state == TransferProgress.stateRunning;
-    final fg = mine ? Colors.white : scheme.onSurface;
-    final fgDim =
-        mine ? Colors.white.withValues(alpha: 0.75) : scheme.outline;
+    final on = skinOn();
+    final fg = mine ? on : scheme.onSurface;
+    final fgDim = mine ? on.withValues(alpha: 0.78) : scheme.outline;
     return Container(
       constraints:
           BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
@@ -1375,7 +1429,7 @@ class _MessageBubble extends StatelessWidget {
             children: [
               Icon(Icons.insert_drive_file_outlined,
                   size: 32,
-                  color: mine ? Colors.white : scheme.primary),
+                  color: mine ? skinOn() : scheme.primary),
               const SizedBox(width: 10),
               Flexible(
                 child: Column(
@@ -1544,8 +1598,8 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final fgDim =
-        widget.mine ? Colors.white.withValues(alpha: 0.75) : scheme.outline;
+    final on = _MessageBubble.skinOn();
+    final fgDim = widget.mine ? on.withValues(alpha: 0.78) : scheme.outline;
     final dur = _durationText(
         widget.message.durationMs > 0 ? widget.message.durationMs : 1000);
     return Container(
@@ -1565,12 +1619,12 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: widget.mine
-                    ? Colors.white.withValues(alpha: 0.2)
+                    ? on.withValues(alpha: 0.2)
                     : scheme.primary.withValues(alpha: 0.12),
               ),
               child: Icon(
                 _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: widget.mine ? Colors.white : scheme.primary,
+                color: widget.mine ? on : scheme.primary,
                 size: 22,
               ),
             ),
@@ -1617,8 +1671,11 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
           if (widget.mine) ...[
             const SizedBox(width: 4),
             widget.message.read
-                ? const Icon(Icons.done_all,
-                    size: 13, color: Colors.lightBlueAccent)
+                ? Icon(Icons.done_all,
+                    size: 13,
+                    color: on == Colors.white
+                        ? Colors.lightBlueAccent
+                        : const Color(0xFF0B6BCB))
                 : Icon(Icons.done, size: 13, color: fgDim),
           ],
           if (widget.transferring)

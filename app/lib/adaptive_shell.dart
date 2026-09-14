@@ -43,6 +43,7 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           ev is ReceiptsUpdated ||
           ev is ReactionsChanged ||
           ev is ProfileUpdated) {
+        if (ev is ProfileUpdated) Avatars.invalidate();
         if (mounted) setState(() {});
       }
     }));
@@ -741,17 +742,18 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lock_outline, size: 52, color: Colors.grey.shade400),
+              Icon(Icons.lock_outline,
+                  size: 52, color: scheme.outline),
               const SizedBox(height: 10),
               Text(L10n.t('chat.e2eTitle'),
                   style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade600)),
+                      color: scheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(L10n.t('chat.selectPlaceholder'),
                   style: TextStyle(
-                      fontSize: 12, color: Colors.grey.shade500)),
+                      fontSize: 12, color: scheme.onSurfaceVariant)),
             ],
           ),
         ),

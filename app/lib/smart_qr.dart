@@ -39,21 +39,28 @@ class SmartQrView extends StatelessWidget {
   Widget build(BuildContext context) {
     final code = _build();
     if (code == null) {
-      return SizedBox(
+      return Container(
         width: size,
         height: size,
-        child: const Center(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
           child: Padding(
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: Text('内容超出单张二维码容量',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: Colors.black54)),
+                style: const TextStyle(fontSize: 13, color: Colors.black54)),
           ),
         ),
       );
     }
     return Container(
-      color: Colors.white,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
       padding: const EdgeInsets.all(12), // 静区
       child: CustomPaint(
         size: Size.square(size),

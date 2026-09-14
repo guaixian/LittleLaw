@@ -211,25 +211,36 @@ class _SettingsPageState extends State<SettingsPage> {
               '口令派生密钥)。恢复到新设备后沿用原身份,好友无需重新配对。',
               style: TextStyle(fontSize: 12)),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.backup_outlined),
-                  label: const Text('创建备份'),
-                  onPressed: _createBackup,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.restore_outlined),
-                  label: const Text('恢复备份'),
-                  onPressed: _restoreBackup,
-                ),
-              ),
-            ],
-          ),
+          LayoutBuilder(builder: (ctx, c) {
+            final backup = OutlinedButton.icon(
+              icon: const Icon(Icons.backup_outlined),
+              label: const Text('创建备份', maxLines: 1),
+              onPressed: _createBackup,
+            );
+            final restore = OutlinedButton.icon(
+              icon: const Icon(Icons.restore_outlined),
+              label: const Text('恢复备份', maxLines: 1),
+              onPressed: _restoreBackup,
+            );
+            if (c.maxWidth < 400) {
+              // 窄屏竖排,避免两个按钮横向溢出。
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  backup,
+                  const SizedBox(height: 8),
+                  restore,
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: backup),
+                const SizedBox(width: 8),
+                Expanded(child: restore),
+              ],
+            );
+          }),
         ],
       ),
     );
@@ -291,6 +302,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(confirm ? '设置备份口令' : '输入备份口令'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -299,6 +311,7 @@ class _SettingsPageState extends State<SettingsPage> {
               controller: ctrl,
               obscureText: true,
               autofocus: true,
+              textInputAction: TextInputAction.done,
               decoration: const InputDecoration(
                   labelText: '口令(至少 6 个字符)'),
             ),

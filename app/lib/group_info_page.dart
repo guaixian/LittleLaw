@@ -35,8 +35,13 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(L10n.t('group.rename')),
-        content: TextField(controller: ctrl, autofocus: true),
+        content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            maxLength: 24,
+            textInputAction: TextInputAction.done),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
@@ -67,8 +72,9 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setInner) => AlertDialog(
           title: Text(L10n.t('group.addMembers')),
-          content: SizedBox(
-            width: 360,
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.55),
             child: ListView(
               shrinkWrap: true,
               children: [
@@ -78,9 +84,12 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                     value: selected.contains(p.deviceId),
                     onChanged: (v) => setInner(() =>
                         v == true ? selected.add(p.deviceId) : selected.remove(p.deviceId)),
-                    title: Text(p.deviceName),
+                    title: Text(p.deviceName,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
                         p.deviceModel.isNotEmpty ? p.deviceModel : p.platform,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12)),
                   ),
               ],
@@ -148,6 +157,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                     onTap: () async {
                       final bytes = await Avatars.pickResized();
                       if (bytes != null) {
+                        Avatars.invalidate();
                         await engine.setGroupAvatar(widget.groupId, bytes);
                         if (mounted) setState(() {});
                       }
@@ -200,7 +210,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
           Row(
             children: [
               Expanded(
-                  child: Text(L10n.t('devices.groups') == '群聊' ? '成员' : 'Members',
+                  child: Text(L10n.t('group.members'),
                       style: const TextStyle(
                           fontWeight: FontWeight.w600, fontSize: 14))),
               TextButton.icon(

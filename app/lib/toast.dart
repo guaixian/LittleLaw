@@ -21,11 +21,19 @@ void showToast(
     ToastType.info => (Icons.info_outline, const Color(0xFF323232)),
   };
 
+  // 桌面宽窗口下限制最大宽度,避免 toast 横贯全屏。
+  final ctx = rootScaffoldMessengerKey.currentContext;
+  final maxWidth =
+      (ctx != null ? MediaQuery.sizeOf(ctx).width * 0.85 : 560.0)
+          .clamp(320.0, 600.0)
+          .toDouble();
+
   messenger
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
+        width: maxWidth,
         backgroundColor: bg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: duration ??
@@ -34,11 +42,11 @@ void showToast(
           children: [
             Icon(icon, color: Colors.white, size: 20),
             const SizedBox(width: 10),
-            Expanded(
+            Flexible(
               child: Text(
                 message,
                 style: const TextStyle(color: Colors.white),
-                maxLines: 3,
+                maxLines: 4,
                 overflow: TextOverflow.ellipsis,
               ),
             ),

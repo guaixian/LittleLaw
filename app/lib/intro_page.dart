@@ -77,37 +77,52 @@ class _IntroPageState extends State<IntroPage> {
                   return Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 36, vertical: 8),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 96,
-                          height: 96,
-                          decoration: BoxDecoration(
-                            gradient: skin.gradient,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: skin.primary.withValues(alpha: 0.35),
-                                blurRadius: 24,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Icon(icon, color: Colors.white, size: 44),
+                    child: SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight:
+                              (MediaQuery.sizeOf(ctx).height -
+                                      MediaQuery.paddingOf(ctx).vertical -
+                                      180)
+                                  .clamp(0.0, 560.0)
+                                  .toDouble(),
                         ),
-                        const SizedBox(height: 28),
-                        Text(title,
-                            style: const TextStyle(
-                                fontSize: 24, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 14),
-                        Text(body,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontSize: 14.5,
-                                height: 1.6,
-                                color: scheme.onSurfaceVariant)),
-                      ],
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 96,
+                              height: 96,
+                              decoration: BoxDecoration(
+                                gradient: skin.gradient,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color:
+                                        skin.primary.withValues(alpha: 0.35),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child:
+                                  Icon(icon, color: Colors.white, size: 44),
+                            ),
+                            const SizedBox(height: 28),
+                            Text(title,
+                                style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 14),
+                            Text(body,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 14.5,
+                                    height: 1.6,
+                                    color: scheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ),
                     ),
                   );
                 },

@@ -113,56 +113,79 @@ class _CallPageState extends State<CallPage> {
                 ),
               ),
             ),
-          // 顶部信息。
+          // 顶部信息(带渐变遮罩,亮画面下文字仍可读)。
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor:
-                              themeController.skin.primary,
-                          child: Icon(
-                            m.isVideo ? Icons.videocam : Icons.call,
-                            color: Colors.white,
-                            size: 20,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black54, Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor:
+                                themeController.skin.primary,
+                            child: Icon(
+                              m.isVideo ? Icons.videocam : Icons.call,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(title,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(_stateText,
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 13)),
-                  ],
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(_stateText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 13)),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-          // 底部控制。
+          // 底部控制(带渐变遮罩)。
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: _controls(),
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black54, Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: _controls(),
+                ),
               ),
             ),
           ),
@@ -230,15 +253,26 @@ class _CallPageState extends State<CallPage> {
     bool active = false,
   }) {
     final skin = themeController.skin;
+    // 未激活底色加深 + 细边框,保证亮视频画面上按钮仍可见。
     final bg = color ??
-        (active ? skin.primary : Colors.white.withValues(alpha: 0.15));
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 58,
-        height: 58,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
-        child: Icon(icon, color: color != null ? Colors.white : Colors.white),
+        (active
+            ? skin.primary
+            : Colors.black.withValues(alpha: 0.45));
+    return Material(
+      color: bg,
+      shape: CircleBorder(
+        side: active || color != null
+            ? BorderSide.none
+            : BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+      ),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 58,
+          height: 58,
+          child: Icon(icon, color: Colors.white),
+        ),
       ),
     );
   }

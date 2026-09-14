@@ -254,18 +254,22 @@ class _BlobScanPageState extends State<BlobScanPage> {
             Positioned(
               left: 0,
               right: 0,
-              bottom: 24,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '分片码进度 $received/$total,继续扫描',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+              bottom: 0,
+              child: SafeArea(
+                minimum: const EdgeInsets.only(bottom: 24),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '分片码进度 $received/$total,继续扫描',
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
                   ),
                 ),
               ),

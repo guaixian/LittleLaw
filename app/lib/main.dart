@@ -248,7 +248,9 @@ void showPairRequestDialog(PairRequestEvent event) {
     context: ctx,
     barrierDismissible: false,
     builder: (dctx) => AlertDialog(
-      title: const Text('配对请求'),
+      scrollable: true,
+      title: Text('配对请求',
+          maxLines: 2, overflow: TextOverflow.ellipsis),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -311,7 +313,9 @@ Future<void> startPairFlow(DiscoveredDevice device,
     context: ctx,
     barrierDismissible: true,
     builder: (dctx) => AlertDialog(
-      title: Text('与 ${device.info.deviceName} 配对'),
+      scrollable: true,
+      title: Text('与 ${device.info.deviceName} 配对',
+          maxLines: 2, overflow: TextOverflow.ellipsis),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -479,7 +483,10 @@ class _DevicesPageState extends State<DevicesPage> {
     _subscriptions.add(engine.events.listen((e) {
       if (e is PeerStatusChanged) setState(() {});
       if (e is GroupSynced) setState(() {}); // 群列表刷新(建群/改群扇出)
-      if (e is ProfileUpdated) setState(() {}); // 对端头像/名称更新
+      if (e is ProfileUpdated) {
+        Avatars.invalidate(); // 对端头像落盘,存在性缓存失效
+        setState(() {});
+      }
     }));
   }
 
@@ -525,21 +532,22 @@ class _DevicesPageState extends State<DevicesPage> {
             slivers: [
             SliverToBoxAdapter(child: _header(engine)),
             if (peers.isNotEmpty) ...[
-              const _SectionLabel(''),
+              _SectionLabel(L10n.t('devices.paired')),
               SliverList.builder(
                 itemCount: peers.length,
                 itemBuilder: (ctx, i) => _peerCard(engine, peers[i]),
               ),
             ],
             // 群聊
-            const _SectionLabel(''),
+            if (engine.groups.isNotEmpty)
+              _SectionLabel(L10n.t('devices.groups')),
             SliverList.builder(
               itemCount: engine.groups.length + 1,
               itemBuilder: (ctx, i) => i == engine.groups.length
                   ? _createGroupCard(engine)
                   : _groupCard(engine, engine.groups[i]),
             ),
-            const _SectionLabel(''),
+            _SectionLabel(L10n.t('devices.nearby')),
             if (discovered.isEmpty)
               SliverToBoxAdapter(
                 child: Padding(
@@ -558,11 +566,17 @@ class _DevicesPageState extends State<DevicesPage> {
                         const SizedBox(height: 14),
                         Text('正在搜索局域网设备…',
                             style: TextStyle(
-                                color: Colors.grey.shade500, fontSize: 13)),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                                fontSize: 13)),
                         const SizedBox(height: 4),
                         Text('确保对方设备已打开 LittleLaw 并接入同一网络',
                             style: TextStyle(
-                                color: Colors.grey.shade400, fontSize: 12)),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                                fontSize: 12)),
                       ],
                     ),
                   ),
@@ -656,6 +670,8 @@ class _DevicesPageState extends State<DevicesPage> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(L10n.t('header.onlineCount', {'n': online}),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                               fontSize: 12, color: Colors.white)),
                     ),
@@ -719,14 +735,18 @@ class _DevicesPageState extends State<DevicesPage> {
             ),
           ),
           title: Text(peer.deviceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(
             peer.deviceModel.isNotEmpty
                 ? '${platformLabel(peer.platform)} · ${peer.deviceModel} · ${online ? "在线" : "离线"}'
                 : '${platformLabel(peer.platform)} · ${online ? "在线" : "离线"}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
                 fontSize: 12,
-                color: online ? Colors.green : Colors.grey.shade500),
+                color: online ? Colors.green : scheme.onSurfaceVariant),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1106,6 +1126,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     onTap: () async {
                       final bytes = await Avatars.pickResized();
                       if (bytes != null) {
+                        Avatars.invalidate();
                         await engine.setMyAvatar(bytes);
                         setState(() {});
                       }
@@ -1240,27 +1261,42 @@ class _ProfilePageState extends State<ProfilePage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                SegmentedButton<ThemeMode>(
-                  segments: const [
-                    ButtonSegment(
-                        value: ThemeMode.system,
-                        label: Text('跟随系统'),
-                        icon: Icon(Icons.settings_suggest_outlined, size: 16)),
-                    ButtonSegment(
-                        value: ThemeMode.light,
-                        label: Text('浅色'),
-                        icon: Icon(Icons.light_mode_outlined, size: 16)),
-                    ButtonSegment(
-                        value: ThemeMode.dark,
-                        label: Text('深色'),
-                        icon: Icon(Icons.dark_mode_outlined, size: 16)),
-                  ],
-                  selected: {themeController.mode},
-                  onSelectionChanged: (s) {
-                    themeController.setMode(s.first);
-                    setState(() {});
-                  },
-                ),
+                // 窄屏下去掉 segment 图标,防止三段(图标+文字)横向溢出。
+                LayoutBuilder(builder: (ctx, c) {
+                  final narrow = c.maxWidth < 380;
+                  return SegmentedButton<ThemeMode>(
+                    showSelectedIcon: !narrow,
+                    segments: [
+                      ButtonSegment(
+                          value: ThemeMode.system,
+                          label: const Text('跟随系统'),
+                          icon: narrow
+                              ? null
+                              : const Icon(
+                                  Icons.settings_suggest_outlined,
+                                  size: 16)),
+                      ButtonSegment(
+                          value: ThemeMode.light,
+                          label: const Text('浅色'),
+                          icon: narrow
+                              ? null
+                              : const Icon(Icons.light_mode_outlined,
+                                  size: 16)),
+                      ButtonSegment(
+                          value: ThemeMode.dark,
+                          label: const Text('深色'),
+                          icon: narrow
+                              ? null
+                              : const Icon(Icons.dark_mode_outlined,
+                                  size: 16)),
+                    ],
+                    selected: {themeController.mode},
+                    onSelectionChanged: (s) {
+                      themeController.setMode(s.first);
+                      setState(() {});
+                    },
+                  );
+                }),
               ],
             ),
           ),
@@ -1343,10 +1379,13 @@ class _ProfilePageState extends State<ProfilePage> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: const Text('修改设备名'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
+          maxLength: 32,
+          textInputAction: TextInputAction.done,
           decoration: const InputDecoration(hintText: '输入新设备名'),
         ),
         actions: [
