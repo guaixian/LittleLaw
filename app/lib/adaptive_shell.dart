@@ -254,7 +254,7 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
         Divider(height: 1, color: scheme.outlineVariant),
         Expanded(
           child: ListView.builder(
-            itemCount: entries.length + (discovered.isEmpty ? 0 : 2),
+            itemCount: entries.length + 1 + discovered.length,
             itemBuilder: (ctx, i) {
               if (i < entries.length) {
                 final e = entries[i];
@@ -263,57 +263,72 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
               }
               final j = i - entries.length;
               if (j == 0) {
+                // 附近的设备:常驻区块(空态显示提示 + 手动刷新)。
                 return Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(14, 14, 14, 6),
-                  child: Text(L10n.t('devices.nearby'),
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurfaceVariant)),
+                  padding: const EdgeInsets.fromLTRB(14, 14, 4, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(L10n.t('devices.nearby'),
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: scheme.onSurfaceVariant)),
+                      ),
+                      IconButton(
+                        tooltip: L10n.t('common.search'),
+                        icon: Icon(Icons.refresh,
+                            size: 18, color: scheme.primary),
+                        onPressed: () {
+                          engine.discovery.rescan();
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ],
+                  ),
                 );
               }
-              // 附近的设备(未配对):点击发起配对。
-              return Column(
-                children: [
-                  for (final d in discovered)
-                    ListTile(
-                      dense: true,
-                      leading: CircleAvatar(
-                        radius: 18,
-                        backgroundColor:
-                            scheme.secondaryContainer,
-                        child: Icon(Icons.add,
-                            size: 18,
-                            color:
-                                scheme.onSecondaryContainer),
-                      ),
-                      title: Text(d.info.deviceName,
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                      subtitle: Text(
-                        d.info.deviceModel.isNotEmpty
-                            ? d.info.deviceModel
-                            : d.info.platform,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      trailing: FilledButton.tonal(
-                        onPressed: () async {
-                          await startPairFlow(d);
-                          if (mounted) {
-                            setState(() =>
-                                _discovered.remove(d.deviceId));
-                          }
-                        },
-                        child: const Text('配对'),
-                      ),
-                    ),
-                ],
+              final d = discovered[j - 1];
+              // 附近的设备(未配对):点击配对。
+              return ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: scheme.secondaryContainer,
+                  child: Icon(Icons.add,
+                      size: 18, color: scheme.onSecondaryContainer),
+                ),
+                title: Text(d.info.deviceName,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                  d.info.deviceModel.isNotEmpty
+                      ? d.info.deviceModel
+                      : d.info.platform,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: FilledButton.tonal(
+                  onPressed: () async {
+                    await startPairFlow(d);
+                    if (mounted) {
+                      setState(() => _discovered.remove(d.deviceId));
+                    }
+                  },
+                  child: const Text('配对'),
+                ),
               );
             },
           ),
         ),
+        if (discovered.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: Text(
+              '正在搜索同一网络内未配对的设备…\n手机端:设备页下拉刷新即可被搜索到',
+              style:
+                  TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ),
       ],
     );
   }
