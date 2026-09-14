@@ -247,9 +247,11 @@ class LittleLawEngine {
       // 受邀方应答经服务器推回:回退用邀请令牌解密,统一走 WebRTC 应用路径。
       rc.fallbackTokenProvider = () => pairing.pendingRemoteOfferToken;
       rc.pairAnswers.listen(pairing.noteRemoteAnswer);
-      // presence 离线 → 强制断开半开链路(WebRTC/TCP 僵死链路可能还挂着)。
+      // presence 离线 → 断开半开链路。加 15s 流量护栏:服务器连接抖动
+      // (对端重连瞬间)不误杀仍在传数据的链路。
       engine._peerOfflineSub = rc.peerOffline.listen((deviceId) {
-        if (store.getPeer(deviceId) != null) {
+        if (store.getPeer(deviceId) != null &&
+            sync.peerIdleMs(deviceId) > 15 * 1000) {
           sync.forceDisconnect(deviceId);
         }
       });
@@ -265,14 +267,10 @@ class LittleLawEngine {
       }
     });
 
-    // 设备从局域网消失(报文超时)→ 强制断开其全部链路并标记离线。
-    // B 离线后 TCP 常处于半开状态(gRPC 不会立刻报错),若不主动断开,
-    // 在线徽标将长期失真;对方重新上线时发现层会再次建连。
-    engine._discoveryExpiredSub = discovery.expiredDevices.listen((deviceId) {
-      if (store.getPeer(deviceId) != null) {
-        sync.forceDisconnect(deviceId);
-      }
-    });
+    // 设备从局域网消失(报文超时):不在此处拆链——在线判定统一交给
+    // 引擎的"半开链路空闲清扫"(40s 无来信才断):组播被限流但 TCP 仍
+    // 有流量时不误杀(避免状态横跳),真下线(无任何流量)则及时转离线。
+    engine._discoveryExpiredSub = discovery.expiredDevices.listen((_) {});
 
     await discovery.start();
     sync.bootstrapSessions();

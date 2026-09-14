@@ -800,12 +800,13 @@ const Heartbeat$json = {
   '1': 'Heartbeat',
   '2': [
     {'1': 'at_ms', '3': 1, '4': 1, '5': 3, '10': 'atMs'},
+    {'1': 'reply', '3': 2, '4': 1, '5': 8, '10': 'reply'},
   ],
 };
 
 /// Descriptor for `Heartbeat`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List heartbeatDescriptor =
-    $convert.base64Decode('CglIZWFydGJlYXQSEwoFYXRfbXMYASABKANSBGF0TXM=');
+final $typed_data.Uint8List heartbeatDescriptor = $convert.base64Decode(
+    'CglIZWFydGJlYXQSEwoFYXRfbXMYASABKANSBGF0TXMSFAoFcmVwbHkYAiABKAhSBXJlcGx5');
 
 @$core.Deprecated('Use fileChunkDescriptor instead')
 const FileChunk$json = {

@@ -455,6 +455,7 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// 若不主动断开,在线状态将长期失真。对方再次出现时由发现层
   /// 回调重新建连(见 notePeerAddress)。
   void forceDisconnect(String peerId) {
+    _peerLastRecv.remove(peerId);
     // 1) 连出会话(其 dispose 会注销 sink、关闭通道、取消重连定时器)。
     _sessions[peerId]?.dispose();
     _sessions.remove(peerId);
@@ -776,6 +777,9 @@ class SyncEngine extends pbg.SyncServiceBase {
   void _registerSink(String peerId, StreamController<pb.Envelope> sink) {
     final wasOffline = !isOnline(peerId);
     _sinks.putIfAbsent(peerId, () => {}).add(sink);
+    // 新链路:活性计时从现在起算(40s 内没有任何来信即判半开)。
+    _peerLastRecv.putIfAbsent(peerId, () => DateTime.now().millisecondsSinceEpoch);
+    _startIdleSweep();
     if (wasOffline) _events.add(PeerStatusChanged(peerId, true));
     // 会话建立即互推个人资料(名称/头像),对端 UI 立即可用。
     final profile = profileProvider?.call();
@@ -848,6 +852,35 @@ class SyncEngine extends pbg.SyncServiceBase {
     return false;
   }
 
+  // ---------------------------------------------------- 半开链路空闲清扫
+
+  /// peerId → 最后收到该对端任何信封的时刻(ms)。
+  final _peerLastRecv = <String, int>{};
+  Timer? _idleSweepTimer;
+
+  /// 链路无来信判定半开的阈值。健康链路上双向心跳(15s)+ 回执,
+  /// 间隔远小于此值;超过即视为半开死链(对端已下线而 TCP 未感知)。
+  static const _peerIdleMs = 40 * 1000;
+
+  /// 对端距上次来信的空闲毫秒数(无记录返回超大值)。
+  int peerIdleMs(String peerId) {
+    final last = _peerLastRecv[peerId];
+    if (last == null) return 1 << 40;
+    return DateTime.now().millisecondsSinceEpoch - last;
+  }
+
+  void _startIdleSweep() {
+    _idleSweepTimer ??= Timer.periodic(const Duration(seconds: 15), (_) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final peerId in _sinks.keys.toList()) {
+        final last = _peerLastRecv[peerId];
+        // 从未有过来信的新链路:注册时已埋了起点,同样适用超时判定。
+        if (last != null && now - last <= _peerIdleMs) continue;
+        forceDisconnect(peerId);
+      }
+    });
+  }
+
   /// 信封是否可安全进离线邮箱(幂等 + 尺寸可控)。
   bool _mailboxSafe(pb.Envelope env) {
     switch (env.whichPayload()) {
@@ -867,6 +900,7 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// 处理来自对端的信封(两个方向共用)。
   void _handleIncoming(Peer peer, pb.Envelope env) {
     final peerId = peer.deviceId;
+    _peerLastRecv[peerId] = DateTime.now().millisecondsSinceEpoch;
     switch (env.whichPayload()) {
       case pb.Envelope_Payload.hello:
         // 对端告知"我已应用到你的 op 第 N 条":补发 (N, +∞) 并压缩。
@@ -919,6 +953,14 @@ class SyncEngine extends pbg.SyncServiceBase {
       case pb.Envelope_Payload.linkAuth:
         break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
       case pb.Envelope_Payload.heartbeat:
+        // 心跳回执:让单向会话(仅一侧拨出)的两端都能看到活性,
+        // 空闲清扫不会误杀健康链路。回执不再回,无循环。
+        if (!env.heartbeat.reply) {
+          _push(peerId, pb.Envelope(
+            id: const Uuid().v4(),
+            heartbeat: pb.Heartbeat(atMs: env.heartbeat.atMs, reply: true),
+          ));
+        }
       case pb.Envelope_Payload.fileOffer:
       case pb.Envelope_Payload.fileAnswer:
       case pb.Envelope_Payload.notSet:
@@ -1294,6 +1336,9 @@ class SyncEngine extends pbg.SyncServiceBase {
   Future<void> dispose() async {
     _ackSweepTimer?.cancel();
     _ackSweepTimer = null;
+    _idleSweepTimer?.cancel();
+    _idleSweepTimer = null;
+    _peerLastRecv.clear();
     // 1) 关闭所有连出会话(客户端侧)。
     for (final s in _sessions.values) {
       s.dispose();

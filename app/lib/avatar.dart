@@ -37,30 +37,57 @@ class Avatars {
   static ImageProvider _provider(File f) =>
       ResizeImage.resizeIfNeeded(128, null, FileImage(f));
 
-  /// 选一张图片并缩放(最长边 256,保持纵横比)为 PNG 字节。
-  /// 用户取消返回 null。
+  /// 解码原始字节并缩放为 PNG,逐步降分辨率直到 ≤96KB(信封上限,
+  /// 超过引擎会拒发头像)。返回 null 表示无法编码。
+  static Future<Uint8List?> _encodeCapped(Uint8List raw) async {
+    const cap = 96 * 1024;
+    var longest = 256;
+    while (true) {
+      final probe = await ui.instantiateImageCodec(raw);
+      final pf = await probe.getNextFrame();
+      final w = pf.image.width;
+      final h = pf.image.height;
+      pf.image.dispose();
+      probe.dispose();
+      final tw =
+          w >= h ? longest : (longest * w / h).round().clamp(1, longest);
+      final th =
+          h > w ? longest : (longest * h / w).round().clamp(1, longest);
+      final codec = await ui.instantiateImageCodec(raw,
+          targetWidth: tw, targetHeight: th);
+      final frame = await codec.getNextFrame();
+      final data =
+          await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      frame.image.dispose();
+      codec.dispose();
+      final bytes = data?.buffer.asUint8List();
+      if (bytes == null) return null;
+      if (bytes.length <= cap || longest <= 64) return bytes;
+      longest = longest * 3 ~/ 4; // PNG 仍超限:缩小一档重编
+    }
+  }
+
+  /// 选一张图片并缩放为 PNG 字节(≤96KB)。用户取消返回 null。
   static Future<Uint8List?> pickResized() async {
     final files = await FilePicker.pickFiles(type: FileType.image);
     if (files.isEmpty) return null;
     final path = files.single.path;
     if (path == null) return null;
     final raw = await File(path).readAsBytes();
-    // 先取原始尺寸,按最长边 256 等比缩放(超长图高度同样受限)。
-    final probe = await ui.instantiateImageCodec(raw);
-    final probeFrame = await probe.getNextFrame();
-    final w = probeFrame.image.width;
-    final h = probeFrame.image.height;
-    probeFrame.image.dispose();
-    probe.dispose();
-    final targetW = w >= h ? 256 : (256 * w / h).round().clamp(1, 256);
-    final targetH = h > w ? 256 : (256 * h / w).round().clamp(1, 256);
-    final codec = await ui.instantiateImageCodec(raw,
-        targetWidth: targetW, targetHeight: targetH);
-    final frame = await codec.getNextFrame();
-    final data =
-        await frame.image.toByteData(format: ui.ImageByteFormat.png);
-    frame.image.dispose();
-    codec.dispose();
-    return data?.buffer.asUint8List();
+    return _encodeCapped(raw);
+  }
+
+  /// 旧版本选的头像可能超过 96KB(引擎拒发,对端永远收不到)。
+  /// 启动时检查一次:超限则原地降分辨率重存,并触发广播。
+  static Future<void> ensureMyAvatarSendable(LittleLawEngine engine) async {
+    try {
+      final f = File(engine.myAvatarPath());
+      if (!f.existsSync() || f.lengthSync() <= 96 * 1024) return;
+      final bytes = await _encodeCapped(f.readAsBytesSync());
+      if (bytes == null) return;
+      await f.writeAsBytes(bytes, flush: true);
+      invalidate();
+      await engine.setMyAvatar(bytes);
+    } catch (_) {}
   }
 }

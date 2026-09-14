@@ -145,6 +145,8 @@ class _BootPageState extends State<BootPage> {
       });
       ShareHandler.attach(engine); // 系统分享面板接入
       PushWake.attach(engine); // FCM 离线推送唤醒(可选,无配置自动禁用)
+      // 旧头像超 96KB 会被引擎拒发(对端收不到):启动时自动压缩并重广播。
+      unawaited(Avatars.ensureMyAvatarSendable(engine));
       // 配对请求全局监听(移动/桌面壳都弹 PIN 核对窗)。
       _pairReqSub?.cancel();
       _pairReqSub = engine.pairRequests.listen(showPairRequestDialog);

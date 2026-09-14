@@ -55,9 +55,8 @@ void main() {
               b.isOnline(a.identity.deviceId),
           description: '双方在线');
 
-      // 2. B 停发现服务(不再宣告):
-      //    新语义:发现超时即强制断开半开 TCP/WebRTC 链路并标记离线——
-      //    B 离线后在线徽标必须及时消失,不能长期显示"在线"。
+      // 2. B 停发现服务(不再宣告)但 gRPC 仍活着且心跳照常:
+      //    语义:链路有流量 → 保持在线(组播被限流不误判,防状态横跳)。
       String? expiredId;
       final esub = a.discovery.expiredDevices.listen((id) => expiredId = id);
       await b.discovery.stop();
@@ -70,16 +69,17 @@ void main() {
             .any((d) => d.deviceId == b.identity.deviceId),
         description: '发现列表移除 B',
       );
-      await waitFor(
-        () => !a.isOnline(b.identity.deviceId),
-        description: '发现超时后 A 断开半开链路并标记离线',
-        timeout: const Duration(seconds: 15),
-      );
+      expect(a.isOnline(b.identity.deviceId), isTrue,
+          reason: '链路仍有心跳流量,不应因组播丢失而误判离线');
 
-      // 3. B 彻底下线(进程级):此时 A 已判定离线(上一步)。
+      // 3. B 彻底下线(进程级):心跳停止 → 空闲清扫(40s 阈值)断开半开链路。
       final bDataDir = dirB.path;
       await b.dispose();
-      expect(a.isOnline(b.identity.deviceId), isFalse);
+      await waitFor(
+        () => !a.isOnline(b.identity.deviceId),
+        description: 'B 真下线后 A 标记离线',
+        timeout: const Duration(seconds: 90),
+      );
 
       // 4. B 重新出现(重启)→ 自动恢复在线。
       final b2 = await LittleLawEngine.start(

@@ -3269,9 +3269,11 @@ class SyncAck extends $pb.GeneratedMessage {
 class Heartbeat extends $pb.GeneratedMessage {
   factory Heartbeat({
     $fixnum.Int64? atMs,
+    $core.bool? reply,
   }) {
     final result = Heartbeat._();
     if (atMs != null) result.atMs = atMs;
+    if (reply != null) result.reply = reply;
     return result;
   }
 
@@ -3289,6 +3291,7 @@ class Heartbeat extends $pb.GeneratedMessage {
       package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
       createEmptyInstance: Heartbeat.$_createMessage)
     ..aInt64(1, _omitFieldNames ? '' : 'atMs')
+    ..aOB(2, _omitFieldNames ? '' : 'reply')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3319,6 +3322,15 @@ class Heartbeat extends $pb.GeneratedMessage {
   $core.bool hasAtMs() => $_has(0);
   @$pb.TagNumber(1)
   void clearAtMs() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.bool get reply => $_getBF(1);
+  @$pb.TagNumber(2)
+  set reply($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasReply() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearReply() => $_clearField(2);
 }
 
 enum FileChunk_Part { head, data, notSet }

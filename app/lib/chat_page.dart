@@ -99,6 +99,10 @@ class _ChatPageState extends State<ChatPage> {
         changed = true; // 自己的消息被对方读了
       } else if (e is ReactionsChanged && e.convKey == _convKey) {
         changed = true; // 表情回应更新
+      } else if (e is ProfileUpdated) {
+        // 对端头像/名称到达:刷新顶栏与气泡头像。
+        Avatars.invalidate();
+        changed = true;
       } else if (e is ClipboardReceived && !_isGroup && e.peerId == _convKey) {
         Clipboard.setData(ClipboardData(text: e.text));
         if (mounted) {
@@ -437,109 +441,274 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// 长按/右键:在消息上方展开内联工具条(表情 + 小功能按钮)。
+  /// 长按/右键:桌面(嵌入三栏)在消息上方展开内联工具条;
+  /// 移动端弹底部操作面板(表情一排 + 功能一排)。
   void _showMessageMenu(Message m, Offset position) {
-    setState(() => _menuMsgId = (_menuMsgId == m.msgId) ? null : m.msgId);
+    if (widget.embedded) {
+      setState(() => _menuMsgId = (_menuMsgId == m.msgId) ? null : m.msgId);
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sctx) => _messageSheet(sctx, m),
+    );
   }
 
-  /// 内联工具条:emoji + 复制/打开/转发/分享/多选/删除。
-  Widget _inlineToolbar(Message m) {
-    final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      // 拦截空白处点击,防止穿透到下方气泡(图片气泡的 onTap 会开大图)。
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 2, left: 4, right: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: scheme.outlineVariant),
-        ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final emoji in _quickReactions)
-                _barBtn(Text(emoji, style: const TextStyle(fontSize: 17)),
-                  () {
-                _react(m, emoji);
-                setState(() => _menuMsgId = null);
-              }),
-            const VerticalDivider(width: 8),
-            if (m.kind == Message.kindText)
-              _barBtn(const Icon(Icons.copy, size: 15), () {
-                _copyMessage(m);
-                setState(() => _menuMsgId = null);
-              }),
-            if (Message.hasFilePayload(m.kind) &&
-                m.fileState == Message.fileStateDone) ...[
-              _barBtn(const Icon(Icons.open_in_new, size: 15), () {
-                _openMessage(m);
-                setState(() => _menuMsgId = null);
-              }),
-              // 桌面:资源管理器定位;手机:系统"打开方式"。
-              _barBtn(
-                Icon(
-                  Platform.isWindows || Platform.isMacOS || Platform.isLinux
-                      ? Icons.folder_open
-                      : Icons.open_with,
-                  size: 15,
-                ),
-                () async {
-                  setState(() => _menuMsgId = null);
-                  final plain = await _plainPathOf(m);
-                  if (plain == null) return;
-                  if (Platform.isAndroid) {
-                    await ShareOut.openWithOther(plain);
-                  } else {
-                    await ShareOut.revealInFolder(plain);
-                  }
-                },
-              ),
-            ],
-            if (m.kind == Message.kindText ||
-                (Message.hasFilePayload(m.kind) &&
-                    m.fileState == Message.fileStateDone)) ...[
-              _barBtn(const Icon(Icons.shortcut, size: 15), () async {
-                setState(() => _menuMsgId = null);
-                if (m.kind == Message.kindText) {
-                  showForwardPicker(widget.engine, text: m.text);
-                } else {
-                  final plain = await _plainPathOf(m);
-                  if (plain != null) {
-                    showForwardPicker(widget.engine, filePath: plain);
-                  }
-                }
-              }),
-              _barBtn(const Icon(Icons.ios_share, size: 15), () async {
-                setState(() => _menuMsgId = null);
-                if (m.kind == Message.kindText) {
-                  ShareOut.shareText(m.text);
-                } else {
-                  final plain = await _plainPathOf(m);
-                  if (plain != null) ShareOut.shareFile(plain);
-                }
-              }),
-            ],
-            _barBtn(const Icon(Icons.checklist, size: 15), () {
-              setState(() {
-                if (!_selecting) _toggleSelect(m.msgId);
-                _menuMsgId = null;
-              });
-            }),
-            _barBtn(Icon(Icons.delete_outline, size: 15, color: scheme.error),
-                () {
-              setState(() => _menuMsgId = null);
-              _isGroup
-                  ? widget.engine
-                      .deleteGroupMessages(_convKey, [m.msgId])
-                  : widget.engine.deleteMessages(_convKey, [m.msgId]);
-            }),
+  /// 移动端底部操作面板:第一排表情,第二排功能。
+  Widget _messageSheet(BuildContext sctx, Message m) {
+    final scheme = Theme.of(sctx).colorScheme;
+    void close() => Navigator.of(sctx).pop();
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 第一排:快捷表情。
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final emoji in _quickReactions)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () {
+                      _react(m, emoji);
+                      close();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Text(emoji,
+                          style: const TextStyle(fontSize: 26)),
+                    ),
+                  ),
+              ],
+            ),
+            const Divider(height: 20, indent: 12, endIndent: 12),
+            // 第二排:功能按钮。
+            Row(
+              children: [
+                if (m.kind == Message.kindText)
+                  _sheetAction(sctx, Icons.copy_outlined, L10n.t('chat.copy'),
+                      () {
+                    _copyMessage(m);
+                    close();
+                  }),
+                if (Message.hasFilePayload(m.kind) &&
+                    m.fileState == Message.fileStateDone)
+                  _sheetAction(sctx, Icons.open_in_new, L10n.t('chat.open'),
+                      () {
+                    _openMessage(m);
+                    close();
+                  }),
+                if (m.kind == Message.kindText ||
+                    (Message.hasFilePayload(m.kind) &&
+                        m.fileState == Message.fileStateDone))
+                  _sheetAction(sctx, Icons.shortcut, L10n.t('chat.forward'),
+                      () async {
+                    close();
+                    if (m.kind == Message.kindText) {
+                      showForwardPicker(widget.engine, text: m.text);
+                    } else {
+                      final plain = await _plainPathOf(m);
+                      if (plain != null) {
+                        showForwardPicker(widget.engine, filePath: plain);
+                      }
+                    }
+                  }),
+                _sheetAction(
+                    sctx,
+                    Icons.checklist,
+                    L10n.t('chat.multiSelect'),
+                    () {
+                      close();
+                      setState(() {
+                        if (!_selecting) _toggleSelect(m.msgId);
+                      });
+                    },
+                    growable: true),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                if (Message.hasFilePayload(m.kind) &&
+                    m.fileState == Message.fileStateDone)
+                  _sheetAction(sctx, Icons.ios_share, L10n.t('chat.share'),
+                      () async {
+                    close();
+                    if (m.kind == Message.kindText) {
+                      ShareOut.shareText(m.text);
+                    } else {
+                      final plain = await _plainPathOf(m);
+                      if (plain != null) ShareOut.shareFile(plain);
+                    }
+                  }),
+                if (Message.hasFilePayload(m.kind) &&
+                    m.fileState == Message.fileStateDone &&
+                    Platform.isAndroid)
+                  _sheetAction(
+                      sctx, Icons.open_with, L10n.t('chat.openWith'), () async {
+                    close();
+                    final plain = await _plainPathOf(m);
+                    if (plain != null) await ShareOut.openWithOther(plain);
+                  }),
+                if (Message.hasFilePayload(m.kind) &&
+                    m.fileState == Message.fileStateDone &&
+                    (Platform.isWindows || Platform.isMacOS || Platform.isLinux))
+                  _sheetAction(
+                      sctx, Icons.folder_open, L10n.t('chat.reveal'), () async {
+                    close();
+                    final plain = await _plainPathOf(m);
+                    if (plain != null) await ShareOut.revealInFolder(plain);
+                  }),
+                _sheetAction(sctx, Icons.delete_outline, L10n.t('common.delete'),
+                    () {
+                  close();
+                  _isGroup
+                      ? widget.engine
+                          .deleteGroupMessages(_convKey, [m.msgId])
+                      : widget.engine.deleteMessages(_convKey, [m.msgId]);
+                }, color: scheme.error, growable: true),
+              ],
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _sheetAction(BuildContext sctx, IconData icon, String label,
+      VoidCallback onTap,
+      {Color? color, bool growable = false}) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 22, color: color),
+              const SizedBox(height: 4),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: color)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 桌面内联工具条(占位在消息上方,可正常点击):
+  /// 第一排表情,第二排功能按钮。
+  Widget _inlineToolbar(Message m) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2, left: 4, right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 第一排:表情。
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final emoji in _quickReactions)
+                _barBtn(Text(emoji, style: const TextStyle(fontSize: 18)),
+                    () {
+                  _react(m, emoji);
+                  setState(() => _menuMsgId = null);
+                }),
+            ],
+          ),
+          const Divider(height: 6, indent: 4, endIndent: 4),
+          // 第二排:功能。
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                if (m.kind == Message.kindText)
+                  _barBtn(const Icon(Icons.copy, size: 15), () {
+                    _copyMessage(m);
+                    setState(() => _menuMsgId = null);
+                  }),
+                if (Message.hasFilePayload(m.kind) &&
+                    m.fileState == Message.fileStateDone) ...[
+                  _barBtn(const Icon(Icons.open_in_new, size: 15), () {
+                    _openMessage(m);
+                    setState(() => _menuMsgId = null);
+                  }),
+                  _barBtn(
+                    Icon(
+                      Platform.isWindows || Platform.isMacOS || Platform.isLinux
+                          ? Icons.folder_open
+                          : Icons.open_with,
+                      size: 15,
+                    ),
+                    () async {
+                      setState(() => _menuMsgId = null);
+                      final plain = await _plainPathOf(m);
+                      if (plain == null) return;
+                      if (Platform.isAndroid) {
+                        await ShareOut.openWithOther(plain);
+                      } else {
+                        await ShareOut.revealInFolder(plain);
+                      }
+                    },
+                  ),
+                ],
+                if (m.kind == Message.kindText ||
+                    (Message.hasFilePayload(m.kind) &&
+                        m.fileState == Message.fileStateDone)) ...[
+                  _barBtn(const Icon(Icons.shortcut, size: 15), () async {
+                    setState(() => _menuMsgId = null);
+                    if (m.kind == Message.kindText) {
+                      showForwardPicker(widget.engine, text: m.text);
+                    } else {
+                      final plain = await _plainPathOf(m);
+                      if (plain != null) {
+                        showForwardPicker(widget.engine, filePath: plain);
+                      }
+                    }
+                  }),
+                  _barBtn(const Icon(Icons.ios_share, size: 15), () async {
+                    setState(() => _menuMsgId = null);
+                    if (m.kind == Message.kindText) {
+                      ShareOut.shareText(m.text);
+                    } else {
+                      final plain = await _plainPathOf(m);
+                      if (plain != null) ShareOut.shareFile(plain);
+                    }
+                  }),
+                ],
+                _barBtn(const Icon(Icons.checklist, size: 15), () {
+                  setState(() {
+                    if (!_selecting) _toggleSelect(m.msgId);
+                    _menuMsgId = null;
+                  });
+                }),
+                _barBtn(
+                    Icon(Icons.delete_outline, size: 15, color: scheme.error),
+                    () {
+                  setState(() => _menuMsgId = null);
+                  _isGroup
+                      ? widget.engine
+                          .deleteGroupMessages(_convKey, [m.msgId])
+                      : widget.engine.deleteMessages(_convKey, [m.msgId]);
+                }),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -818,6 +987,7 @@ class _ChatPageState extends State<ChatPage> {
       avatarImage: mine
           ? Avatars.imageOf(engine)
           : Avatars.imageOf(engine, peerId: m.senderId),
+      engine: engine,
       onResend: mine ? () => widget.engine.resendMessage(m.msgId) : null,
       onReaction: (emoji) => _react(m, emoji),
       onTap: () {
@@ -831,26 +1001,16 @@ class _ChatPageState extends State<ChatPage> {
         if (!_selecting) _showMessageMenu(m, pos);
       },
     );
-    // 工具条悬浮在消息上方(覆盖式,不挤占布局)。
-    // 对齐气泡一侧(自己的消息靠右),并限制最大宽度防止超出屏幕。
-    children.add(_menuMsgId == m.msgId
-        ? Stack(
-            clipBehavior: Clip.none,
-            children: [
-              bubble,
-              Positioned(
-                top: -34,
-                left: mine ? null : 0,
-                right: mine ? 0 : null,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                      maxWidth: MediaQuery.sizeOf(context).width - 24),
-                  child: _inlineToolbar(m),
-                ),
-              ),
-            ],
-          )
-        : bubble);
+    // 桌面内联工具条:作为常规布局子项放在消息上方(占位,可正常点击;
+    // 之前 Positioned 负偏移画得出但命中不了,菜单永远点不动)。
+    if (_menuMsgId == m.msgId) {
+      children.add(ConstrainedBox(
+        constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width - 24),
+        child: _inlineToolbar(m),
+      ));
+    }
+    children.add(bubble);
     return Column(children: children);
   }
 
@@ -1068,6 +1228,7 @@ class _MessageBubble extends StatelessWidget {
     this.senderName,
     this.showSender = true,
     this.onReaction,
+    this.engine,
   });
 
   final Message message;
@@ -1083,6 +1244,9 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback onTap;
   final void Function(Offset position) onLongPress;
   final void Function(String emoji)? onReaction;
+
+  /// 引擎引用:图片气泡需要走解密缓存路径(vault 模式 filePath 是 .llenc)。
+  final LittleLawEngine? engine;
 
   /// 皮肤渐变上的前景色:浅色渐变(白桃/青提等)用深字,深色渐变用白字。
   static Color skinOn() {
@@ -1315,11 +1479,32 @@ class _MessageBubble extends StatelessWidget {
 
     Widget inner;
     if (image && done) {
-      inner = Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        cacheWidth: 640, // 缩略解码,避免大图吃内存
-        errorBuilder: (_, _, _) => _brokenMedia(context),
+      // 落盘加密开启时 filePath 是 .llenc 密文,必须先解密到缓存再显示
+      // (与全屏查看器同一路径),否则 Image 解码失败显示灰底占位。
+      inner = FutureBuilder<String>(
+        future: engine != null
+            ? engine!.plaintextPathFor(message)
+            : Future.value(path),
+        builder: (_, snap) {
+          final p = snap.data;
+          if (p == null || !File(p).existsSync()) {
+            return Container(
+              color: scheme.surfaceContainerHighest,
+              alignment: Alignment.center,
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+          return Image.file(
+            File(p),
+            fit: BoxFit.cover,
+            cacheWidth: 640, // 缩略解码,避免大图吃内存
+            errorBuilder: (_, _, _) => _brokenMedia(context),
+          );
+        },
       );
     } else {
       inner = Container(
