@@ -303,7 +303,11 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
                 }
                 final p = pairedNoConv[j - 1];
                 final pAvatar = Avatars.imageOf(engine, peerId: p.deviceId);
-                return ListTile(
+                return GestureDetector(
+                  onLongPress: () => _confirmUnpair(p.deviceId, p.deviceName),
+                  onSecondaryTapDown: (d) =>
+                      _confirmUnpair(p.deviceId, p.deviceName),
+                  child: ListTile(
                   dense: true,
                   onTap: () => setState(() {
                     _tab = 0;
@@ -335,6 +339,7 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
                               shape: BoxShape.circle, color: Colors.green),
                         )
                       : null,
+                  ),
                 );
               }
               if (pairedNoConv.isNotEmpty) j -= 1 + pairedNoConv.length;
@@ -608,19 +613,57 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
       showModalBottomSheet<void>(
         context: context,
         builder: (ctx) => SafeArea(
-          child: ListTile(
-            leading: const Icon(Icons.delete_sweep_outlined),
-            title: Text(L10n.t('chat.clearAll')),
-            onTap: () {
-              Navigator.pop(ctx);
-              _confirmClear(e);
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.delete_sweep_outlined),
+                title: Text(L10n.t('chat.clearAll')),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmClear(e);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.link_off_outlined,
+                    color: Theme.of(context).colorScheme.error),
+                title: Text(L10n.t('devices.unpair')),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmUnpair(e.key, e.title);
+                },
+              ),
+            ],
           ),
         ),
       );
       return;
     }
     _popupMenu(e, position);
+  }
+
+  /// 解除配对确认(双端清除聊天记录与信任关系)。
+  Future<void> _confirmUnpair(String peerId, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(L10n.t('devices.unpair')),
+        content: Text('与 $name 解除配对?双方设备将删除全部聊天记录与信任关系。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(L10n.t('common.cancel'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(L10n.t('common.confirm'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await engine.unpair(peerId);
+    if (mounted && _activeKey == peerId) {
+      setState(() => _activeKey = null);
+    }
   }
 
   void _popupMenu(_ConvEntry e, Offset position) {
@@ -641,6 +684,9 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
         if (e.isGroup)
           PopupMenuItem(
               value: 'leave', child: Text(L10n.t('group.leave'))),
+        if (!e.isGroup)
+          PopupMenuItem(
+              value: 'unpair', child: Text(L10n.t('devices.unpair'))),
       ],
     ).then((v) {
       if (!mounted || v == null) return;
@@ -654,6 +700,8 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
         case 'leave':
           engine.leaveGroup(e.key);
           if (_activeKey == e.key) setState(() => _activeKey = null);
+        case 'unpair':
+          _confirmUnpair(e.key, e.title);
       }
     });
   }
