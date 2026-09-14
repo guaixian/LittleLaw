@@ -878,7 +878,10 @@ class SyncEngine extends pbg.SyncServiceBase {
   Timer? _extHeartbeatTimer;
   Timer? _extWatchdogTimer;
 
-  static const _extStaleMs = 45 * 1000; // 无来信判定僵死
+  /// 无来信判定僵死阈值:2 分钟。手机退后台时系统冻结 Dart 定时器,
+  /// 心跳停发可达分钟级;阈值过短会造成在线状态反复横跳。
+  /// (前提仍是"对端发过心跳"才判定,旧版对端不受影响。)
+  static const _extStaleMs = 120 * 1000;
 
   void _noteIncoming(String peerId, pb.Envelope env) {
     final now = DateTime.now().millisecondsSinceEpoch;

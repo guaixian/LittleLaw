@@ -107,3 +107,14 @@ func (h *Hub) forwardTo(to string, frame SignalToClientFrame) bool {
 	}
 	return c.sendJSON(frame)
 }
+
+// 任意帧定向投递(邮箱直投等),仅当对端在线。
+func (h *Hub) deliverJSON(to string, v any) bool {
+	h.mu.RLock()
+	c, ok := h.online[to]
+	h.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	return c.sendJSON(v)
+}

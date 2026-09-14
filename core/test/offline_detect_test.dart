@@ -55,33 +55,46 @@ void main() {
               b.isOnline(a.identity.deviceId),
           description: '双方在线');
 
-      // 2. B 离开:停掉发现服务(不再宣告),模拟设备离开局域网。
-      //    注意其 gRPC 服务端仍活着(TCP 半开),正是要解决的场景。
+      // 2. B 停发现服务(不再宣告)但 gRPC 仍活着:
+      //    新语义:TCP 会话健在 → 保持在线(组播被限流不误判,防状态横跳)。
       String? expiredId;
       final esub = a.discovery.expiredDevices.listen((id) => expiredId = id);
       await b.discovery.stop();
 
-      // 3. TTL(12s)+ 检测周期(3s)内,A 应判定 B 消失。
       await waitFor(() => expiredId == b.identity.deviceId,
-          description: 'A 判定 B 离开', timeout: const Duration(seconds: 25));
+          description: 'A 判定 B 发现超时', timeout: const Duration(seconds: 25));
       await esub.cancel();
-
-      // 4. 发现列表不再包含 B;已配对的 B 被标记离线。
       await waitFor(
         () => !a.discovery.current
             .any((d) => d.deviceId == b.identity.deviceId),
         description: '发现列表移除 B',
       );
-      expect(a.isOnline(b.identity.deviceId), isFalse,
-          reason: 'B 离开后必须标记离线');
+      expect(a.isOnline(b.identity.deviceId), isTrue,
+          reason: 'TCP 会话仍活着,不应因组播丢失而误判离线');
 
-      // 5. B 重新出现(重启发现服务)→ 自动恢复在线。
-      await b.discovery.start();
+      // 3. B 彻底下线(进程级):gRPC keepalive 在 ~30s 内感知 → 离线。
+      final bDataDir = dirB.path;
+      await b.dispose();
+      await waitFor(
+        () => !a.isOnline(b.identity.deviceId),
+        description: 'B 真下线后 A 标记离线',
+        timeout: const Duration(seconds: 60),
+      );
+
+      // 4. B 重新出现(重启)→ 自动恢复在线。
+      final b2 = await LittleLawEngine.start(
+        dataDir: bDataDir,
+        grpcPort: 0,
+        discoveryPort: 48942,
+        deviceName: '离开B',
+        discoveryTargets: ['127.0.0.1:48941'],
+      );
       await waitFor(
         () => a.isOnline(b.identity.deviceId),
         description: 'B 回归后自动恢复在线',
-        timeout: const Duration(seconds: 20),
+        timeout: const Duration(seconds: 30),
       );
+      await b2.dispose();
     } finally {
       await a.dispose();
       await b.dispose();

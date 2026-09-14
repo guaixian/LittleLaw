@@ -57,6 +57,7 @@ class _ChatPageState extends State<ChatPage> {
   final _selection = <String>{};
   bool _online = false;
   bool _attachOpen = false; // 附件面板展开态(输入栏上方内联撑开)
+  String? _menuMsgId; // 内联消息工具条目标(长按/右键打开)
   bool _dragOver = false; // 桌面拖拽文件悬停高亮
   bool _recording = false; // 语音录制中
   int _recordMs = 0; // 录制时长(毫秒)
@@ -419,133 +420,98 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// 长按/右键:消息动作面板(快捷表情回应 + 常规操作)。
-  Future<void> _showMessageMenu(Message m, Offset position) async {
+  /// 长按/右键:在消息上方展开内联工具条(表情 + 小功能按钮)。
+  void _showMessageMenu(Message m, Offset position) {
+    setState(() => _menuMsgId = (_menuMsgId == m.msgId) ? null : m.msgId);
+  }
+
+  /// 内联工具条:emoji + 复制/打开/转发/分享/多选/删除。
+  Widget _inlineToolbar(Message m) {
     final scheme = Theme.of(context).colorScheme;
-    final myId = widget.engine.identity.deviceId;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: scheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2, left: 4, right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
       ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
           children: [
-            const SizedBox(height: 10),
-            // 快捷回应行。
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (final emoji in _quickReactions)
-                  GestureDetector(
-                    onTap: () {
-                      _react(m, emoji);
-                      Navigator.of(ctx).pop();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: m.reactions[myId] == emoji
-                            ? scheme.primaryContainer
-                            : Colors.transparent,
-                      ),
-                      child: Text(emoji,
-                          style: const TextStyle(fontSize: 26)),
-                    ),
-                  ),
-              ],
-            ),
-            const Divider(height: 24),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.copy_outlined),
-              title: Text(L10n.t('common.copy')),
-              enabled: m.kind == Message.kindText,
-              onTap: () {
-                Navigator.of(ctx).pop();
+            for (final emoji in _quickReactions)
+              _barBtn(Text(emoji, style: const TextStyle(fontSize: 17)),
+                  () {
+                _react(m, emoji);
+                setState(() => _menuMsgId = null);
+              }),
+            const VerticalDivider(width: 8),
+            if (m.kind == Message.kindText)
+              _barBtn(const Icon(Icons.copy, size: 15), () {
                 _copyMessage(m);
-              },
-            ),
+                setState(() => _menuMsgId = null);
+              }),
             if (Message.hasFilePayload(m.kind) &&
                 m.fileState == Message.fileStateDone)
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.open_in_new),
-                title: Text(L10n.t('common.open')),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _openMessage(m);
-                },
-              ),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.checklist),
-              title: Text(L10n.t('chat.multiSelect')),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _toggleSelect(m.msgId);
-              },
-            ),
-            // 转发到其他会话(群/1:1)。
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.shortcut_outlined),
-              title: Text(L10n.t('chat.forward')),
-              enabled: m.kind == Message.kindText ||
-                  (Message.hasFilePayload(m.kind) &&
-                      m.fileState == Message.fileStateDone),
-              onTap: () async {
-                Navigator.of(ctx).pop();
+              _barBtn(const Icon(Icons.open_in_new, size: 15), () {
+                _openMessage(m);
+                setState(() => _menuMsgId = null);
+              }),
+            if (m.kind == Message.kindText ||
+                (Message.hasFilePayload(m.kind) &&
+                    m.fileState == Message.fileStateDone)) ...[
+              _barBtn(const Icon(Icons.shortcut, size: 15), () async {
+                setState(() => _menuMsgId = null);
                 if (m.kind == Message.kindText) {
                   showForwardPicker(widget.engine, text: m.text);
-                } else if (m.filePath != null) {
+                } else {
                   final plain = await _plainPathOf(m);
                   if (plain != null) {
                     showForwardPicker(widget.engine, filePath: plain);
                   }
                 }
-              },
-            ),
-            // 分享到系统面板 / 剪贴板(微信、QQ、飞书等)。
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.ios_share),
-              title: Text(L10n.t('chat.shareOut')),
-              enabled: m.kind == Message.kindText ||
-                  (Message.hasFilePayload(m.kind) &&
-                      m.fileState == Message.fileStateDone),
-              onTap: () async {
-                Navigator.of(ctx).pop();
+              }),
+              _barBtn(const Icon(Icons.ios_share, size: 15), () async {
+                setState(() => _menuMsgId = null);
                 if (m.kind == Message.kindText) {
                   ShareOut.shareText(m.text);
                 } else {
                   final plain = await _plainPathOf(m);
                   if (plain != null) ShareOut.shareFile(plain);
                 }
-              },
-            ),
-            ListTile(
-              dense: true,
-              leading:
-                  Icon(Icons.delete_outline, color: scheme.error),
-              title: Text(L10n.t('chat.deleteBoth'),
-                  style: TextStyle(color: scheme.error)),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _isGroup ? widget.engine.deleteGroupMessages(_convKey, [m.msgId]) : widget.engine.deleteMessages(_convKey, [m.msgId]);
-              },
-            ),
-            const SizedBox(height: 6),
+              }),
+            ],
+            _barBtn(const Icon(Icons.checklist, size: 15), () {
+              setState(() {
+                if (!_selecting) _toggleSelect(m.msgId);
+                _menuMsgId = null;
+              });
+            }),
+            _barBtn(Icon(Icons.delete_outline, size: 15, color: scheme.error),
+                () {
+              setState(() => _menuMsgId = null);
+              _isGroup
+                  ? widget.engine
+                      .deleteGroupMessages(_convKey, [m.msgId])
+                  : widget.engine.deleteMessages(_convKey, [m.msgId]);
+            }),
           ],
         ),
       ),
     );
   }
 
-  // ------------------------------------------------------------ 构建
+  Widget _barBtn(Widget child, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+        child: child,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -564,11 +530,16 @@ class _ChatPageState extends State<ChatPage> {
                     // 桌面宽屏限制聊天流宽度并居中。
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 860),
-                      child: ListView.builder(
-                        controller: _scroll,
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                        itemCount: _messages.length,
-                        itemBuilder: (ctx, i) => _buildItem(ctx, i, myId, engine),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _menuMsgId = null),
+                        behavior: HitTestBehavior.translucent,
+                        child: ListView.builder(
+                          controller: _scroll,
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                          itemCount: _messages.length,
+                          itemBuilder: (ctx, i) =>
+                              _buildItem(ctx, i, myId, engine),
+                        ),
                       ),
                     ),
                   ),
@@ -780,7 +751,7 @@ class _ChatPageState extends State<ChatPage> {
             const Duration(minutes: 30).inMilliseconds) {
       children.add(_TimeDivider(ms: m.createdAtMs));
     }
-    children.add(_MessageBubble(
+    final bubble = _MessageBubble(
       message: m,
       mine: mine,
       showSender: !grouped,
@@ -806,7 +777,21 @@ class _ChatPageState extends State<ChatPage> {
       onLongPress: (pos) {
         if (!_selecting) _showMessageMenu(m, pos);
       },
-    ));
+    );
+    // 工具条悬浮在消息上方(覆盖式,不挤占布局)。
+    children.add(_menuMsgId == m.msgId
+        ? Stack(
+            clipBehavior: Clip.none,
+            children: [
+              bubble,
+              Positioned(
+                top: -34,
+                left: 0,
+                child: _inlineToolbar(m),
+              ),
+            ],
+          )
+        : bubble);
     return Column(children: children);
   }
 

@@ -159,7 +159,7 @@ func (c *Client) handleFrame(message []byte) {
 	case "mailbox_push":
 		var push MailboxPushFrame
 		if json.Unmarshal(message, &push) == nil && push.To != "" {
-			_, err := c.mailbox.Push(push.To, c.deviceID, push.Data)
+			id, err := c.mailbox.Push(push.To, c.deviceID, push.Data)
 			switch {
 			case err == ErrBoxFull:
 				c.sendJSON(ErrorFrame{Type: "error",
@@ -169,7 +169,13 @@ func (c *Client) handleFrame(message []byte) {
 			case err != nil:
 				log.Printf("mailbox push: %v", err)
 			default:
-				if !c.hub.isOnline(push.To) {
+				if c.hub.isOnline(push.To) {
+					// 收件人在线:立即直投这一封(与稍后轮询重复,按 msg_id 幂等)。
+					c.hub.deliverJSON(push.To, MailboxFrame{
+						Type:  "mailbox",
+						Items: []MailboxItem{{ID: id, From: c.deviceID, Data: push.Data}},
+					})
+				} else {
 					// 接收方离线:代发推送唤醒(仅信号,无内容)。
 					c.push.NotifyDevice(push.To)
 				}

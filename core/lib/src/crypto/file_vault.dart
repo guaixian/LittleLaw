@@ -132,11 +132,25 @@ class FileVault {
   }
 
   /// 解密到缓存(同名复用,打开/查看用)。返回明文临时路径。
+  /// 原子写:先写 .tmp 再改名,中断不会留下半包缓存毒化后续复用。
   Future<String> decryptToCache(String encPath, String cacheKey) async {
     final safe = cacheKey.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     final out = File('${cacheDir.path}/$safe');
     if (await out.exists()) return out.path;
-    await decryptFile(encPath, out.path);
+    final tmp = File('${cacheDir.path}/$safe.tmp');
+    try {
+      await decryptFile(encPath, tmp.path);
+      await tmp.rename(out.path);
+    } catch (e) {
+      // 失败清理,下次重试;同时清掉可能损坏的旧缓存。
+      try {
+        await tmp.delete();
+      } catch (_) {}
+      try {
+        if (await out.exists()) await out.delete();
+      } catch (_) {}
+      rethrow;
+    }
     return out.path;
   }
 

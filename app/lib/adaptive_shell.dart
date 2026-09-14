@@ -165,15 +165,30 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
       child: Column(
         children: [
           const SizedBox(height: 14),
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              gradient: skin.gradient,
-              borderRadius: BorderRadius.circular(11),
+          // 顶部:我的头像(点击跳设置修改)。
+          GestureDetector(
+            onTap: () => setState(() => _tab = 2),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: Avatars.imageOf(engine) == null
+                    ? themeController.skin.gradient
+                    : null,
+                border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.5),
+                    width: 1.5),
+                image: Avatars.imageOf(engine) != null
+                    ? DecorationImage(
+                        image: Avatars.imageOf(engine)!, fit: BoxFit.cover)
+                    : null,
+              ),
+              child: Avatars.imageOf(engine) == null
+                  ? const Icon(Icons.person,
+                      color: Colors.white, size: 20)
+                  : null,
             ),
-            child:
-                const Icon(Icons.lock_rounded, color: Colors.white, size: 19),
           ),
           const SizedBox(height: 14),
           item(Icons.forum_outlined, L10n.t('nav.chats'), 0),

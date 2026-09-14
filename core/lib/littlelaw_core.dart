@@ -258,9 +258,10 @@ class LittleLawEngine {
       }
     });
 
-    // 设备从局域网消失(报文超时)→ 若已配对,立即断开并标记离线。
+    // 设备从局域网消失(报文超时)→ 标记离线。但若 TCP/WebRTC 会话仍活着
+    // (组播被路由器/系统限流很常见),不拆会话——避免在线状态反复横跳。
     engine._discoveryExpiredSub = discovery.expiredDevices.listen((deviceId) {
-      if (store.getPeer(deviceId) != null) {
+      if (store.getPeer(deviceId) != null && !sync.isOnline(deviceId)) {
         sync.forceDisconnect(deviceId);
       }
     });
