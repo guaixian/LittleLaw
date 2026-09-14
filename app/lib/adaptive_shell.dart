@@ -221,6 +221,15 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
       ));
     }
     entries.sort((a, b) => b.atMs.compareTo(a.atMs));
+    // 已配对但还没有会话的设备(刚配对完/清空过记录):常驻区块,点开即聊。
+    final pairedNoConv = <Peer>[];
+    for (final p in engine.peers) {
+      final s =
+          summaryByConv[Store.convIdFor(engine.identity.deviceId, p.deviceId)];
+      if (s == null) pairedNoConv.add(p);
+    }
+    // 渲染时过滤:已配对设备绝不出现在"附近"列表(配对瞬间即消失)。
+    _discovered.removeWhere((id, d) => engine.peerById(id) != null);
     final discovered = _discovered.values.toList();
 
     return Column(
@@ -254,14 +263,66 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
         Divider(height: 1, color: scheme.outlineVariant),
         Expanded(
           child: ListView.builder(
-            itemCount: entries.length + 1 + discovered.length,
+            itemCount: entries.length +
+                (pairedNoConv.isEmpty ? 0 : 1 + pairedNoConv.length) +
+                1 +
+                discovered.length,
             itemBuilder: (ctx, i) {
               if (i < entries.length) {
                 final e = entries[i];
                 final selected = _activeKey == e.key && _tab == 0;
                 return _convTile(e, selected, scheme);
               }
-              final j = i - entries.length;
+              var j = i - entries.length;
+              // 已配对设备(无会话)。
+              if (pairedNoConv.isNotEmpty && j < 1 + pairedNoConv.length) {
+                if (j == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+                    child: Text(L10n.t('devices.paired'),
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onSurfaceVariant)),
+                  );
+                }
+                final p = pairedNoConv[j - 1];
+                final pAvatar = Avatars.imageOf(engine, peerId: p.deviceId);
+                return ListTile(
+                  dense: true,
+                  onTap: () => setState(() {
+                    _tab = 0;
+                    _activeKey = p.deviceId;
+                  }),
+                  leading: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: scheme.secondaryContainer,
+                    backgroundImage: pAvatar,
+                    child: pAvatar == null
+                        ? Icon(
+                            p.platform == 'android' || p.platform == 'ios'
+                                ? Icons.smartphone
+                                : Icons.computer_outlined,
+                            size: 17,
+                            color: scheme.onSecondaryContainer)
+                        : null,
+                  ),
+                  title: Text(p.deviceName,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: Text(L10n.t('devices.tapToChat'),
+                      style: const TextStyle(fontSize: 12)),
+                  trailing: engine.isOnline(p.deviceId)
+                      ? Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                              shape: BoxShape.circle, color: Colors.green),
+                        )
+                      : null,
+                );
+              }
+              if (pairedNoConv.isNotEmpty) j -= 1 + pairedNoConv.length;
               if (j == 0) {
                 // 附近的设备:常驻区块(空态显示提示 + 手动刷新)。
                 return Padding(
@@ -315,7 +376,13 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
                   onPressed: () async {
                     await startPairFlow(d);
                     if (mounted) {
-                      setState(() => _discovered.remove(d.deviceId));
+                      setState(() {
+                        _discovered.remove(d.deviceId);
+                        // 配对成功直接进入会话。
+                        if (engine.peerById(d.deviceId) != null) {
+                          _activeKey = d.deviceId;
+                        }
+                      });
                     }
                   },
                   child: const Text('配对'),

@@ -294,14 +294,19 @@ class MainActivity : FlutterActivity() {
 
     override fun onStart() {
         super.onStart()
-        try {
-            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            multicastLock = wifi.createMulticastLock("littlelaw_discovery").apply {
-                setReferenceCounted(false)
-                acquire()
+        // 组播锁:进程生命周期内持续持有(发现层跨前后台保活;
+        // 重复 onStart 只补拿,不重复创建)。
+        if (multicastLock == null) {
+            try {
+                val wifi =
+                    applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                multicastLock = wifi.createMulticastLock("littlelaw_discovery").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            } catch (_: Exception) {
+                // 拿不到锁不致命:发现层还有广播 + 子网扫描兜底。
             }
-        } catch (_: Exception) {
-            // 拿不到锁不致命:发现层还有广播 + 子网扫描兜底。
         }
     }
 

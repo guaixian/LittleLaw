@@ -506,6 +506,8 @@ class _DevicesPageState extends State<DevicesPage> {
   Widget build(BuildContext context) {
     final engine = _engine!;
     final peers = engine.peers;
+    // 渲染时过滤:已配对设备不出现在附近列表(同意配对瞬间即消失)。
+    _discovered.removeWhere((id, d) => engine.peerById(id) != null);
     final discovered = _discovered.values.toList();
 
     return Center(

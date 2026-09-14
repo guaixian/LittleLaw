@@ -66,6 +66,7 @@ class DiscoveryService {
   Timer? _announceTimer;
   Timer? _scanTimer;
   Timer? _expiryTimer;
+  Timer? _netWatchTimer;
 
   final _devices = <String, DiscoveredDevice>{};
   final _replyCache = <String, int>{};
@@ -84,6 +85,22 @@ class DiscoveryService {
 
   bool _started = false;
   bool _rebinding = false;
+  String _bindSignature = '';
+
+  /// 当前 IPv4 网卡签名(WiFi 漫游/DHCP 变化 → 签名变化 → 重建 socket)。
+  Future<String> _currentSignature() async {
+    final addrs = <String>[];
+    try {
+      for (final iface in await NetworkInterface.list(
+          type: InternetAddressType.IPv4, includeLinkLocal: false)) {
+        for (final a in iface.addresses) {
+          if (!a.isLoopback) addrs.add(a.address);
+        }
+      }
+    } catch (_) {}
+    addrs.sort();
+    return addrs.join(',');
+  }
 
   Future<void> start() async {
     if (_started) return;
@@ -94,8 +111,20 @@ class DiscoveryService {
     _scanTimer = Timer.periodic(scanInterval, (_) => unawaited(_scanSubnet()));
     // 过期检测频率 = 宣告间隔,保证离线判定延迟稳定在 TTL±interval。
     _expiryTimer = Timer.periodic(announceInterval, (_) => _expireStale());
+    // 网卡签名监测:WiFi 漫游/换网后组播成员资格失效,必须重建 socket。
+    _netWatchTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      unawaited(_checkNetworkChanged());
+    });
 
     await _announce();
+  }
+
+  Future<void> _checkNetworkChanged() async {
+    if (!_started || _rebinding) return;
+    final sig = await _currentSignature();
+    if (sig != _bindSignature && _bindSignature.isNotEmpty) {
+      await _rebindSocket();
+    }
   }
 
   Future<void> _bindSocket() async {
@@ -119,6 +148,7 @@ class DiscoveryService {
       onError: (_) => unawaited(_rebindSocket()),
       onDone: () => unawaited(_rebindSocket()),
     );
+    _bindSignature = await _currentSignature();
   }
 
   Future<void> _rebindSocket() async {
@@ -155,6 +185,7 @@ class DiscoveryService {
     _announceTimer?.cancel();
     _scanTimer?.cancel();
     _expiryTimer?.cancel();
+    _netWatchTimer?.cancel();
     // 先停订阅再关 socket,防止在途报文写入已关闭的流。
     await _socketSub?.cancel();
     _socketSub = null;
