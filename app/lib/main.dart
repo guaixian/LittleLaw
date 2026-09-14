@@ -1333,7 +1333,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('关于 LittleLaw'),
-                subtitle: const Text('v2.2.0 · NoServer 架构 · 协议 v1'),
+                subtitle: const Text('v2.3.0 · NoServer 架构 · 协议 v1'),
                 onTap: () {},
               ),
             ],
