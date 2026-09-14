@@ -255,8 +255,41 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// peerId → {opSeq → msgId}:等对端游标 ACK 的发出消息。
   final _pendingAcks = <String, Map<int, String>>{};
 
+  /// peerId → {opSeq → 发送时刻 ms}:ACK 超时扫描用。
+  final _pendingSentAt = <String, Map<int, int>>{};
+
+  /// 无活链路时未 ACK 消息判"发送失败"的时限(此后重发按钮可用;
+  /// 对端稍后上线补 ACK 仍会自动转"已送达")。
+  static const _ackFailAfter = Duration(seconds: 45);
+
+  Timer? _ackSweepTimer;
+
   void _trackPending(String peerId, int seq, String msgId) {
     _pendingAcks.putIfAbsent(peerId, () => {})[seq] = msgId;
+    _pendingSentAt.putIfAbsent(peerId, () => {})[seq] =
+        DateTime.now().millisecondsSinceEpoch;
+    // 懒启动 ACK 超时扫描。
+    _ackSweepTimer ??= Timer.periodic(const Duration(seconds: 15), (_) {
+      _sweepPendingAcks();
+    });
+  }
+
+  /// 发送状态兜底:长时间无活链路且无 ACK 的消息 → 发送失败(可重发)。
+  void _sweepPendingAcks() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final entry in _pendingSentAt.entries) {
+      final peerId = entry.key;
+      if (_sinks[peerId] != null && _sinks[peerId]!.isNotEmpty) continue;
+      for (final seqEntry in entry.value.entries) {
+        if (now - seqEntry.value < _ackFailAfter.inMilliseconds) continue;
+        final msgId = _pendingAcks[peerId]?[seqEntry.key];
+        if (msgId == null) continue;
+        final m = store.getMessage(msgId);
+        if (m != null && m.sendState == Message.sendSending) {
+          markFailed(msgId);
+        }
+      }
+    }
   }
 
   /// 对端游标推进:seq ≤ cursor 的挂起消息 → 已送达。
@@ -271,6 +304,7 @@ class SyncEngine extends pbg.SyncServiceBase {
       }
       return false;
     });
+    _pendingSentAt[peerId]?.removeWhere((seq, _) => seq <= cursor);
     for (final id in done) {
       store.setSendState(id, Message.sendOk);
       _events.add(MessageStateChanged(id));
@@ -297,12 +331,19 @@ class SyncEngine extends pbg.SyncServiceBase {
       final other = (parts.length > 1 && parts.first == identity.deviceId)
           ? parts.last
           : parts.first;
-      _trackPending(other, 0, m.msgId); // seq=0 立即可被任意 ACK 清
+      // 用真实 op seq 重新入账(不再用 seq=0 特判:否则任意 Hello
+      // 都会把它误标"已送达",且多条重发共用 key 0 互相覆盖)。
+      final seq = store.appendOp(other, Op.typeMsg, proto.writeToBuffer());
+      proto.opSeq = Int64(seq);
+      _trackPending(other, seq, m.msgId);
       _push(other, pb.Envelope(id: const Uuid().v4(), chat: proto));
     }
   }
 
   /// 多设备镜像:把发给 [peerId] 的消息同步给"我的设备"(带 conv_peer 标记)。
+  /// 注意:每个目标必须用 deepCopy——共享同一 proto 对象会在 gRPC 异步
+  /// 序列化前被改 opSeq,导致对端收到【别的序号空间】的游标号,
+  /// 连续游标协议下造成永久空洞。
   void _mirrorChat(String peerId, Message msg) {
     final selfPeers = store.selfPeers();
     if (selfPeers.isEmpty) return;
@@ -311,9 +352,11 @@ class SyncEngine extends pbg.SyncServiceBase {
       ..sender = identity.deviceId;
     for (final self in selfPeers) {
       if (self.deviceId == peerId) continue; // 对方本身就是我的设备,无需镜像
-      proto.opSeq = Int64(store.appendOp(
-          self.deviceId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer()));
-      _push(self.deviceId, pb.Envelope(id: const Uuid().v4(), chat: proto));
+      final seq = store.appendOp(
+          self.deviceId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer());
+      _push(self.deviceId, pb.Envelope(
+          id: const Uuid().v4(),
+          chat: proto.deepCopy()..opSeq = Int64(seq)));
     }
   }
   /// 删除消息(Telegram 模式):本端硬删除 + 墓碑 op,对端在线即推、
@@ -456,12 +499,15 @@ class SyncEngine extends pbg.SyncServiceBase {
       avatarPng: avatar,
     );
     for (final target in targets) {
-      store.appendOp(target, Op.typeGroup, def.writeToBuffer());
-      _push(target, pb.Envelope(id: const Uuid().v4(), groupSync: def));
+      final seq = store.appendOp(target, Op.typeGroup, def.writeToBuffer());
+      _push(target, pb.Envelope(
+          id: const Uuid().v4(),
+          groupSync: def.deepCopy()..opSeq = Int64(seq)));
     }
   }
 
   void _applyGroupSync(String peerId, pb.GroupSync gs) {
+    _advanceCursor(peerId, gs.opSeq);
     if (gs.groupId.isEmpty) return;
     if (gs.dissolved) {
       // 解散:删除本地群与群消息。
@@ -549,10 +595,13 @@ class SyncEngine extends pbg.SyncServiceBase {
     final recipients = store.groupRecipients(groupId);
     var firstSeq = -1;
     for (final memberId in recipients) {
-      proto.opSeq = Int64(store.appendOp(
-          memberId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer()));
-      if (firstSeq < 0) firstSeq = proto.opSeq.toInt();
-      _push(memberId, pb.Envelope(id: const Uuid().v4(), chat: proto));
+      final seq = store.appendOp(
+          memberId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer());
+      if (firstSeq < 0) firstSeq = seq;
+      // deepCopy:见 _mirrorChat 注释(序号空间串号问题)。
+      _push(memberId, pb.Envelope(
+          id: const Uuid().v4(),
+          chat: proto.deepCopy()..opSeq = Int64(seq)));
     }
     // 发送状态:任一成员 ACK 即视为送达。
     if (firstSeq >= 0) {
@@ -564,9 +613,11 @@ class SyncEngine extends pbg.SyncServiceBase {
     // 镜像到我的设备(group_id 已带,接收端按群会话落地)。
     for (final self in store.selfPeers()) {
       if (recipients.contains(self.deviceId)) continue;
-      proto.opSeq = Int64(store.appendOp(
-          self.deviceId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer()));
-      _push(self.deviceId, pb.Envelope(id: const Uuid().v4(), chat: proto));
+      final seq = store.appendOp(
+          self.deviceId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer());
+      _push(self.deviceId, pb.Envelope(
+          id: const Uuid().v4(),
+          chat: proto.deepCopy()..opSeq = Int64(seq)));
     }
   }
 
@@ -622,8 +673,10 @@ class SyncEngine extends pbg.SyncServiceBase {
     final targets = isGroup ? store.groupRecipients(convKey) : [convKey];
     for (final t in targets) {
       if (t == identity.deviceId) continue;
-      store.appendOp(t, Op.typeReceipt, receipt.writeToBuffer());
-      _push(t, pb.Envelope(id: const Uuid().v4(), readReceipt: receipt));
+      final seq = store.appendOp(t, Op.typeReceipt, receipt.writeToBuffer());
+      _push(t, pb.Envelope(
+          id: const Uuid().v4(),
+          readReceipt: receipt.deepCopy()..opSeq = Int64(seq)));
     }
     // 本地点火:刷新会话未读徽标等 UI。
     _events.add(ReceiptsUpdated(convKey, unread));
@@ -631,6 +684,7 @@ class SyncEngine extends pbg.SyncServiceBase {
 
   /// 应用已读回执:仅命中"我(或我的设备)发出的消息"。
   void _applyReadReceipt(String peerId, pb.ReadReceipt rr) {
+    _advanceCursor(peerId, rr.opSeq);
     if (rr.msgIds.isEmpty) return;
     final authors = <String>{
       identity.deviceId,
@@ -669,12 +723,15 @@ class SyncEngine extends pbg.SyncServiceBase {
     };
     for (final t in targets) {
       if (t == identity.deviceId) continue;
-      store.appendOp(t, Op.typeReaction, update.writeToBuffer());
-      _push(t, pb.Envelope(id: const Uuid().v4(), reaction: update));
+      final seq = store.appendOp(t, Op.typeReaction, update.writeToBuffer());
+      _push(t, pb.Envelope(
+          id: const Uuid().v4(),
+          reaction: update.deepCopy()..opSeq = Int64(seq)));
     }
   }
 
   void _applyReaction(String peerId, pb.ReactionUpdate ru, {bool local = false}) {
+    _advanceCursor(peerId, ru.opSeq);
     if (ru.msgId.isEmpty || ru.deviceId.isEmpty) return;
     store.updateReaction(ru.msgId, ru.deviceId, ru.emoji);
     final convKey = ru.groupId.isNotEmpty
@@ -723,8 +780,11 @@ class SyncEngine extends pbg.SyncServiceBase {
     // 会话建立即互推个人资料(名称/头像),对端 UI 立即可用。
     final profile = profileProvider?.call();
     if (profile != null) {
-      _push(peerId,
-          pb.Envelope(id: const Uuid().v4(), profileUpdate: profile));
+      final seq =
+          store.appendOp(peerId, Op.typeProfile, profile.writeToBuffer());
+      _push(peerId, pb.Envelope(
+          id: const Uuid().v4(),
+          profileUpdate: profile.deepCopy()..opSeq = Int64(seq)));
     }
   }
 
@@ -743,9 +803,10 @@ class SyncEngine extends pbg.SyncServiceBase {
     if (profile == null) return;
     final bytes = profile.writeToBuffer();
     for (final p in store.allPeers()) {
-      store.appendOp(p.deviceId, Op.typeProfile, bytes);
-      _push(p.deviceId,
-          pb.Envelope(id: const Uuid().v4(), profileUpdate: profile));
+      final seq = store.appendOp(p.deviceId, Op.typeProfile, bytes);
+      _push(p.deviceId, pb.Envelope(
+          id: const Uuid().v4(),
+          profileUpdate: profile.deepCopy()..opSeq = Int64(seq)));
     }
   }
 
@@ -806,7 +867,6 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// 处理来自对端的信封(两个方向共用)。
   void _handleIncoming(Peer peer, pb.Envelope env) {
     final peerId = peer.deviceId;
-    _noteIncoming(peerId, env);
     switch (env.whichPayload()) {
       case pb.Envelope_Payload.hello:
         // 对端告知"我已应用到你的 op 第 N 条":补发 (N, +∞) 并压缩。
@@ -853,6 +913,7 @@ class SyncEngine extends pbg.SyncServiceBase {
       case pb.Envelope_Payload.profileUpdate:
         if (env.profileUpdate.deviceName.isNotEmpty ||
             env.profileUpdate.avatarPng.isNotEmpty) {
+          _advanceCursor(peerId, env.profileUpdate.opSeq);
           onProfileUpdate?.call(peerId, env.profileUpdate);
         }
       case pb.Envelope_Payload.linkAuth:
@@ -871,10 +932,14 @@ class SyncEngine extends pbg.SyncServiceBase {
   final _externalSubs =
       <StreamController<pb.Envelope>, StreamSubscription<pb.Envelope>>{};
 
-  /// 外部链路(WebRTC)活性跟踪:
-  /// 对端最后一次来信时间 / 是否见过对端心跳(兼容旧版判定)/ 心跳与看门狗。
-  final _lastRecvAt = <String, int>{};
-  final _extHeartbeatSeen = <String, bool>{};
+  /// 外部链路 sink → 对端 peerId(拆除时注销用)。
+  final _extPeerOf = <StreamController<pb.Envelope>, String>{};
+
+  /// 外部链路(WebRTC)活性跟踪:按【链路】记账,不是按 peer——
+  /// 这样 gRPC 流量不会给僵死的 WebRTC 链路"续命",看门狗也只拆除
+  /// 僵死的外部链路本身,不会误杀健康的 gRPC 链路。
+  final _extLastRecv = <StreamController<pb.Envelope>, int>{};
+  final _extHeartbeatSeen = <StreamController<pb.Envelope>, bool>{};
   Timer? _extHeartbeatTimer;
   Timer? _extWatchdogTimer;
 
@@ -883,61 +948,40 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// (前提仍是"对端发过心跳"才判定,旧版对端不受影响。)
   static const _extStaleMs = 120 * 1000;
 
-  void _noteIncoming(String peerId, pb.Envelope env) {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    _lastRecvAt[peerId] = now;
+  void _noteIncoming(StreamController<pb.Envelope> sink, pb.Envelope env) {
+    _extLastRecv[sink] = DateTime.now().millisecondsSinceEpoch;
     if (env.whichPayload() == pb.Envelope_Payload.heartbeat) {
-      _extHeartbeatSeen[peerId] = true;
+      _extHeartbeatSeen[sink] = true;
     }
   }
 
   void _startExtTimers() {
     _extHeartbeatTimer ??= Timer.periodic(heartbeatInterval, (_) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      _sinks.forEach((peerId, set) {
-        // 只有存在外部链路且对端也会发心跳时,才向其发送心跳/检测。
-        final ext = _externalSubs.keys
-            .any((s) => _sinks[peerId]?.contains(s) ?? false);
-        if (!ext) return;
-        _lastRecvAt.putIfAbsent(peerId, () => now);
-        for (final sink in set.toList()) {
-          if (!_externalSubs.containsKey(sink)) continue;
-          try {
-            sink.add(pb.Envelope(
-              id: const Uuid().v4(),
-              heartbeat:
-                  pb.Heartbeat(atMs: Int64(DateTime.now().millisecondsSinceEpoch)),
-            ));
-          } catch (_) {}
-        }
-      });
+      for (final sink in _externalSubs.keys.toList()) {
+        try {
+          sink.add(pb.Envelope(
+            id: const Uuid().v4(),
+            heartbeat: pb.Heartbeat(
+                atMs: Int64(DateTime.now().millisecondsSinceEpoch)),
+          ));
+        } catch (_) {}
+      }
     });
     _extWatchdogTimer ??= Timer.periodic(const Duration(seconds: 10), (_) {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final stalePeers = <String>[];
-      _sinks.forEach((peerId, set) {
-        final sawHeartbeat = _extHeartbeatSeen[peerId] ?? false;
-        if (!sawHeartbeat) return; // 旧版对端不发心跳:跳过判定,兼容
-        final last = _lastRecvAt[peerId];
-        if (last != null && now - last > _extStaleMs) {
-          stalePeers.add(peerId);
-        }
-      });
-      for (final peerId in stalePeers) {
-        // 判死:强制拆除外部链路(触发重连),UI 即时转离线。
-        final sinks = (_sinks[peerId] ?? const {}).toList();
-        var wasOnline = (_sinks[peerId]?.isNotEmpty) ?? false;
-        for (final sink in sinks) {
-          final sub = _externalSubs.remove(sink);
-          unawaited(sub?.cancel() ?? Future.value());
-          _unregisterSink(peerId, sink);
-          unawaited(sink.close());
-        }
-        _extHeartbeatSeen.remove(peerId);
-        _lastRecvAt.remove(peerId);
-        if (wasOnline) {
-          _events.add(PeerStatusChanged(peerId, false));
-        }
+      for (final sink in _externalSubs.keys.toList()) {
+        final sawHeartbeat = _extHeartbeatSeen[sink] ?? false;
+        if (!sawHeartbeat) continue; // 旧版对端不发心跳:跳过判定
+        final last = _extLastRecv[sink];
+        if (last == null || now - last <= _extStaleMs) continue;
+        // 判死:只拆除这条僵死的外部链路(触发其重连),其他链路不动。
+        _extHeartbeatSeen.remove(sink);
+        _extLastRecv.remove(sink);
+        final peerId = _extPeerOf.remove(sink);
+        final sub = _externalSubs.remove(sink);
+        unawaited(sub?.cancel() ?? Future.value());
+        if (peerId != null) _unregisterSink(peerId, sink);
+        unawaited(sink.close());
       }
     });
   }
@@ -947,7 +991,7 @@ class SyncEngine extends pbg.SyncServiceBase {
     _extHeartbeatTimer = null;
     _extWatchdogTimer?.cancel();
     _extWatchdogTimer = null;
-    _lastRecvAt.clear();
+    _extLastRecv.clear();
     _extHeartbeatSeen.clear();
   }
 
@@ -963,8 +1007,12 @@ class SyncEngine extends pbg.SyncServiceBase {
       throw StateError('attachExternalTransport: unknown peer $peerId');
     }
     final sink = StreamController<pb.Envelope>();
+    _extPeerOf[sink] = peerId;
     final sub = incoming.listen(
-      (env) => _handleIncoming(peer, env),
+      (env) {
+        _noteIncoming(sink, env);
+        _handleIncoming(peer, env);
+      },
       onError: (_) => detachExternalTransport(peerId, sink),
       onDone: () => detachExternalTransport(peerId, sink),
     );
@@ -979,6 +1027,9 @@ class SyncEngine extends pbg.SyncServiceBase {
   void detachExternalTransport(
       String peerId, StreamController<pb.Envelope> sink) {
     final sub = _externalSubs.remove(sink);
+    _extPeerOf.remove(sink);
+    _extLastRecv.remove(sink);
+    _extHeartbeatSeen.remove(sink);
     unawaited(sub?.cancel() ?? Future.value());
     _unregisterSink(peerId, sink);
     unawaited(sink.close());
@@ -999,16 +1050,20 @@ class SyncEngine extends pbg.SyncServiceBase {
         env = pb.Envelope(id: const Uuid().v4(), chat: chat);
       } else if (op.type == Op.typeGroup) {
         final gs = pb.GroupSync.fromBuffer(op.payload);
-        env = pb.Envelope(id: const Uuid().v4(), groupSync: gs);
+        env = pb.Envelope(
+            id: const Uuid().v4(), groupSync: gs..opSeq = Int64(op.seq));
       } else if (op.type == Op.typeProfile) {
         final pu = pb.ProfileUpdate.fromBuffer(op.payload);
-        env = pb.Envelope(id: const Uuid().v4(), profileUpdate: pu);
+        env = pb.Envelope(
+            id: const Uuid().v4(), profileUpdate: pu..opSeq = Int64(op.seq));
       } else if (op.type == Op.typeReaction) {
         final ru = pb.ReactionUpdate.fromBuffer(op.payload);
-        env = pb.Envelope(id: const Uuid().v4(), reaction: ru);
+        env = pb.Envelope(
+            id: const Uuid().v4(), reaction: ru..opSeq = Int64(op.seq));
       } else if (op.type == Op.typeReceipt) {
         final rr = pb.ReadReceipt.fromBuffer(op.payload);
-        env = pb.Envelope(id: const Uuid().v4(), readReceipt: rr);
+        env = pb.Envelope(
+            id: const Uuid().v4(), readReceipt: rr..opSeq = Int64(op.seq));
       } else {
         final del = pb.ChatDeleted.fromBuffer(op.payload);
         env = pb.Envelope(
@@ -1161,17 +1216,39 @@ class SyncEngine extends pbg.SyncServiceBase {
     }
   }
 
+  /// 本端已应用的对端 op 序号集合(用于连续前缀判定;重启后靠
+  /// myAppliedSeq 与对端重放重建,空洞会随重放补上)。
+  final _appliedOps = <String, Set<int>>{};
+
   /// 推进"我已应用对方 op"游标并回 ACK(供对端压缩 ops)。
+  /// 只对【连续前缀】推进:出现空洞(seq 跳号)时游标停在空洞前,
+  /// 对端重放会补上缺失 seq——否则跳号 ACK 会让对端把空洞前的
+  /// 消息一并压缩删除,造成永久丢信。
   void _advanceCursor(String peerId, Int64 opSeq) {
     if (opSeq == Int64.ZERO) return;
     final seq = opSeq.toInt();
     final peer = store.getPeer(peerId);
     if (peer == null || seq <= peer.myAppliedSeq) return;
-    store.setMyAppliedSeq(peerId, seq);
-    _push(peerId, pb.Envelope(
-      id: const Uuid().v4(),
-      syncAck: pb.SyncAck(appliedPeerSeq: Int64(seq)),
-    ));
+    final set = _appliedOps.putIfAbsent(peerId, () => <int>{});
+    set.add(seq);
+    var prefix = peer.myAppliedSeq;
+    while (set.contains(prefix + 1)) {
+      prefix++;
+    }
+    if (prefix > peer.myAppliedSeq) {
+      store.setMyAppliedSeq(peerId, prefix);
+      _push(peerId, pb.Envelope(
+        id: const Uuid().v4(),
+        syncAck: pb.SyncAck(appliedPeerSeq: Int64(prefix)),
+      ));
+    } else if (seq > prefix + 1) {
+      // 检测到空洞:主动发 Hello 请对端按当前游标重放,尽快补洞,
+      // 不必等下一次重连。
+      _push(peerId, pb.Envelope(
+        id: const Uuid().v4(),
+        hello: pb.Hello(appliedPeerSeq: Int64(prefix)),
+      ));
+    }
   }
 
   pb.ChatMessage _chatToProto(Message m, {int? opSeq}) => pb.ChatMessage(
@@ -1204,6 +1281,8 @@ class SyncEngine extends pbg.SyncServiceBase {
       _unregisterSink(peerId, sink);
 
   Future<void> dispose() async {
+    _ackSweepTimer?.cancel();
+    _ackSweepTimer = null;
     // 1) 关闭所有连出会话(客户端侧)。
     for (final s in _sessions.values) {
       s.dispose();
@@ -1215,7 +1294,7 @@ class SyncEngine extends pbg.SyncServiceBase {
       unawaited(sub.cancel());
     }
     _externalSubs.clear();
-    _stopExtTimers();
+    _extPeerOf.clear();
     _stopExtTimers();
     // 3) 关闭所有服务端入向 sink,让 channel handler 的 yield* 收尾,
     //    连接才能 finish,server.shutdown() 才不会挂起。

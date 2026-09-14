@@ -49,6 +49,8 @@ class FileVault {
 
   /// 明文路径 → 加密文件路径(默认同目录加 .llenc 后缀)。
   /// 完成后删除明文临时文件(除非 [keepPlain])。
+  /// 原子写:先写随机临时文件再改名,崩溃只留 .tmp,不会把半包密文
+  /// 留在最终路径被误当完整文件复用。
   Future<String> encryptFile(String plainPath,
       {String? outPath, bool keepPlain = false}) async {
     final src = File(plainPath);
@@ -56,29 +58,44 @@ class FileVault {
     await dst.parent.create(recursive: true);
     final nonce =
         Uint8List.fromList(List<int>.generate(12, (_) => _rand.nextInt(256)));
-    final sink = dst.openWrite();
-    final header = BytesBuilder();
-    header.add(_magic);
-    header.addByte(_version);
-    header.add(nonce);
-    sink.add(header.toBytes());
+    final tmp = File('${dst.path}.tmp${_rand.nextInt(1 << 30)}');
+    IOSink? sink;
+    try {
+      sink = tmp.openWrite();
+      final header = BytesBuilder();
+      header.add(_magic);
+      header.addByte(_version);
+      header.add(nonce);
+      sink.add(header.toBytes());
 
-    final input = src.openRead();
-    var index = 0;
-    await for (final chunkIn in input) {
-      final box = await _cipher.encrypt(
-        chunkIn,
-        secretKey: _key,
-        nonce: _chunkIv(nonce, index),
-      );
-      final lenBytes = ByteData(4)..setUint32(0, box.cipherText.length, Endian.little);
-      sink.add(lenBytes.buffer.asUint8List());
-      sink.add(box.cipherText);
-      sink.add(box.mac.bytes);
-      index++;
+      final input = src.openRead();
+      var index = 0;
+      await for (final chunkIn in input) {
+        final box = await _cipher.encrypt(
+          chunkIn,
+          secretKey: _key,
+          nonce: _chunkIv(nonce, index),
+        );
+        final lenBytes =
+            ByteData(4)..setUint32(0, box.cipherText.length, Endian.little);
+        sink.add(lenBytes.buffer.asUint8List());
+        sink.add(box.cipherText);
+        sink.add(box.mac.bytes);
+        index++;
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      await tmp.rename(dst.path);
+    } catch (e) {
+      try {
+        await sink?.close();
+      } catch (_) {}
+      try {
+        await tmp.delete();
+      } catch (_) {}
+      rethrow;
     }
-    await sink.flush();
-    await sink.close();
     if (!keepPlain) {
       await src.delete();
     }
@@ -89,6 +106,7 @@ class FileVault {
   Future<void> decryptFile(String encPath, String outPath) async {
     final src = File(encPath);
     final raf = await src.open();
+    IOSink? sink;
     try {
       final header = await raf.read(4);
       for (var i = 0; i < 4; i++) {
@@ -99,7 +117,7 @@ class FileVault {
       final ver = await raf.read(1);
       if (ver[0] != _version) throw StateError('unsupported vault version');
       final nonce = await raf.read(12);
-      final sink = File(outPath).openWrite();
+      sink = File(outPath).openWrite();
       var index = 0;
       while (true) {
         final lenBytes = await raf.read(4);
@@ -126,18 +144,43 @@ class FileVault {
       }
       await sink.flush();
       await sink.close();
+      sink = null;
     } finally {
+      if (sink != null) {
+        try {
+          await sink.close();
+        } catch (_) {}
+      }
       await raf.close();
     }
   }
 
   /// 解密到缓存(同名复用,打开/查看用)。返回明文临时路径。
-  /// 原子写:先写 .tmp 再改名,中断不会留下半包缓存毒化后续复用。
+  /// 原子写:先写随机 .tmp 再改名,中断不会留下半包缓存毒化后续复用;
+  /// 同 key 并发调用共享同一次解密,避免竞态交错写坏缓存。
   Future<String> decryptToCache(String encPath, String cacheKey) async {
     final safe = cacheKey.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     final out = File('${cacheDir.path}/$safe');
-    if (await out.exists()) return out.path;
-    final tmp = File('${cacheDir.path}/$safe.tmp');
+    final pending = _cacheInflight[safe];
+    if (pending != null) return pending;
+    final task = _decryptToCacheInner(encPath, out);
+    _cacheInflight[safe] = task;
+    try {
+      final r = await task;
+      return r;
+    } finally {
+      _cacheInflight.remove(safe);
+    }
+  }
+
+  Future<String> _decryptToCacheInner(String encPath, File out) async {
+    if (await out.exists()) {
+      _sweepCacheMaybe();
+      return out.path;
+    }
+    _sweepCacheMaybe();
+    final tmp = File(
+        '${cacheDir.path}/tmp${_rand.nextInt(1 << 30)}-${out.uri.pathSegments.last}');
     try {
       await decryptFile(encPath, tmp.path);
       await tmp.rename(out.path);
@@ -152,6 +195,28 @@ class FileVault {
       rethrow;
     }
     return out.path;
+  }
+
+  /// 同 key 在途解密任务(并发去重)。
+  final _cacheInflight = <String, Future<String>>{};
+
+  /// 缓存总量上限,超过即后台清空。
+  static const _cacheCapBytes = 512 * 1024 * 1024;
+  bool _cacheSweeping = false;
+
+  void _sweepCacheMaybe() {
+    if (_cacheSweeping) return;
+    _cacheSweeping = true;
+    Future<void>(() async {
+      try {
+        var total = 0;
+        await for (final f in cacheDir.list()) {
+          if (f is File) total += await f.length();
+        }
+        if (total > _cacheCapBytes) await clearCache();
+      } catch (_) {}
+      _cacheSweeping = false;
+    });
   }
 
   /// 清理解密缓存(退出时调用)。

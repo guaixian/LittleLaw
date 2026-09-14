@@ -443,13 +443,14 @@ const ProfileUpdate$json = {
   '2': [
     {'1': 'device_name', '3': 1, '4': 1, '5': 9, '10': 'deviceName'},
     {'1': 'avatar_png', '3': 2, '4': 1, '5': 12, '10': 'avatarPng'},
+    {'1': 'op_seq', '3': 3, '4': 1, '5': 3, '10': 'opSeq'},
   ],
 };
 
 /// Descriptor for `ProfileUpdate`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List profileUpdateDescriptor = $convert.base64Decode(
     'Cg1Qcm9maWxlVXBkYXRlEh8KC2RldmljZV9uYW1lGAEgASgJUgpkZXZpY2VOYW1lEh0KCmF2YX'
-    'Rhcl9wbmcYAiABKAxSCWF2YXRhclBuZw==');
+    'Rhcl9wbmcYAiABKAxSCWF2YXRhclBuZxIVCgZvcF9zZXEYAyABKANSBW9wU2Vx');
 
 @$core.Deprecated('Use readReceiptDescriptor instead')
 const ReadReceipt$json = {
@@ -459,6 +460,7 @@ const ReadReceipt$json = {
     {'1': 'conv_peer', '3': 2, '4': 1, '5': 9, '10': 'convPeer'},
     {'1': 'group_id', '3': 3, '4': 1, '5': 9, '10': 'groupId'},
     {'1': 'msg_ids', '3': 4, '4': 3, '5': 9, '10': 'msgIds'},
+    {'1': 'op_seq', '3': 5, '4': 1, '5': 3, '10': 'opSeq'},
   ],
 };
 
@@ -466,7 +468,7 @@ const ReadReceipt$json = {
 final $typed_data.Uint8List readReceiptDescriptor = $convert.base64Decode(
     'CgtSZWFkUmVjZWlwdBIWCgZyZWFkZXIYASABKAlSBnJlYWRlchIbCgljb252X3BlZXIYAiABKA'
     'lSCGNvbnZQZWVyEhkKCGdyb3VwX2lkGAMgASgJUgdncm91cElkEhcKB21zZ19pZHMYBCADKAlS'
-    'Bm1zZ0lkcw==');
+    'Bm1zZ0lkcxIVCgZvcF9zZXEYBSABKANSBW9wU2Vx');
 
 @$core.Deprecated('Use reactionUpdateDescriptor instead')
 const ReactionUpdate$json = {
@@ -477,6 +479,7 @@ const ReactionUpdate$json = {
     {'1': 'conv_peer', '3': 3, '4': 1, '5': 9, '10': 'convPeer'},
     {'1': 'device_id', '3': 4, '4': 1, '5': 9, '10': 'deviceId'},
     {'1': 'emoji', '3': 5, '4': 1, '5': 9, '10': 'emoji'},
+    {'1': 'op_seq', '3': 6, '4': 1, '5': 3, '10': 'opSeq'},
   ],
 };
 
@@ -484,7 +487,8 @@ const ReactionUpdate$json = {
 final $typed_data.Uint8List reactionUpdateDescriptor = $convert.base64Decode(
     'Cg5SZWFjdGlvblVwZGF0ZRIVCgZtc2dfaWQYASABKAlSBW1zZ0lkEhkKCGdyb3VwX2lkGAIgAS'
     'gJUgdncm91cElkEhsKCWNvbnZfcGVlchgDIAEoCVIIY29udlBlZXISGwoJZGV2aWNlX2lkGAQg'
-    'ASgJUghkZXZpY2VJZBIUCgVlbW9qaRgFIAEoCVIFZW1vamk=');
+    'ASgJUghkZXZpY2VJZBIUCgVlbW9qaRgFIAEoCVIFZW1vamkSFQoGb3Bfc2VxGAYgASgDUgVvcF'
+    'NlcQ==');
 
 @$core.Deprecated('Use groupSyncDescriptor instead')
 const GroupSync$json = {
@@ -496,6 +500,7 @@ const GroupSync$json = {
     {'1': 'created_at_ms', '3': 4, '4': 1, '5': 3, '10': 'createdAtMs'},
     {'1': 'dissolved', '3': 5, '4': 1, '5': 8, '10': 'dissolved'},
     {'1': 'avatar_png', '3': 6, '4': 1, '5': 12, '10': 'avatarPng'},
+    {'1': 'op_seq', '3': 7, '4': 1, '5': 3, '10': 'opSeq'},
   ],
 };
 
@@ -504,7 +509,7 @@ final $typed_data.Uint8List groupSyncDescriptor = $convert.base64Decode(
     'CglHcm91cFN5bmMSGQoIZ3JvdXBfaWQYASABKAlSB2dyb3VwSWQSEgoEbmFtZRgCIAEoCVIEbm'
     'FtZRIdCgptZW1iZXJfaWRzGAMgAygJUgltZW1iZXJJZHMSIgoNY3JlYXRlZF9hdF9tcxgEIAEo'
     'A1ILY3JlYXRlZEF0TXMSHAoJZGlzc29sdmVkGAUgASgIUglkaXNzb2x2ZWQSHQoKYXZhdGFyX3'
-    'BuZxgGIAEoDFIJYXZhdGFyUG5n');
+    'BuZxgGIAEoDFIJYXZhdGFyUG5nEhUKBm9wX3NlcRgHIAEoA1IFb3BTZXE=');
 
 @$core.Deprecated('Use fileDataAckDescriptor instead')
 const FileDataAck$json = {
@@ -848,3 +853,130 @@ final $typed_data.Uint8List fileResultDescriptor = $convert.base64Decode(
     'CgpGaWxlUmVzdWx0Eg4KAm9rGAEgASgIUgJvaxIlCg5yZWNlaXZlZF9ieXRlcxgCIAEoA1INcm'
     'VjZWl2ZWRCeXRlcxIbCglzaGEyNTZfb2sYAyABKAhSCHNoYTI1Nk9rEhgKB21lc3NhZ2UYBCAB'
     'KAlSB21lc3NhZ2U=');
+
+const $core.Map<$core.String, $core.dynamic> PairingServiceBase$json = {
+  '1': 'PairingService',
+  '2': [
+    {
+      '1': 'RequestPair',
+      '2': '.littlelaw.v1.PairRequest',
+      '3': '.littlelaw.v1.PairResponse'
+    },
+    {
+      '1': 'PairWithTap',
+      '2': '.littlelaw.v1.TapPairRequest',
+      '3': '.littlelaw.v1.TapPairResponse'
+    },
+    {
+      '1': 'DeliverAnswer',
+      '2': '.littlelaw.v1.DeliverAnswerRequest',
+      '3': '.littlelaw.v1.DeliverAnswerResponse'
+    },
+    {
+      '1': 'Unpair',
+      '2': '.littlelaw.v1.UnpairRequest',
+      '3': '.littlelaw.v1.UnpairResponse'
+    },
+  ],
+};
+
+@$core.Deprecated('Use pairingServiceDescriptor instead')
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    PairingServiceBase$messageJson = {
+  '.littlelaw.v1.PairRequest': PairRequest$json,
+  '.littlelaw.v1.DeviceInfo': DeviceInfo$json,
+  '.littlelaw.v1.PairResponse': PairResponse$json,
+  '.littlelaw.v1.TapPairRequest': TapPairRequest$json,
+  '.littlelaw.v1.TapPairResponse': TapPairResponse$json,
+  '.littlelaw.v1.DeliverAnswerRequest': DeliverAnswerRequest$json,
+  '.littlelaw.v1.DeliverAnswerResponse': DeliverAnswerResponse$json,
+  '.littlelaw.v1.UnpairRequest': UnpairRequest$json,
+  '.littlelaw.v1.UnpairResponse': UnpairResponse$json,
+};
+
+/// Descriptor for `PairingService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
+final $typed_data.Uint8List pairingServiceDescriptor = $convert.base64Decode(
+    'Cg5QYWlyaW5nU2VydmljZRJECgtSZXF1ZXN0UGFpchIZLmxpdHRsZWxhdy52MS5QYWlyUmVxdW'
+    'VzdBoaLmxpdHRsZWxhdy52MS5QYWlyUmVzcG9uc2USSgoLUGFpcldpdGhUYXASHC5saXR0bGVs'
+    'YXcudjEuVGFwUGFpclJlcXVlc3QaHS5saXR0bGVsYXcudjEuVGFwUGFpclJlc3BvbnNlElgKDU'
+    'RlbGl2ZXJBbnN3ZXISIi5saXR0bGVsYXcudjEuRGVsaXZlckFuc3dlclJlcXVlc3QaIy5saXR0'
+    'bGVsYXcudjEuRGVsaXZlckFuc3dlclJlc3BvbnNlEkMKBlVucGFpchIbLmxpdHRsZWxhdy52MS'
+    '5VbnBhaXJSZXF1ZXN0GhwubGl0dGxlbGF3LnYxLlVucGFpclJlc3BvbnNl');
+
+const $core.Map<$core.String, $core.dynamic> SyncServiceBase$json = {
+  '1': 'SyncService',
+  '2': [
+    {
+      '1': 'Channel',
+      '2': '.littlelaw.v1.Envelope',
+      '3': '.littlelaw.v1.Envelope',
+      '5': true,
+      '6': true
+    },
+  ],
+};
+
+@$core.Deprecated('Use syncServiceDescriptor instead')
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    SyncServiceBase$messageJson = {
+  '.littlelaw.v1.Envelope': Envelope$json,
+  '.littlelaw.v1.Hello': Hello$json,
+  '.littlelaw.v1.ChatMessage': ChatMessage$json,
+  '.littlelaw.v1.ChatDeleted': ChatDeleted$json,
+  '.littlelaw.v1.ClipboardSync': ClipboardSync$json,
+  '.littlelaw.v1.FileOffer': FileOffer$json,
+  '.littlelaw.v1.FileAnswer': FileAnswer$json,
+  '.littlelaw.v1.FileCancel': FileCancel$json,
+  '.littlelaw.v1.SyncAck': SyncAck$json,
+  '.littlelaw.v1.Heartbeat': Heartbeat$json,
+  '.littlelaw.v1.LinkAuth': LinkAuth$json,
+  '.littlelaw.v1.FileFetchRequest': FileFetchRequest$json,
+  '.littlelaw.v1.FileData': FileData$json,
+  '.littlelaw.v1.FileDataAck': FileDataAck$json,
+  '.littlelaw.v1.CallOffer': CallOffer$json,
+  '.littlelaw.v1.CallAnswer': CallAnswer$json,
+  '.littlelaw.v1.CallCandidate': CallCandidate$json,
+  '.littlelaw.v1.CallEnd': CallEnd$json,
+  '.littlelaw.v1.GroupSync': GroupSync$json,
+  '.littlelaw.v1.ReadReceipt': ReadReceipt$json,
+  '.littlelaw.v1.ReactionUpdate': ReactionUpdate$json,
+  '.littlelaw.v1.ProfileUpdate': ProfileUpdate$json,
+};
+
+/// Descriptor for `SyncService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
+final $typed_data.Uint8List syncServiceDescriptor = $convert.base64Decode(
+    'CgtTeW5jU2VydmljZRI9CgdDaGFubmVsEhYubGl0dGxlbGF3LnYxLkVudmVsb3BlGhYubGl0dG'
+    'xlbGF3LnYxLkVudmVsb3BlKAEwAQ==');
+
+const $core.Map<$core.String, $core.dynamic> TransferServiceBase$json = {
+  '1': 'TransferService',
+  '2': [
+    {
+      '1': 'SendFile',
+      '2': '.littlelaw.v1.FileChunk',
+      '3': '.littlelaw.v1.FileResult',
+      '5': true
+    },
+    {
+      '1': 'FetchFile',
+      '2': '.littlelaw.v1.FetchRequest',
+      '3': '.littlelaw.v1.FileChunk',
+      '6': true
+    },
+  ],
+};
+
+@$core.Deprecated('Use transferServiceDescriptor instead')
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    TransferServiceBase$messageJson = {
+  '.littlelaw.v1.FileChunk': FileChunk$json,
+  '.littlelaw.v1.FileHead': FileHead$json,
+  '.littlelaw.v1.FileResult': FileResult$json,
+  '.littlelaw.v1.FetchRequest': FetchRequest$json,
+};
+
+/// Descriptor for `TransferService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
+final $typed_data.Uint8List transferServiceDescriptor = $convert.base64Decode(
+    'Cg9UcmFuc2ZlclNlcnZpY2USPwoIU2VuZEZpbGUSFy5saXR0bGVsYXcudjEuRmlsZUNodW5rGh'
+    'gubGl0dGxlbGF3LnYxLkZpbGVSZXN1bHQoARJCCglGZXRjaEZpbGUSGi5saXR0bGVsYXcudjEu'
+    'RmV0Y2hSZXF1ZXN0GhcubGl0dGxlbGF3LnYxLkZpbGVDaHVuazAB');

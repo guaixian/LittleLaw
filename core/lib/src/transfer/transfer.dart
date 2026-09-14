@@ -253,7 +253,10 @@ class TransferManager extends pbg.TransferServiceBase {
 
   Future<String> _finalPathFor(Message msg) async {
     final sub = _folderFor(msg);
-    final path = '$inboxDir/$sub/${msg.fileName ?? msg.fileId}';
+    // 文件名/fileId 来自对端,必须净化:拒绝分隔符与相对路径片段,
+    // 否则恶意文件名可写出收件目录(路径穿越)。
+    final safeName = _sanitize(msg.fileName ?? msg.fileId ?? 'file');
+    final path = '$inboxDir/$sub/$safeName';
     // 子目录可能首次出现,确保存在(rename 目标父目录缺失会抛错)。
     await File(path).parent.create(recursive: true);
     return _dedupePath(path);
@@ -312,7 +315,7 @@ class TransferManager extends pbg.TransferServiceBase {
       return _doReceiveViaEnvelope(peerId, msg);
     }
 
-    final partPath = '$inboxDir/$fileId.part';
+    final partPath = '$inboxDir/${_sanitize(fileId)}.part';
     final finalPath = await _finalPathFor(msg);
     final partFile = File(partPath);
     var offset = await partFile.exists() ? await partFile.length() : 0;
@@ -397,7 +400,7 @@ class TransferManager extends pbg.TransferServiceBase {
   /// 经任意已建立的信封链路(WebRTC 等)拉取文件。断点续传同 gRPC 路径。
   Future<void> _doReceiveViaEnvelope(String peerId, Message msg) async {
     final fileId = msg.fileId!;
-    final partPath = '$inboxDir/$fileId.part';
+    final partPath = '$inboxDir/${_sanitize(fileId)}.part';
     final finalPath = await _finalPathFor(msg);
     final partFile = File(partPath);
     final offset = await partFile.exists() ? await partFile.length() : 0;
@@ -669,15 +672,18 @@ class TransferManager extends pbg.TransferServiceBase {
     return acc.events.single.toString();
   }
 
-  /// 同名文件自动加 (1)(2) 后缀。
+  /// 同名文件自动加 (1)(2) 后缀。vault 模式下最终落盘是 path.llenc,
+  /// 因此对"明文路径与密文路径"都要查重,避免同名文件静默互相覆盖。
   Future<String> _dedupePath(String path) async {
-    if (!await File(path).exists()) return path;
+    Future<bool> exists(String p) async =>
+        await File(p).exists() || await File('$p${FileVault.encExt}').exists();
+    if (!await exists(path)) return path;
     final dot = path.lastIndexOf('.');
     final stem = dot > 0 ? path.substring(0, dot) : path;
     final ext = dot > 0 ? path.substring(dot) : '';
     for (var i = 1;; i++) {
       final candidate = '$stem ($i)$ext';
-      if (!await File(candidate).exists()) return candidate;
+      if (!await exists(candidate)) return candidate;
     }
   }
 

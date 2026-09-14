@@ -35,7 +35,7 @@ class Auth {
       throw GrpcError.unauthenticated('missing auth metadata');
     }
     final peer = store.getPeer(deviceId);
-    if (peer == null || peer.token != token) {
+    if (peer == null || !constantTimeEquals(peer.token, token)) {
       throw GrpcError.unauthenticated('invalid token');
     }
     return peer;

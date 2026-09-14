@@ -277,6 +277,36 @@ class Store {
     try {
       _db.execute('ALTER TABLE ops ADD COLUMN created_ms INTEGER NOT NULL DEFAULT 0');
     } catch (_) {}
+    // per-peer 序号列:连续游标协议要求每个对端的 op 序号独立连续,
+    // 全局 rowid 会让对端只看到全局序号的子集(天然空洞)。
+    var needPseqBackfill = false;
+    try {
+      _db.execute('ALTER TABLE ops ADD COLUMN pseq INTEGER NOT NULL DEFAULT 0');
+      needPseqBackfill = true;
+    } catch (_) {}
+    if (needPseqBackfill) {
+      final rows = _db.select('SELECT seq, peer_id FROM ops ORDER BY seq ASC');
+      final counters = <String, int>{};
+      for (final r in rows) {
+        final pid = r['peer_id'] as String;
+        final n = (counters[pid] ?? 0) + 1;
+        counters[pid] = n;
+        _db.execute('UPDATE ops SET pseq=? WHERE seq=?', [n, r['seq']]);
+      }
+    }
+    // per-peer 单调序号计数器:压缩删除旧行后 MAX(pseq)+1 会复用已确认
+    // 序号(离线消息拿到小号,对端游标已越过 → 永不重放),必须持久单调。
+    try {
+      _db.execute(
+          'ALTER TABLE peers ADD COLUMN next_op_seq INTEGER NOT NULL DEFAULT 0');
+      // 初始化为各 peer 当前最大 pseq(老库回填)。
+      final rows = _db.select(
+          'SELECT peer_id, MAX(pseq) AS m FROM ops GROUP BY peer_id');
+      for (final r in rows) {
+        _db.execute('UPDATE peers SET next_op_seq=? WHERE device_id=?',
+            [r['m'] as int, r['peer_id']]);
+      }
+    } catch (_) {}
   }
 
   /// 1:1 会话 ID:两个设备 ID 排序拼接,两端计算结果一致。
@@ -593,13 +623,19 @@ class Store {
 
   // ------------------------------------------------------------------- ops
 
-  /// 追加 op,返回分配的 seq。调用方需在同一逻辑单元内先写业务表。
+  /// 追加 op,返回分配的【per-peer 单调】seq。调用方需在同一逻辑单元内先写业务表。
+  /// 序号来自 peers.next_op_seq(持久自增),与 ops 行是否已被压缩无关。
   int appendOp(String peerId, String type, Uint8List payload) {
     _db.execute(
-        'INSERT INTO ops (peer_id, type, payload, created_ms) VALUES (?,?,?,?)',
-        [peerId, type, payload, DateTime.now().millisecondsSinceEpoch]);
-    final rows = _db.select('SELECT last_insert_rowid() AS s');
-    return rows.first['s'] as int;
+        'UPDATE peers SET next_op_seq = next_op_seq + 1 WHERE device_id=?',
+        [peerId]);
+    final seq = (_db.select(
+            'SELECT next_op_seq AS n FROM peers WHERE device_id=?', [peerId])
+        .first['n']) as int;
+    _db.execute(
+        'INSERT INTO ops (peer_id, pseq, type, payload, created_ms) VALUES (?,?,?,?,?)',
+        [peerId, seq, type, payload, DateTime.now().millisecondsSinceEpoch]);
+    return seq;
   }
 
   /// 对端游标之后的全部 op(重连补发)。删除类 op 超过 [deleteOpTtl] 未送达即跳过
@@ -609,7 +645,7 @@ class Store {
   List<Op> opsSince(String peerId, int seq) {
     final now = DateTime.now().millisecondsSinceEpoch;
     final rows = _db.select(
-        'SELECT * FROM ops WHERE peer_id=? AND seq>? ORDER BY seq ASC',
+        'SELECT * FROM ops WHERE peer_id=? AND pseq>? ORDER BY pseq ASC',
         [peerId, seq]);
     final out = <Op>[];
     for (final r in rows) {
@@ -621,7 +657,7 @@ class Store {
         continue; // 过期墓碑:不再补发
       }
       out.add(Op(
-        seq: r['seq'] as int,
+        seq: r['pseq'] as int,
         peerId: r['peer_id'] as String,
         type: type,
         payload: r['payload'] as Uint8List,
@@ -632,7 +668,8 @@ class Store {
 
   /// 对端已 ACK 的 op 压缩清理。
   void compactOps(String peerId, int ackedSeq) {
-    _db.execute('DELETE FROM ops WHERE peer_id=? AND seq<=?', [peerId, ackedSeq]);
+    _db.execute('DELETE FROM ops WHERE peer_id=? AND pseq<=?',
+        [peerId, ackedSeq]);
   }
 
   // ---------------------------------------------------------------- groups
@@ -684,12 +721,16 @@ class Store {
   /// [keepMessages] 退群自删时保留历史。
   void deleteGroup(String groupId, {bool keepMessages = false}) {
     final convId = Group.convIdOf(groupId);
+    // 群 op 按【成员 deviceId】入账(不是 groupId),先取成员再删表。
+    final members = groupRecipients(groupId);
     _db.execute('DELETE FROM groups WHERE group_id=?', [groupId]);
     _db.execute('DELETE FROM group_members WHERE group_id=?', [groupId]);
     if (!keepMessages) {
       _db.execute('DELETE FROM messages WHERE conv_id=?', [convId]);
       _db.execute('DELETE FROM conversations WHERE conv_id=?', [convId]);
-      _db.execute('DELETE FROM ops WHERE peer_id=?', [groupId]);
+      for (final m in members) {
+        _db.execute('DELETE FROM ops WHERE peer_id=?', [m]);
+      }
     }
   }
 

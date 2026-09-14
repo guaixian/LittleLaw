@@ -16,6 +16,7 @@ type Client struct {
 	push     *PushService
 	conn     *websocket.Conn
 	send     chan []byte
+	done     chan struct{} // 关闭 = 本连接已被踢/废弃,禁止再发送
 	deviceID string
 	nonce    string
 	endpoint string
@@ -42,6 +43,7 @@ func newClient(h *Hub, mb *Mailbox, push *PushService, conn *websocket.Conn, lim
 		push:    push,
 		conn:    conn,
 		send:    make(chan []byte, 64),
+		done:    make(chan struct{}),
 		limiter: limiter,
 	}
 }
@@ -54,6 +56,9 @@ func (c *Client) sendJSON(v any) bool {
 	select {
 	case c.send <- data:
 		return true
+	case <-c.done:
+		// 连接已废弃:不再发送(往已关闭通道发送会 panic 整个进程)。
+		return false
 	default:
 		// 发送缓冲满:慢消费者,断开。
 		c.kick()
@@ -62,8 +67,10 @@ func (c *Client) sendJSON(v any) bool {
 }
 
 func (c *Client) kick() {
+	// 只关闭 done 信号,不关闭 send 通道:在途的 hub 广播/直投还可能
+	// 调用 sendJSON,关闭通道会导致 send-on-closed-channel panic。
 	c.closeOnce.Do(func() {
-		close(c.send)
+		close(c.done)
 	})
 }
 
@@ -217,16 +224,15 @@ func (c *Client) writePump() {
 	}()
 	for {
 		select {
-		case message, ok := <-c.send:
+		case message := <-c.send:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage,
-					websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				return
-			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
+		case <-c.done:
+			_ = c.conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			return
 		case <-ticker.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
