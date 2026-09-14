@@ -307,7 +307,7 @@ class _ChatPageState extends State<ChatPage> {
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       decoration: BoxDecoration(
         color: scheme.surface,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
@@ -832,7 +832,7 @@ class _ChatPageState extends State<ChatPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
           color: scheme.errorContainer.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(color: scheme.error.withValues(alpha: 0.4)),
         ),
         child: Row(
@@ -867,7 +867,7 @@ class _ChatPageState extends State<ChatPage> {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: BoxDecoration(
             color: scheme.surface,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(color: scheme.outlineVariant),
             boxShadow: [
               BoxShadow(
@@ -914,14 +914,19 @@ class _ChatPageState extends State<ChatPage> {
                 onPressed: _toggleRecord,
               ),
               const SizedBox(width: 2),
-              CircleAvatar(
-                radius: 19,
-                backgroundColor: scheme.primary,
-                child: IconButton(
-                  tooltip: L10n.t('chat.send'),
-                  icon: const Icon(Icons.send_rounded,
-                      color: Colors.white, size: 17),
-                  onPressed: _sendText,
+              // 发送:小圆角矩形按钮(与输入框风格一致)。
+              Material(
+                color: scheme.primary,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  onTap: _sendText,
+                  borderRadius: BorderRadius.circular(10),
+                  child: const Padding(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    child: Icon(Icons.send_rounded,
+                        color: Colors.white, size: 17),
+                  ),
                 ),
               ),
             ],
