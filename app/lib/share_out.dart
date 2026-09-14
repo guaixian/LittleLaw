@@ -46,6 +46,31 @@ class ShareOut {
     showToast('该平台暂不支持分享文件到其他应用', type: ToastType.info);
   }
 
+  /// 批量分享文件:Windows 一次写入剪贴板(CF_HDROP 多文件),
+  /// 可直接粘贴到微信/文件夹;Android 逐个拉起分享面板。
+  static Future<void> shareFiles(List<String> paths) async {
+    if (paths.isEmpty) return;
+    if (paths.length == 1) return shareFile(paths.first);
+    if (Platform.isWindows) {
+      try {
+        final mode = await _channel
+            .invokeMethod<String>('shareFiles', {'paths': paths});
+        if (mode == 'clipboard') {
+          showToast('已复制 ${paths.length} 个文件,可粘贴到微信/QQ/飞书或文件夹',
+              type: ToastType.success);
+        } else {
+          showToast('分享失败', type: ToastType.error);
+        }
+      } catch (_) {
+        showToast('分享失败', type: ToastType.error);
+      }
+      return;
+    }
+    for (final p in paths) {
+      await shareFile(p);
+    }
+  }
+
   /// 读剪贴板图片(Windows 截图/复制图片后粘贴发送用)。
   /// 返回 PNG 临时文件路径;无图片返回 null。
   static Future<String?> clipboardImagePath() async {
@@ -54,6 +79,18 @@ class ShareOut {
       return await _channel.invokeMethod<String>('readClipboardImage');
     } catch (_) {
       return null;
+    }
+  }
+
+  /// 读剪贴板文件列表(Windows 资源管理器复制的文件,CF_HDROP)。
+  static Future<List<String>> clipboardFiles() async {
+    if (!Platform.isWindows) return const [];
+    try {
+      final list =
+          await _channel.invokeMethod<List<dynamic>>('readClipboardFiles');
+      return (list ?? const []).cast<String>();
+    } catch (_) {
+      return const [];
     }
   }
 

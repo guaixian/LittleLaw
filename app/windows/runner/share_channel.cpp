@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -68,6 +69,36 @@ bool CopyFileToClipboard(HWND hwnd, const std::wstring& path) {
       reinterpret_cast<wchar_t*>(reinterpret_cast<BYTE*>(df) + dropBytes);
   memcpy(dst, path.c_str(), (path.size() + 1) * sizeof(wchar_t));
   dst[path.size() + 1] = L'\0';
+  GlobalUnlock(h);
+  const bool ok = SetClipboardData(kCfHdrop, h) != nullptr;
+  CloseClipboard();
+  return ok;
+}
+
+// 多文件写入剪贴板(CF_HDROP,双 NUL 结尾的多路径列表)。
+bool CopyFilesToClipboard(HWND hwnd, const std::vector<std::wstring>& paths) {
+  if (paths.empty()) return false;
+  if (!OpenClipboard(hwnd)) return false;
+  EmptyClipboard();
+  const size_t dropBytes = sizeof(DropFilesLayout);
+  size_t chars = 2;  // 列表末尾双 NUL
+  for (const auto& p : paths) chars += p.size() + 1;
+  HGLOBAL h = GlobalAlloc(GHND, dropBytes + chars * sizeof(wchar_t));
+  if (!h) {
+    CloseClipboard();
+    return false;
+  }
+  auto* df = static_cast<DropFilesLayout*>(GlobalLock(h));
+  memset(df, 0, dropBytes);
+  df->pFiles = sizeof(DropFilesLayout);
+  df->fWide = TRUE;
+  auto* dst =
+      reinterpret_cast<wchar_t*>(reinterpret_cast<BYTE*>(df) + dropBytes);
+  for (const auto& p : paths) {
+    memcpy(dst, p.c_str(), (p.size() + 1) * sizeof(wchar_t));
+    dst += p.size() + 1;
+  }
+  *dst = L'\0';
   GlobalUnlock(h);
   const bool ok = SetClipboardData(kCfHdrop, h) != nullptr;
   CloseClipboard();
@@ -214,9 +245,32 @@ std::string ToUtf8(const std::wstring& w) {
       WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
   std::string out(len > 0 ? len - 1 : 0, '\0');
   if (len > 0) {
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, out.data(), len, nullptr,
-                        nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, out.data(), len,
+                        nullptr, nullptr);
   }
+  return out;
+}
+
+// 剪贴板文件列表(CF_HDROP):资源管理器"复制"的文件。
+// 返回路径数组(UTF-8),无文件返回空数组。
+std::vector<std::string> ClipboardFiles(HWND hwnd) {
+  std::vector<std::string> out;
+  if (!IsClipboardFormatAvailable(kCfHdrop)) return out;
+  if (!OpenClipboard(hwnd)) return out;
+  HGLOBAL h = GetClipboardData(kCfHdrop);
+  if (h) {
+    const auto* df = static_cast<const DropFilesLayout*>(GlobalLock(h));
+    if (df && df->fWide) {
+      const wchar_t* p = reinterpret_cast<const wchar_t*>(
+          reinterpret_cast<const BYTE*>(df) + df->pFiles);
+      while (*p) {
+        out.push_back(ToUtf8(p));
+        p += wcslen(p) + 1;
+      }
+    }
+    GlobalUnlock(h);
+  }
+  CloseClipboard();
   return out;
 }
 
@@ -277,6 +331,29 @@ void FlutterWindow::RegisterShareChannel() {
                 CopyFileToClipboard(hwnd, FromUtf8(path));
             result->Success(EncodableValue(ok ? "clipboard" : "failed"));
           }
+        } else if (method == "shareFiles") {
+          // 批量分享:多文件一次写入剪贴板(CF_HDROP)。
+          const auto* map = ArgMap(args);
+          std::vector<std::wstring> paths;
+          if (map) {
+            auto it = map->find(EncodableValue(std::string("paths")));
+            if (it != map->end() &&
+                std::holds_alternative<flutter::EncodableList>(it->second)) {
+              for (const auto& v :
+                   std::get<flutter::EncodableList>(it->second)) {
+                if (std::holds_alternative<std::string>(v)) {
+                  paths.push_back(
+                      FromUtf8(std::get<std::string>(v)));
+                }
+              }
+            }
+          }
+          if (paths.empty()) {
+            result->Error("ARG", "paths required");
+          } else {
+            const bool ok = CopyFilesToClipboard(hwnd, paths);
+            result->Success(EncodableValue(ok ? "clipboard" : "failed"));
+          }
         } else if (method == "readClipboardImage") {
           const std::string path = ClipboardImageToFile(hwnd);
           if (path.empty()) {
@@ -284,6 +361,12 @@ void FlutterWindow::RegisterShareChannel() {
           } else {
             result->Success(EncodableValue(path));
           }
+        } else if (method == "readClipboardFiles") {
+          flutter::EncodableList list;
+          for (const auto& p : ClipboardFiles(hwnd)) {
+            list.push_back(EncodableValue(p));
+          }
+          result->Success(EncodableValue(list));
         } else {
           result->NotImplemented();
         }

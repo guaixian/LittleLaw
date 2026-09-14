@@ -8,10 +8,11 @@ import 'i18n.dart';
 import 'toast.dart';
 
 /// 转发选择器:把内容(text / 文件,可多个)发到某个会话(1:1 或群)。
-/// 供消息长按"转发"与系统分享入口共用(微信/飞书式会话选择面板)。
+/// 供消息长按"转发"、批量转发与系统分享入口共用。
 Future<void> showForwardPicker(
   LittleLawEngine engine, {
   String? text,
+  List<String>? texts,
   List<String>? filePaths,
   String? filePath,
 }) {
@@ -20,6 +21,10 @@ Future<void> showForwardPicker(
   final files = [
     ?filePath,
     ...?filePaths,
+  ];
+  final allTexts = [
+    ?text,
+    ...?texts,
   ];
   return showModalBottomSheet<void>(
     context: ctx,
@@ -33,7 +38,9 @@ Future<void> showForwardPicker(
       initialChildSize: 0.6,
       builder: (_, scrollController) => _ForwardSheet(
         engine: engine,
-        text: text,
+        text: allTexts.isEmpty ? null : allTexts.first,
+        extraTexts:
+            allTexts.length > 1 ? allTexts.sublist(1) : const <String>[],
         filePaths: files.isEmpty ? null : files,
         controller: scrollController,
         onClose: () => Navigator.of(sheetCtx).pop(),
@@ -48,6 +55,7 @@ class _ForwardSheet extends StatelessWidget {
     required this.controller,
     required this.onClose,
     this.text,
+    this.extraTexts = const [],
     this.filePaths,
   });
 
@@ -55,6 +63,7 @@ class _ForwardSheet extends StatelessWidget {
   final ScrollController controller;
   final VoidCallback onClose;
   final String? text;
+  final List<String> extraTexts; // 批量转发:后续文本(逐条发送)
   final List<String>? filePaths;
 
   Future<void> _sendTo(String target, {required bool isGroup}) async {
@@ -64,6 +73,11 @@ class _ForwardSheet extends StatelessWidget {
         isGroup
             ? await engine.sendGroupText(target, text!)
             : await engine.sendText(target, text!);
+      }
+      for (final t in extraTexts) {
+        isGroup
+            ? await engine.sendGroupText(target, t)
+            : await engine.sendText(target, t);
       }
       for (final path in filePaths ?? const <String>[]) {
         isGroup

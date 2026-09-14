@@ -20,6 +20,7 @@ import 'i18n.dart';
 import 'remote_pair_page.dart';
 import 'share_out.dart';
 import 'theme/app_theme.dart';
+import 'toast.dart';
 
 /// 聊天页:气泡消息、长按/右键菜单、多选删除、图片/视频内联显示、
 /// 时间分隔条、空状态、输入栏附件面板。
@@ -192,20 +193,6 @@ class _ChatPageState extends State<ChatPage> {
     _forceScrollToBottom();
   }
 
-  Future<void> _sendClipboard() async {
-    final data = await Clipboard.getData('text/plain');
-    final text = data?.text;
-    if (!mounted) return;
-    if (text == null || text.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('剪贴板为空')));
-      return;
-    }
-    _isGroup ? widget.engine.sendGroupClipboard(_convKey, text) : widget.engine.sendClipboard(_convKey, text);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('剪贴板已发送给对方')));
-  }
-
   Future<void> _pickAndSend(FileType type) async {
     final files = await FilePicker.pickFiles(type: type);
     if (files.isEmpty) return;
@@ -292,24 +279,117 @@ class _ChatPageState extends State<ChatPage> {
 
   // ------------------------------------------------------------ 粘贴发送
 
-  /// 粘贴板内容进会话:剪贴板有图片(Windows 截图等)直接发图,
-  /// 否则有文本则填入输入框。
-  Future<void> _pasteAndSend() async {
+  /// Ctrl+V(输入框内或页面任意处):
+  /// 1) 剪贴板是图片(截图/复制图片)→ 直接发送图片;
+  /// 2) 剪贴板是文件(资源管理器复制)→ 弹窗确认 发送/取消;
+  /// 3) 纯文本 → 按原生行为插入输入框。
+  Future<void> _handlePasteKey() async {
+    // 图片优先(复制图片时通常同时带文本,以图片为准)。
     final imagePath = await ShareOut.clipboardImagePath();
-    if (imagePath != null) {
+    if (imagePath != null && File(imagePath).existsSync()) {
       await _sendPath(imagePath);
+      _forceScrollToBottom();
       return;
     }
-    final data = await Clipboard.getData('text/plain');
+    final files = await ShareOut.clipboardFiles();
+    final exist = files.where((p) => File(p).existsSync()).toList();
+    if (exist.isNotEmpty) {
+      await _confirmPasteFiles(exist);
+      return;
+    }
+    // 纯文本:模拟原生粘贴(插入光标处)。
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text;
     if (text != null && text.isNotEmpty) {
-      setState(() => _input.text = text);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(L10n.t('chat.pasteEmpty'))));
-      }
+      final sel = _input.selection;
+      setState(() {
+        if (sel.isValid && sel.start >= 0) {
+          _input.text = _input.text.replaceRange(
+              sel.start, sel.end, text);
+          _input.selection = TextSelection.collapsed(
+              offset: sel.start + text.length);
+        } else {
+          _input.text += text;
+        }
+      });
     }
+  }
+
+  /// 粘贴文件确认弹窗:列出文件名,发送/取消。
+  Future<void> _confirmPasteFiles(List<String> paths) async {
+    final scheme = Theme.of(context).colorScheme;
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        scrollable: true,
+        title: Text(L10n.t('chat.pasteFilesTitle', {'n': paths.length})),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final p in paths.take(8))
+                Row(
+                  children: [
+                    Icon(Icons.insert_drive_file_outlined,
+                        size: 18, color: scheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        p.split(Platform.pathSeparator).last,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              if (paths.length > 8)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('… ${paths.length - 8} more',
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant)),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dctx, false),
+              child: Text(L10n.t('common.cancel'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: Text(L10n.t('chat.send'))),
+        ],
+      ),
+    );
+    if (send == true) {
+      for (final p in paths) {
+        await _sendPath(p);
+      }
+      _forceScrollToBottom();
+    }
+  }
+
+  static bool get _isDesktopPlatform =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  /// 桌面输入框右键菜单:粘贴(统一入口)。
+  Widget _pasteContextMenu(BuildContext ctx, EditableTextState editable) {
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: editable.contextMenuAnchors,
+      buttonItems: [
+        ContextMenuButtonItem(
+          label: L10n.t('common.paste'),
+          onPressed: () {
+            ContextMenuController.removeAny();
+            unawaited(_handlePasteKey());
+          },
+        ),
+      ],
+    );
   }
 
   void _showAttachSheet() {
@@ -317,56 +397,54 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   /// 输入栏上方内联展开的附件面板(不弹窗,直接撑开)。
+  /// 剪贴板/粘贴发送已移到 Ctrl+V / 长按输入框,面板只保留发送入口。
   Widget _attachPanel() {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _attachAction(Icons.photo_outlined, L10n.t('chat.image'),
-                () => _pickAndSend(FileType.image)),
-            _attachAction(Icons.videocam_outlined, L10n.t('chat.video'),
-                () => _pickAndSend(FileType.video)),
-            _attachAction(Icons.attach_file_outlined, L10n.t('chat.file'),
-                () => _pickAndSend(FileType.any)),
-            _attachAction(Icons.content_paste_go_outlined,
-                L10n.t('chat.clipboard'), _sendClipboard),
-            _attachAction(Icons.content_paste_outlined,
-                L10n.t('chat.pasteSend'), _pasteAndSend),
-          ],
-        ),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+      child: Row(
+        children: [
+          _attachAction(Icons.photo_outlined, L10n.t('chat.image'),
+              () => _pickAndSend(FileType.image)),
+          _attachAction(Icons.videocam_outlined, L10n.t('chat.video'),
+              () => _pickAndSend(FileType.video)),
+          _attachAction(Icons.attach_file_outlined, L10n.t('chat.file'),
+              () => _pickAndSend(FileType.any)),
+        ],
       ),
     );
   }
 
   Widget _attachAction(IconData icon, String label, VoidCallback onTap) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: () {
-        setState(() => _attachOpen = false);
-        onTap();
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 26, color: scheme.primary),
-            const SizedBox(height: 5),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 12, color: scheme.onSurfaceVariant)),
-          ],
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() => _attachOpen = false);
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer.withValues(alpha: 0.45),
+                  shape: BoxShape.circle,
+                ),
+                child:
+                    Icon(icon, size: 26, color: scheme.onSecondaryContainer),
+              ),
+              const SizedBox(height: 6),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 12, color: scheme.onSurfaceVariant)),
+            ],
+          ),
         ),
       ),
     );
@@ -603,16 +681,22 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   /// 桌面内联工具条(占位在消息上方,可正常点击):
-  /// 第一排表情,第二排功能按钮。
+  /// 第一排表情,第二排紧凑功能按钮。无底色卡片 + 轻投影。
   Widget _inlineToolbar(Message m) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 2, left: 4, right: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      padding: const EdgeInsets.fromLTRB(8, 3, 8, 4),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.outlineVariant),
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.14),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -623,7 +707,7 @@ class _ChatPageState extends State<ChatPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (final emoji in _quickReactions)
-                _barBtn(Text(emoji, style: const TextStyle(fontSize: 18)),
+                _barBtn(Text(emoji, style: const TextStyle(fontSize: 17)),
                     () {
                   _react(m, emoji);
                   setState(() => _menuMsgId = null);
@@ -737,31 +821,39 @@ class _ChatPageState extends State<ChatPage> {
           Expanded(
             child: _messages.isEmpty
                 ? _emptyState()
-                : Center(
-                    // 桌面宽屏限制聊天流宽度并居中。
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 860),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _menuMsgId = null),
-                        behavior: HitTestBehavior.translucent,
-                        child: ListView.builder(
-                          controller: _scroll,
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                          itemCount: _messages.length,
-                          itemBuilder: (ctx, i) =>
-                              _buildItem(ctx, i, myId, engine),
-                        ),
-                      ),
+                : GestureDetector(
+                    onTap: () => setState(() => _menuMsgId = null),
+                    behavior: HitTestBehavior.translucent,
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                      itemCount: _messages.length,
+                      itemBuilder: (ctx, i) =>
+                          _buildItem(ctx, i, myId, engine),
                     ),
                   ),
           ),
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 860),
-              child: SafeArea(top: false, child: _inputBar()),
-            ),
-          ),
+          SafeArea(top: false, child: _inputBar()),
         ],
+      ),
+    );
+    // Ctrl+V:输入框内粘贴(PasteTextIntent 覆盖)与页面级快捷键都走同一入口
+    // (图片→直接发送;文件→确认弹窗;文本→插入输入框)。
+    final withPaste = CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true):
+            () => unawaited(_handlePasteKey()),
+      },
+      child: Actions(
+        actions: {
+          PasteTextIntent: CallbackAction<PasteTextIntent>(
+            onInvoke: (_) {
+              unawaited(_handlePasteKey());
+              return null;
+            },
+          ),
+        },
+        child: page,
       ),
     );
     // 桌面:拖拽文件进窗口直接发送。
@@ -776,7 +868,7 @@ class _ChatPageState extends State<ChatPage> {
       onDragUpdated: (_) {},
       child: Stack(
         children: [
-          page,
+          withPaste,
           if (_dragOver)
             Positioned.fill(
               child: IgnorePointer(
@@ -926,12 +1018,76 @@ class _ChatPageState extends State<ChatPage> {
           onPressed: _copySelection,
         ),
         IconButton(
+          tooltip: L10n.t('chat.forward'),
+          icon: const Icon(Icons.shortcut),
+          onPressed: _forwardSelection,
+        ),
+        IconButton(
+          tooltip: L10n.t('chat.share'),
+          icon: const Icon(Icons.ios_share),
+          onPressed: _shareSelection,
+        ),
+        IconButton(
           tooltip: '删除(双端)',
           icon: const Icon(Icons.delete_outline),
           onPressed: _deleteSelection,
         ),
       ],
     );
+  }
+
+  /// 批量转发:文本按条转发,文件(已完成)按解密路径转发。
+  Future<void> _forwardSelection() async {
+    final sel = _messages
+        .where((m) => _selection.contains(m.msgId))
+        .toList();
+    final texts = <String>[];
+    final files = <String>[];
+    for (final m in sel) {
+      if (m.kind == Message.kindText) {
+        texts.add(m.text);
+      } else if (Message.hasFilePayload(m.kind) &&
+          m.fileState == Message.fileStateDone) {
+        final plain = await _plainPathOf(m);
+        if (plain != null) files.add(plain);
+      }
+    }
+    if (texts.isEmpty && files.isEmpty) {
+      showToast('所选消息没有可转发的内容', type: ToastType.info);
+      return;
+    }
+    setState(() => _selection.clear());
+    await showForwardPicker(widget.engine,
+        texts: texts, filePaths: files.isEmpty ? null : files);
+  }
+
+  /// 批量分享:文本合并复制/分享,多文件一次写入剪贴板(Windows)。
+  Future<void> _shareSelection() async {
+    final sel = _messages
+        .where((m) => _selection.contains(m.msgId))
+        .toList();
+    final texts = <String>[];
+    final files = <String>[];
+    for (final m in sel) {
+      if (m.kind == Message.kindText) {
+        texts.add(m.text);
+      } else if (Message.hasFilePayload(m.kind) &&
+          m.fileState == Message.fileStateDone) {
+        final plain = await _plainPathOf(m);
+        if (plain != null) files.add(plain);
+      }
+    }
+    if (files.isNotEmpty) {
+      await ShareOut.shareFiles(files);
+      showToast('已复制 ${files.length} 个文件到剪贴板', type: ToastType.success);
+      return;
+    }
+    if (texts.isNotEmpty) {
+      await ShareOut.shareText(texts.join('\n'));
+      showToast('已分享 ${texts.length} 条文本', type: ToastType.success);
+      return;
+    }
+    showToast('所选消息没有可分享的内容', type: ToastType.info);
   }
 
   Widget _emptyState() {
@@ -1071,16 +1227,9 @@ class _ChatPageState extends State<ChatPage> {
           margin: const EdgeInsets.fromLTRB(10, 4, 10, 10),
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: scheme.outlineVariant),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            // 方角、无外边线:只靠浅色填充与页面区分。
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.zero,
           ),
           child: Row(
             children: [
@@ -1106,6 +1255,10 @@ class _ChatPageState extends State<ChatPage> {
                     isDense: true,
                     filled: false,
                   ),
+                  // 桌面右键菜单只留"粘贴"(走统一入口:图/文件/文本)。
+                  contextMenuBuilder: _isDesktopPlatform
+                      ? (ctx, editable) => _pasteContextMenu(ctx, editable)
+                      : null,
                   onTap: () {
                     if (_attachOpen) setState(() => _attachOpen = false);
                   },
