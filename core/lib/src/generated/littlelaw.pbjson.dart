@@ -154,13 +154,40 @@ const PairRequest$json = {
       '6': '.littlelaw.v1.DeviceInfo',
       '10': 'requester'
     },
+    {'1': 'request_id', '3': 2, '4': 1, '5': 9, '10': 'requestId'},
   ],
 };
 
 /// Descriptor for `PairRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List pairRequestDescriptor = $convert.base64Decode(
     'CgtQYWlyUmVxdWVzdBI2CglyZXF1ZXN0ZXIYASABKAsyGC5saXR0bGVsYXcudjEuRGV2aWNlSW'
-    '5mb1IJcmVxdWVzdGVy');
+    '5mb1IJcmVxdWVzdGVyEh0KCnJlcXVlc3RfaWQYAiABKAlSCXJlcXVlc3RJZA==');
+
+@$core.Deprecated('Use pairCancelRequestDescriptor instead')
+const PairCancelRequest$json = {
+  '1': 'PairCancelRequest',
+  '2': [
+    {'1': 'request_id', '3': 1, '4': 1, '5': 9, '10': 'requestId'},
+    {'1': 'requester_id', '3': 2, '4': 1, '5': 9, '10': 'requesterId'},
+  ],
+};
+
+/// Descriptor for `PairCancelRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pairCancelRequestDescriptor = $convert.base64Decode(
+    'ChFQYWlyQ2FuY2VsUmVxdWVzdBIdCgpyZXF1ZXN0X2lkGAEgASgJUglyZXF1ZXN0SWQSIQoMcm'
+    'VxdWVzdGVyX2lkGAIgASgJUgtyZXF1ZXN0ZXJJZA==');
+
+@$core.Deprecated('Use pairCancelResponseDescriptor instead')
+const PairCancelResponse$json = {
+  '1': 'PairCancelResponse',
+  '2': [
+    {'1': 'ok', '3': 1, '4': 1, '5': 8, '10': 'ok'},
+  ],
+};
+
+/// Descriptor for `PairCancelResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pairCancelResponseDescriptor =
+    $convert.base64Decode('ChJQYWlyQ2FuY2VsUmVzcG9uc2USDgoCb2sYASABKAhSAm9r');
 
 @$core.Deprecated('Use pairResponseDescriptor instead')
 const PairResponse$json = {
@@ -853,130 +880,3 @@ final $typed_data.Uint8List fileResultDescriptor = $convert.base64Decode(
     'CgpGaWxlUmVzdWx0Eg4KAm9rGAEgASgIUgJvaxIlCg5yZWNlaXZlZF9ieXRlcxgCIAEoA1INcm'
     'VjZWl2ZWRCeXRlcxIbCglzaGEyNTZfb2sYAyABKAhSCHNoYTI1Nk9rEhgKB21lc3NhZ2UYBCAB'
     'KAlSB21lc3NhZ2U=');
-
-const $core.Map<$core.String, $core.dynamic> PairingServiceBase$json = {
-  '1': 'PairingService',
-  '2': [
-    {
-      '1': 'RequestPair',
-      '2': '.littlelaw.v1.PairRequest',
-      '3': '.littlelaw.v1.PairResponse'
-    },
-    {
-      '1': 'PairWithTap',
-      '2': '.littlelaw.v1.TapPairRequest',
-      '3': '.littlelaw.v1.TapPairResponse'
-    },
-    {
-      '1': 'DeliverAnswer',
-      '2': '.littlelaw.v1.DeliverAnswerRequest',
-      '3': '.littlelaw.v1.DeliverAnswerResponse'
-    },
-    {
-      '1': 'Unpair',
-      '2': '.littlelaw.v1.UnpairRequest',
-      '3': '.littlelaw.v1.UnpairResponse'
-    },
-  ],
-};
-
-@$core.Deprecated('Use pairingServiceDescriptor instead')
-const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
-    PairingServiceBase$messageJson = {
-  '.littlelaw.v1.PairRequest': PairRequest$json,
-  '.littlelaw.v1.DeviceInfo': DeviceInfo$json,
-  '.littlelaw.v1.PairResponse': PairResponse$json,
-  '.littlelaw.v1.TapPairRequest': TapPairRequest$json,
-  '.littlelaw.v1.TapPairResponse': TapPairResponse$json,
-  '.littlelaw.v1.DeliverAnswerRequest': DeliverAnswerRequest$json,
-  '.littlelaw.v1.DeliverAnswerResponse': DeliverAnswerResponse$json,
-  '.littlelaw.v1.UnpairRequest': UnpairRequest$json,
-  '.littlelaw.v1.UnpairResponse': UnpairResponse$json,
-};
-
-/// Descriptor for `PairingService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
-final $typed_data.Uint8List pairingServiceDescriptor = $convert.base64Decode(
-    'Cg5QYWlyaW5nU2VydmljZRJECgtSZXF1ZXN0UGFpchIZLmxpdHRsZWxhdy52MS5QYWlyUmVxdW'
-    'VzdBoaLmxpdHRsZWxhdy52MS5QYWlyUmVzcG9uc2USSgoLUGFpcldpdGhUYXASHC5saXR0bGVs'
-    'YXcudjEuVGFwUGFpclJlcXVlc3QaHS5saXR0bGVsYXcudjEuVGFwUGFpclJlc3BvbnNlElgKDU'
-    'RlbGl2ZXJBbnN3ZXISIi5saXR0bGVsYXcudjEuRGVsaXZlckFuc3dlclJlcXVlc3QaIy5saXR0'
-    'bGVsYXcudjEuRGVsaXZlckFuc3dlclJlc3BvbnNlEkMKBlVucGFpchIbLmxpdHRsZWxhdy52MS'
-    '5VbnBhaXJSZXF1ZXN0GhwubGl0dGxlbGF3LnYxLlVucGFpclJlc3BvbnNl');
-
-const $core.Map<$core.String, $core.dynamic> SyncServiceBase$json = {
-  '1': 'SyncService',
-  '2': [
-    {
-      '1': 'Channel',
-      '2': '.littlelaw.v1.Envelope',
-      '3': '.littlelaw.v1.Envelope',
-      '5': true,
-      '6': true
-    },
-  ],
-};
-
-@$core.Deprecated('Use syncServiceDescriptor instead')
-const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
-    SyncServiceBase$messageJson = {
-  '.littlelaw.v1.Envelope': Envelope$json,
-  '.littlelaw.v1.Hello': Hello$json,
-  '.littlelaw.v1.ChatMessage': ChatMessage$json,
-  '.littlelaw.v1.ChatDeleted': ChatDeleted$json,
-  '.littlelaw.v1.ClipboardSync': ClipboardSync$json,
-  '.littlelaw.v1.FileOffer': FileOffer$json,
-  '.littlelaw.v1.FileAnswer': FileAnswer$json,
-  '.littlelaw.v1.FileCancel': FileCancel$json,
-  '.littlelaw.v1.SyncAck': SyncAck$json,
-  '.littlelaw.v1.Heartbeat': Heartbeat$json,
-  '.littlelaw.v1.LinkAuth': LinkAuth$json,
-  '.littlelaw.v1.FileFetchRequest': FileFetchRequest$json,
-  '.littlelaw.v1.FileData': FileData$json,
-  '.littlelaw.v1.FileDataAck': FileDataAck$json,
-  '.littlelaw.v1.CallOffer': CallOffer$json,
-  '.littlelaw.v1.CallAnswer': CallAnswer$json,
-  '.littlelaw.v1.CallCandidate': CallCandidate$json,
-  '.littlelaw.v1.CallEnd': CallEnd$json,
-  '.littlelaw.v1.GroupSync': GroupSync$json,
-  '.littlelaw.v1.ReadReceipt': ReadReceipt$json,
-  '.littlelaw.v1.ReactionUpdate': ReactionUpdate$json,
-  '.littlelaw.v1.ProfileUpdate': ProfileUpdate$json,
-};
-
-/// Descriptor for `SyncService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
-final $typed_data.Uint8List syncServiceDescriptor = $convert.base64Decode(
-    'CgtTeW5jU2VydmljZRI9CgdDaGFubmVsEhYubGl0dGxlbGF3LnYxLkVudmVsb3BlGhYubGl0dG'
-    'xlbGF3LnYxLkVudmVsb3BlKAEwAQ==');
-
-const $core.Map<$core.String, $core.dynamic> TransferServiceBase$json = {
-  '1': 'TransferService',
-  '2': [
-    {
-      '1': 'SendFile',
-      '2': '.littlelaw.v1.FileChunk',
-      '3': '.littlelaw.v1.FileResult',
-      '5': true
-    },
-    {
-      '1': 'FetchFile',
-      '2': '.littlelaw.v1.FetchRequest',
-      '3': '.littlelaw.v1.FileChunk',
-      '6': true
-    },
-  ],
-};
-
-@$core.Deprecated('Use transferServiceDescriptor instead')
-const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
-    TransferServiceBase$messageJson = {
-  '.littlelaw.v1.FileChunk': FileChunk$json,
-  '.littlelaw.v1.FileHead': FileHead$json,
-  '.littlelaw.v1.FileResult': FileResult$json,
-  '.littlelaw.v1.FetchRequest': FetchRequest$json,
-};
-
-/// Descriptor for `TransferService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
-final $typed_data.Uint8List transferServiceDescriptor = $convert.base64Decode(
-    'Cg9UcmFuc2ZlclNlcnZpY2USPwoIU2VuZEZpbGUSFy5saXR0bGVsYXcudjEuRmlsZUNodW5rGh'
-    'gubGl0dGxlbGF3LnYxLkZpbGVSZXN1bHQoARJCCglGZXRjaEZpbGUSGi5saXR0bGVsYXcudjEu'
-    'RmV0Y2hSZXF1ZXN0GhcubGl0dGxlbGF3LnYxLkZpbGVDaHVuazAB');

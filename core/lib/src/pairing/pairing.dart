@@ -121,7 +121,9 @@ class PairingManager extends pbg.PairingServiceBase {
     final pin = Identity.computeSasPin(
         identity.fingerprint, requester.certFingerprint);
     final event = PairRequestEvent(
-      requestId: const Uuid().v4(),
+      requestId: request.requestId.isNotEmpty
+          ? request.requestId
+          : const Uuid().v4(),
       requester: requester,
       pin: pin,
       host: _remoteHost(call),
@@ -160,6 +162,20 @@ class PairingManager extends pbg.PairingServiceBase {
       responder: myInfo,
       sessionToken: token.codeUnits,
     );
+  }
+
+  /// 发起方取消挂起的配对请求:完成对应的 completer 为拒绝。
+  /// 未认证接口:只允许取消 requester_id 与挂起请求发起方一致的条目。
+  @override
+  Future<pb.PairCancelResponse> cancelPair(
+      ServiceCall call, pb.PairCancelRequest request) async {
+    final event = _pending[request.requestId];
+    if (event != null && event.requester.deviceId == request.requesterId) {
+      _pending.remove(request.requestId);
+      event.completer.complete(false);
+      return pb.PairCancelResponse(ok: true);
+    }
+    return pb.PairCancelResponse(ok: false);
   }
 
   @override
@@ -211,17 +227,28 @@ class PairingManager extends pbg.PairingServiceBase {
     event?.completer.complete(accept);
   }
 
+  /// 挂起的主动配对请求:目标设备 ID → (requestId, host, port)。
+  final _outgoingRequests = <String, (String, String, int)>{};
+
   /// 主动向发现的设备发起配对。
   ///
   /// 返回的 PIN 需展示给用户,与对端弹窗中的 PIN 核对一致后再让对方点同意。
-  Future<PairResult> requestPairWith(String host, int port) async {
+  Future<PairResult> requestPairWith(String host, int port,
+      {String? targetDeviceId}) async {
+    final requestId = const Uuid().v4();
+    if (targetDeviceId != null && targetDeviceId.isNotEmpty) {
+      _outgoingRequests[targetDeviceId] = (requestId, host, port);
+    }
     final ch = PeerChannel.connect(host: host, port: port);
     try {
       final client = pbg.PairingServiceClient(ch.channel);
       final resp = await client.requestPair(
-        pb.PairRequest(requester: myInfo),
+        pb.PairRequest(requester: myInfo, requestId: requestId),
         options: CallOptions(timeout: requestTimeout + const Duration(seconds: 5)),
       );
+      if (targetDeviceId != null) {
+        _outgoingRequests.remove(targetDeviceId);
+      }
       final observed = ch.observedFingerprint;
       if (!resp.accepted) {
         return PairResult.rejected(resp.message);
@@ -249,6 +276,27 @@ class PairingManager extends pbg.PairingServiceBase {
         token: token,
         observedFingerprint: observed,
       );
+    } finally {
+      await ch.shutdown();
+    }
+  }
+
+  /// 主动方取消挂起的配对请求:通知对端完成挂起的 requestPair 为拒绝。
+  /// 若对端恰好刚同意(竞态),调用方应再执行一次解绑回滚。
+  Future<void> cancelOutgoingRequest(String targetDeviceId) async {
+    final active = _outgoingRequests.remove(targetDeviceId);
+    if (active == null) return;
+    final (requestId, host, port) = active;
+    final ch = PeerChannel.connect(host: host, port: port);
+    try {
+      final client = pbg.PairingServiceClient(ch.channel);
+      await client.cancelPair(
+        pb.PairCancelRequest(
+            requestId: requestId, requesterId: identity.deviceId),
+        options: CallOptions(timeout: const Duration(seconds: 8)),
+      );
+    } catch (_) {
+      // 对方不可达:其挂起请求最终会随超时作废,双方都不会入账。
     } finally {
       await ch.shutdown();
     }

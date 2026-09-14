@@ -341,6 +341,8 @@ Future<void> startPairFlow(DiscoveredDevice device,
         TextButton(
           onPressed: () {
             cancelled = true;
+            // 真正取消:B 侧挂起的请求被置为拒绝,双方都不入账。
+            unawaited(engine.cancelPairRequest(device.info.deviceId));
             Navigator.of(dctx).pop();
           },
           child: const Text('取消'),
@@ -353,7 +355,14 @@ Future<void> startPairFlow(DiscoveredDevice device,
   if (nav != null && nav.canPop()) {
     nav.pop(); // 关闭等待弹窗
   }
-  if (cancelled) return;
+  if (cancelled) {
+    // 竞态兜底:取消前对方恰好点了同意 → 静默解绑回滚,并提示。
+    if (result.accepted) {
+      unawaited(engine.unpair(device.info.deviceId));
+      showToast('已取消配对请求', type: ToastType.info);
+    }
+    return;
+  }
   showToast(
     result.accepted
         ? '已与 ${device.info.deviceName} 完成配对'

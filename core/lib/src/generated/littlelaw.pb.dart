@@ -10,7 +10,6 @@
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
-import 'dart:async' as $async;
 import 'dart:core' as $core;
 
 import 'package:fixnum/fixnum.dart' as $fixnum;
@@ -559,9 +558,11 @@ class TapPairResponse extends $pb.GeneratedMessage {
 class PairRequest extends $pb.GeneratedMessage {
   factory PairRequest({
     DeviceInfo? requester,
+    $core.String? requestId,
   }) {
     final result = PairRequest._();
     if (requester != null) result.requester = requester;
+    if (requestId != null) result.requestId = requestId;
     return result;
   }
 
@@ -580,6 +581,7 @@ class PairRequest extends $pb.GeneratedMessage {
       createEmptyInstance: PairRequest.$_createMessage)
     ..aOM<DeviceInfo>(1, _omitFieldNames ? '' : 'requester',
         subBuilder: DeviceInfo.$_createMessage)
+    ..aOS(2, _omitFieldNames ? '' : 'requestId')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -614,6 +616,141 @@ class PairRequest extends $pb.GeneratedMessage {
   void clearRequester() => $_clearField(1);
   @$pb.TagNumber(1)
   DeviceInfo ensureRequester() => $_ensure(0);
+
+  @$pb.TagNumber(2)
+  $core.String get requestId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set requestId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRequestId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRequestId() => $_clearField(2);
+}
+
+class PairCancelRequest extends $pb.GeneratedMessage {
+  factory PairCancelRequest({
+    $core.String? requestId,
+    $core.String? requesterId,
+  }) {
+    final result = PairCancelRequest._();
+    if (requestId != null) result.requestId = requestId;
+    if (requesterId != null) result.requesterId = requesterId;
+    return result;
+  }
+
+  PairCancelRequest._();
+
+  factory PairCancelRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairCancelRequest()..mergeFromBuffer(data, registry);
+  factory PairCancelRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairCancelRequest()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'PairCancelRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: PairCancelRequest.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'requestId')
+    ..aOS(2, _omitFieldNames ? '' : 'requesterId')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairCancelRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairCancelRequest copyWith(void Function(PairCancelRequest) updates) =>
+      super.copyWith((message) => updates(message as PairCancelRequest))
+          as PairCancelRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use PairCancelRequest() / PairCancelRequest.new instead')
+  static PairCancelRequest create() => PairCancelRequest._();
+  static $pb.GeneratedMessage $_createMessage() => PairCancelRequest._();
+  @$core.override
+  PairCancelRequest createEmptyInstance() => PairCancelRequest._();
+  @$core.pragma('dart2js:noInline')
+  static PairCancelRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PairCancelRequest>(
+          PairCancelRequest.$_createMessage);
+  static PairCancelRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get requestId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set requestId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequestId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequestId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get requesterId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set requesterId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRequesterId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRequesterId() => $_clearField(2);
+}
+
+class PairCancelResponse extends $pb.GeneratedMessage {
+  factory PairCancelResponse({
+    $core.bool? ok,
+  }) {
+    final result = PairCancelResponse._();
+    if (ok != null) result.ok = ok;
+    return result;
+  }
+
+  PairCancelResponse._();
+
+  factory PairCancelResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairCancelResponse()..mergeFromBuffer(data, registry);
+  factory PairCancelResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairCancelResponse()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'PairCancelResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: PairCancelResponse.$_createMessage)
+    ..aOB(1, _omitFieldNames ? '' : 'ok')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairCancelResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairCancelResponse copyWith(void Function(PairCancelResponse) updates) =>
+      super.copyWith((message) => updates(message as PairCancelResponse))
+          as PairCancelResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use PairCancelResponse() / PairCancelResponse.new instead')
+  static PairCancelResponse create() => PairCancelResponse._();
+  static $pb.GeneratedMessage $_createMessage() => PairCancelResponse._();
+  @$core.override
+  PairCancelResponse createEmptyInstance() => PairCancelResponse._();
+  @$core.pragma('dart2js:noInline')
+  static PairCancelResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PairCancelResponse>(
+          PairCancelResponse.$_createMessage);
+  static PairCancelResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get ok => $_getBF(0);
+  @$pb.TagNumber(1)
+  set ok($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasOk() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearOk() => $_clearField(1);
 }
 
 class PairResponse extends $pb.GeneratedMessage {
@@ -3531,72 +3668,6 @@ class FileResult extends $pb.GeneratedMessage {
   $core.bool hasMessage() => $_has(3);
   @$pb.TagNumber(4)
   void clearMessage() => $_clearField(4);
-}
-
-class PairingServiceApi {
-  final $pb.RpcClient _client;
-
-  PairingServiceApi(this._client);
-
-  /// 请求配对。双方各自用对方证书指纹计算相同 PIN 并肉眼核对,
-  /// 被请求方用户点击同意后返回一次性会话令牌,双方写入 trusted_peers。
-  $async.Future<PairResponse> requestPair(
-          $pb.ClientContext? ctx, PairRequest request) =>
-      _client.invoke<PairResponse>(
-          ctx, 'PairingService', 'RequestPair', request, PairResponse());
-
-  /// 一碰/一扫配对(免 PIN):请求方携带通过物理通道(NFC 触碰 /
-  /// 当面扫码)获得的一次性令牌,证明物理在场;服务端比对有效窗口内的
-  /// tap_token 后签发会话令牌并双端入账。
-  $async.Future<TapPairResponse> pairWithTap(
-          $pb.ClientContext? ctx, TapPairRequest request) =>
-      _client.invoke<TapPairResponse>(
-          ctx, 'PairingService', 'PairWithTap', request, TapPairResponse());
-
-  /// 应答自动回传(WebRTC 远程配对):受邀方扫描邀请后,若邀请方地址
-  /// 可达,直接把 answer 引导包推回给邀请方,免人工复制粘贴。
-  /// 安全性:offer_token 即"持有了邀请二维码"的物理证明。
-  $async.Future<DeliverAnswerResponse> deliverAnswer(
-          $pb.ClientContext? ctx, DeliverAnswerRequest request) =>
-      _client.invoke<DeliverAnswerResponse>(ctx, 'PairingService',
-          'DeliverAnswer', request, DeliverAnswerResponse());
-
-  /// 解除配对:双端同时删除对方信任记录(需要有效会话令牌)。
-  $async.Future<UnpairResponse> unpair(
-          $pb.ClientContext? ctx, UnpairRequest request) =>
-      _client.invoke<UnpairResponse>(
-          ctx, 'PairingService', 'Unpair', request, UnpairResponse());
-}
-
-class SyncServiceApi {
-  final $pb.RpcClient _client;
-
-  SyncServiceApi(this._client);
-
-  /// 双向流。连接建立后双方互发 Hello 交换同步游标,
-  /// 随后按需推送各类事件。对端不在线的事件本地落 ops 表,重连补发。
-  $async.Future<Envelope> channel($pb.ClientContext? ctx, Envelope request) =>
-      _client.invoke<Envelope>(
-          ctx, 'SyncService', 'Channel', request, Envelope());
-}
-
-class TransferServiceApi {
-  final $pb.RpcClient _client;
-
-  TransferServiceApi(this._client);
-
-  /// 客户端流上传。首帧必须是 FileHead,后续为数据帧。
-  /// 接收方落盘到 <inbox>/<file_id>.part,完成后校验 SHA-256 并重命名。
-  $async.Future<FileResult> sendFile(
-          $pb.ClientContext? ctx, FileChunk request) =>
-      _client.invoke<FileResult>(
-          ctx, 'TransferService', 'SendFile', request, FileResult());
-
-  /// 主动拉取(用于接收方在中断后重新拉取剩余部分)。
-  $async.Future<FileChunk> fetchFile(
-          $pb.ClientContext? ctx, FetchRequest request) =>
-      _client.invoke<FileChunk>(
-          ctx, 'TransferService', 'FetchFile', request, FileChunk());
 }
 
 const $core.bool _omitFieldNames =

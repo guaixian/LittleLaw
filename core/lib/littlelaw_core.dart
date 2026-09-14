@@ -108,6 +108,7 @@ class LittleLawEngine {
 
   StreamSubscription<DiscoveredDevice>? _discoverySub;
   StreamSubscription<String>? _discoveryExpiredSub;
+  StreamSubscription<String>? _peerOfflineSub;
 
   // ------------------------------------------------------------ 生命周期
 
@@ -246,6 +247,12 @@ class LittleLawEngine {
       // 受邀方应答经服务器推回:回退用邀请令牌解密,统一走 WebRTC 应用路径。
       rc.fallbackTokenProvider = () => pairing.pendingRemoteOfferToken;
       rc.pairAnswers.listen(pairing.noteRemoteAnswer);
+      // presence 离线 → 强制断开半开链路(WebRTC/TCP 僵死链路可能还挂着)。
+      engine._peerOfflineSub = rc.peerOffline.listen((deviceId) {
+        if (store.getPeer(deviceId) != null) {
+          sync.forceDisconnect(deviceId);
+        }
+      });
       rc.start();
       engine.rendezvous = rc;
     }
@@ -258,10 +265,11 @@ class LittleLawEngine {
       }
     });
 
-    // 设备从局域网消失(报文超时)→ 标记离线。但若 TCP/WebRTC 会话仍活着
-    // (组播被路由器/系统限流很常见),不拆会话——避免在线状态反复横跳。
+    // 设备从局域网消失(报文超时)→ 强制断开其全部链路并标记离线。
+    // B 离线后 TCP 常处于半开状态(gRPC 不会立刻报错),若不主动断开,
+    // 在线徽标将长期失真;对方重新上线时发现层会再次建连。
     engine._discoveryExpiredSub = discovery.expiredDevices.listen((deviceId) {
-      if (store.getPeer(deviceId) != null && !sync.isOnline(deviceId)) {
+      if (store.getPeer(deviceId) != null) {
         sync.forceDisconnect(deviceId);
       }
     });
@@ -274,6 +282,7 @@ class LittleLawEngine {
   Future<void> dispose() async {
     await _discoverySub?.cancel();
     await _discoveryExpiredSub?.cancel();
+    await _peerOfflineSub?.cancel();
     await rendezvous?.dispose();
     await discovery.dispose();
     // 回收 UPnP 端口映射(避免路由器残留)。
@@ -309,7 +318,12 @@ class LittleLawEngine {
 
   /// 向发现的设备发起配对。返回结果含 PIN,需与对端弹窗核对。
   Future<PairResult> requestPair(DiscoveredDevice device) =>
-      pairing.requestPairWith(device.host, device.port);
+      pairing.requestPairWith(device.host, device.port,
+          targetDeviceId: device.info.deviceId);
+
+  /// 取消挂起的配对请求(发起方主动取消;对方会收到"拒绝",双方不入账)。
+  Future<void> cancelPairRequest(String targetDeviceId) =>
+      pairing.cancelOutgoingRequest(targetDeviceId);
 
   /// 响应配对请求(UI 用户点击)。
   void respondPair(String requestId, bool accept) =>

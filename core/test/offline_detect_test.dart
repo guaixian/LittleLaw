@@ -55,8 +55,9 @@ void main() {
               b.isOnline(a.identity.deviceId),
           description: '双方在线');
 
-      // 2. B 停发现服务(不再宣告)但 gRPC 仍活着:
-      //    新语义:TCP 会话健在 → 保持在线(组播被限流不误判,防状态横跳)。
+      // 2. B 停发现服务(不再宣告):
+      //    新语义:发现超时即强制断开半开 TCP/WebRTC 链路并标记离线——
+      //    B 离线后在线徽标必须及时消失,不能长期显示"在线"。
       String? expiredId;
       final esub = a.discovery.expiredDevices.listen((id) => expiredId = id);
       await b.discovery.stop();
@@ -69,17 +70,16 @@ void main() {
             .any((d) => d.deviceId == b.identity.deviceId),
         description: '发现列表移除 B',
       );
-      expect(a.isOnline(b.identity.deviceId), isTrue,
-          reason: 'TCP 会话仍活着,不应因组播丢失而误判离线');
-
-      // 3. B 彻底下线(进程级):gRPC keepalive 在 ~30s 内感知 → 离线。
-      final bDataDir = dirB.path;
-      await b.dispose();
       await waitFor(
         () => !a.isOnline(b.identity.deviceId),
-        description: 'B 真下线后 A 标记离线',
-        timeout: const Duration(seconds: 60),
+        description: '发现超时后 A 断开半开链路并标记离线',
+        timeout: const Duration(seconds: 15),
       );
+
+      // 3. B 彻底下线(进程级):此时 A 已判定离线(上一步)。
+      final bDataDir = dirB.path;
+      await b.dispose();
+      expect(a.isOnline(b.identity.deviceId), isFalse);
 
       // 4. B 重新出现(重启)→ 自动恢复在线。
       final b2 = await LittleLawEngine.start(

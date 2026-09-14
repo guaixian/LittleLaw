@@ -69,6 +69,15 @@ class PairingServiceClient extends $grpc.Client {
     return $createUnaryCall(_$unpair, request, options: options);
   }
 
+  /// 取消配对请求(发起方主动取消,无需认证):被请求方收到后
+  /// 立即完成挂起的 requestPair 为"拒绝",不再入账。
+  $grpc.ResponseFuture<$0.PairCancelResponse> cancelPair(
+    $0.PairCancelRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$cancelPair, request, options: options);
+  }
+
   // method descriptors
 
   static final _$requestPair =
@@ -91,6 +100,11 @@ class PairingServiceClient extends $grpc.Client {
           '/littlelaw.v1.PairingService/Unpair',
           ($0.UnpairRequest value) => value.writeToBuffer(),
           $0.UnpairResponse.fromBuffer);
+  static final _$cancelPair =
+      $grpc.ClientMethod<$0.PairCancelRequest, $0.PairCancelResponse>(
+          '/littlelaw.v1.PairingService/CancelPair',
+          ($0.PairCancelRequest value) => value.writeToBuffer(),
+          $0.PairCancelResponse.fromBuffer);
 }
 
 @$pb.GrpcServiceName('littlelaw.v1.PairingService')
@@ -128,6 +142,13 @@ abstract class PairingServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $0.UnpairRequest.fromBuffer(value),
         ($0.UnpairResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.PairCancelRequest, $0.PairCancelResponse>(
+        'CancelPair',
+        cancelPair_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.PairCancelRequest.fromBuffer(value),
+        ($0.PairCancelResponse value) => value.writeToBuffer()));
   }
 
   $async.Future<$0.PairResponse> requestPair_Pre(
@@ -162,6 +183,14 @@ abstract class PairingServiceBase extends $grpc.Service {
 
   $async.Future<$0.UnpairResponse> unpair(
       $grpc.ServiceCall call, $0.UnpairRequest request);
+
+  $async.Future<$0.PairCancelResponse> cancelPair_Pre($grpc.ServiceCall $call,
+      $async.Future<$0.PairCancelRequest> $request) async {
+    return cancelPair($call, await $request);
+  }
+
+  $async.Future<$0.PairCancelResponse> cancelPair(
+      $grpc.ServiceCall call, $0.PairCancelRequest request);
 }
 
 @$pb.GrpcServiceName('littlelaw.v1.SyncService')

@@ -940,6 +940,7 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// 僵死的外部链路本身,不会误杀健康的 gRPC 链路。
   final _extLastRecv = <StreamController<pb.Envelope>, int>{};
   final _extHeartbeatSeen = <StreamController<pb.Envelope>, bool>{};
+  final _extEverRecv = <StreamController<pb.Envelope>, bool>{};
   Timer? _extHeartbeatTimer;
   Timer? _extWatchdogTimer;
 
@@ -950,6 +951,7 @@ class SyncEngine extends pbg.SyncServiceBase {
 
   void _noteIncoming(StreamController<pb.Envelope> sink, pb.Envelope env) {
     _extLastRecv[sink] = DateTime.now().millisecondsSinceEpoch;
+    _extEverRecv[sink] = true;
     if (env.whichPayload() == pb.Envelope_Payload.heartbeat) {
       _extHeartbeatSeen[sink] = true;
     }
@@ -971,12 +973,17 @@ class SyncEngine extends pbg.SyncServiceBase {
       final now = DateTime.now().millisecondsSinceEpoch;
       for (final sink in _externalSubs.keys.toList()) {
         final sawHeartbeat = _extHeartbeatSeen[sink] ?? false;
-        if (!sawHeartbeat) continue; // 旧版对端不发心跳:跳过判定
+        final everRecv = _extEverRecv[sink] ?? false;
+        // 旧版对端不发心跳:只要收到过任何数据即跳过判定(兼容)。
+        if (!sawHeartbeat && everRecv) continue;
+        // 从未收到过数据的链路:僵死与否都无法区分,超时即拆
+        // (对端在 attach 前崩溃的场景,否则在线徽标永远卡住)。
         final last = _extLastRecv[sink];
         if (last == null || now - last <= _extStaleMs) continue;
         // 判死:只拆除这条僵死的外部链路(触发其重连),其他链路不动。
         _extHeartbeatSeen.remove(sink);
         _extLastRecv.remove(sink);
+        _extEverRecv.remove(sink);
         final peerId = _extPeerOf.remove(sink);
         final sub = _externalSubs.remove(sink);
         unawaited(sub?.cancel() ?? Future.value());
@@ -993,6 +1000,7 @@ class SyncEngine extends pbg.SyncServiceBase {
     _extWatchdogTimer = null;
     _extLastRecv.clear();
     _extHeartbeatSeen.clear();
+    _extEverRecv.clear();
   }
 
   /// 外部传输层(WebRTC DataChannel 等)注册一条到 [peerId] 的信封链路。
@@ -1008,6 +1016,8 @@ class SyncEngine extends pbg.SyncServiceBase {
     }
     final sink = StreamController<pb.Envelope>();
     _extPeerOf[sink] = peerId;
+    _extLastRecv[sink] = DateTime.now().millisecondsSinceEpoch;
+    _extEverRecv[sink] = false;
     final sub = incoming.listen(
       (env) {
         _noteIncoming(sink, env);
@@ -1030,6 +1040,7 @@ class SyncEngine extends pbg.SyncServiceBase {
     _extPeerOf.remove(sink);
     _extLastRecv.remove(sink);
     _extHeartbeatSeen.remove(sink);
+    _extEverRecv.remove(sink);
     unawaited(sub?.cancel() ?? Future.value());
     _unregisterSink(peerId, sink);
     unawaited(sink.close());

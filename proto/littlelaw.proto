@@ -64,6 +64,10 @@ service PairingService {
 
   // 解除配对:双端同时删除对方信任记录(需要有效会话令牌)。
   rpc Unpair(UnpairRequest) returns (UnpairResponse);
+
+  // 取消配对请求(发起方主动取消,无需认证):被请求方收到后
+  // 立即完成挂起的 requestPair 为"拒绝",不再入账。
+  rpc CancelPair(PairCancelRequest) returns (PairCancelResponse);
 }
 
 message DeliverAnswerRequest {
@@ -91,6 +95,16 @@ message TapPairResponse {
 
 message PairRequest {
   DeviceInfo requester = 1;
+  string request_id = 2;     // 发起方生成的请求 ID(CancelPair 定位挂起请求用)
+}
+
+message PairCancelRequest {
+  string request_id = 1;
+  string requester_id = 2;   // 发起方设备 ID(校验:只允许取消自己的请求)
+}
+
+message PairCancelResponse {
+  bool ok = 1;
 }
 
 message PairResponse {
