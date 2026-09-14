@@ -110,6 +110,13 @@ class DiscoveryService {
     await _announce();
   }
 
+  /// 手动重扫(下拉刷新触发):立即宣告一次 + 子网扫描。
+  Future<void> rescan() async {
+    if (!_started) return;
+    await _announce();
+    unawaited(_scanSubnet());
+  }
+
   Future<void> stop() async {
     _started = false;
     _announceTimer?.cancel();

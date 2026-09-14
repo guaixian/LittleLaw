@@ -145,6 +145,9 @@ class _BootPageState extends State<BootPage> {
       });
       ShareHandler.attach(engine); // 系统分享面板接入
       PushWake.attach(engine); // FCM 离线推送唤醒(可选,无配置自动禁用)
+      // 配对请求全局监听(移动/桌面壳都弹 PIN 核对窗)。
+      _pairReqSub?.cancel();
+      _pairReqSub = engine.pairRequests.listen(showPairRequestDialog);
       // 首次使用:展示引导(一次)。
       unawaited(_maybeShowIntro());
       final calls = CallManager(engine: engine, iceServers: iceServers)
@@ -229,6 +232,132 @@ class _BootPageState extends State<BootPage> {
 // ---------------------------------------------------------------------------
 // 主页骨架:底部导航 设备 / 连接 / 我的
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 全局配对流程(移动端/桌面端共用;经 navigatorKey 弹窗,任何壳下都能响应)
+// ---------------------------------------------------------------------------
+
+StreamSubscription<PairRequestEvent>? _pairReqSub;
+
+/// 收到配对请求 → PIN 核对弹窗(BootPage 全局挂接,桌面壳也有响应)。
+void showPairRequestDialog(PairRequestEvent event) {
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null) return;
+  final skin = themeController.skin;
+  showDialog<void>(
+    context: ctx,
+    barrierDismissible: false,
+    builder: (dctx) => AlertDialog(
+      title: const Text('配对请求'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${event.requester.deviceName} (${event.requester.platform}) '
+              '请求与本机配对'),
+          const SizedBox(height: 20),
+          const Text('与对方设备核对 PIN 码', style: TextStyle(fontSize: 13)),
+          const SizedBox(height: 10),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+            decoration: BoxDecoration(
+              gradient: skin.gradient,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              event.pin,
+              style: const TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 8,
+                  color: Colors.white),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text('PIN 不一致说明链路可能被监听,请拒绝',
+              style: TextStyle(color: Colors.red, fontSize: 12)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            activeEngine?.respondPair(event.requestId, false);
+            Navigator.of(dctx).pop();
+          },
+          child: const Text('拒绝'),
+        ),
+        FilledButton(
+          onPressed: () {
+            activeEngine?.respondPair(event.requestId, true);
+            Navigator.of(dctx).pop();
+          },
+          child: const Text('PIN 一致,同意'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 主动向发现的设备发起配对(等待对方同意,显示本端 PIN)。
+Future<void> startPairFlow(DiscoveredDevice device,
+    {VoidCallback? onFinished}) async {
+  final engine = activeEngine;
+  final ctx = navigatorKey.currentContext;
+  if (engine == null || ctx == null) return;
+  final skin = themeController.skin;
+  final pin = engine.pinFor(device.info.certFingerprint);
+  var cancelled = false;
+  showDialog<void>(
+    context: ctx,
+    barrierDismissible: true,
+    builder: (dctx) => AlertDialog(
+      title: Text('与 ${device.info.deviceName} 配对'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('等待对方同意…请核对 PIN:'),
+          const SizedBox(height: 12),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+            decoration: BoxDecoration(
+              gradient: skin.gradient,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(pin,
+                style: const TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 8,
+                    color: Colors.white)),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            cancelled = true;
+            Navigator.of(dctx).pop();
+          },
+          child: const Text('取消'),
+        ),
+      ],
+    ),
+  );
+  final result = await engine.requestPair(device);
+  final nav = navigatorKey.currentState;
+  if (nav != null && nav.canPop()) {
+    nav.pop(); // 关闭等待弹窗
+  }
+  if (cancelled) return;
+  showToast(
+    result.accepted
+        ? '已与 ${device.info.deviceName} 完成配对'
+        : '配对被拒绝: ${result.message}',
+    type: result.accepted ? ToastType.success : ToastType.error,
+  );
+  onFinished?.call();
+}
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -350,8 +479,8 @@ class _DevicesPageState extends State<DevicesPage> {
     _subscriptions.add(engine.events.listen((e) {
       if (e is PeerStatusChanged) setState(() {});
       if (e is GroupSynced) setState(() {}); // 群列表刷新(建群/改群扇出)
+      if (e is ProfileUpdated) setState(() {}); // 对端头像/名称更新
     }));
-    _subscriptions.add(engine.pairRequests.listen(_showPairRequest));
   }
 
   @override
@@ -364,115 +493,11 @@ class _DevicesPageState extends State<DevicesPage> {
 
   // ------------------------------------------------------------ 配对
 
-  void _showPairRequest(PairRequestEvent event) {
-    final skin = themeController.skin;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('配对请求'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('${event.requester.deviceName} (${event.requester.platform}) '
-                '请求与本机配对'),
-            const SizedBox(height: 20),
-            const Text('与对方设备核对 PIN 码', style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-              decoration: BoxDecoration(
-                gradient: skin.gradient,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                event.pin,
-                style: const TextStyle(
-                    fontSize: 34,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 8,
-                        color: Colors.white),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text('PIN 不一致说明链路可能被监听,请拒绝',
-                style: TextStyle(color: Colors.red, fontSize: 12)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _engine!.respondPair(event.requestId, false);
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('拒绝'),
-          ),
-          FilledButton(
-            onPressed: () {
-              _engine!.respondPair(event.requestId, true);
-              Navigator.of(ctx).pop();
-              setState(() {});
-            },
-            child: const Text('PIN 一致,同意'),
-          ),
-        ],
-      ),
-    );
-  }
+  // ------------------------------------------------------------ 配对
 
-  Future<void> _startPair(DiscoveredDevice device) async {
-    final engine = _engine!;
-    final skin = themeController.skin;
-    final pin = engine.pinFor(device.info.certFingerprint);
-    var cancelled = false;
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        title: Text('与 ${device.info.deviceName} 配对'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('等待对方同意…请核对 PIN:'),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-              decoration: BoxDecoration(
-                gradient: skin.gradient,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(pin,
-                  style: const TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 8,
-                      color: Colors.white)),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              cancelled = true;
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-    final result = await engine.requestPair(device);
-    if (!mounted || cancelled) return;
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
-    showToast(
-      result.accepted
-          ? '已与 ${device.info.deviceName} 完成配对'
-          : '配对被拒绝: ${result.message}',
-      type: result.accepted ? ToastType.success : ToastType.error,
-    );
-    setState(() => _discovered.remove(device.deviceId));
+  Future<void> _startPair(DiscoveredDevice d) {
+    return startPairFlow(d,
+        onFinished: () => setState(() => _discovered.remove(d.deviceId)));
   }
 
   // ------------------------------------------------------------ UI
@@ -487,8 +512,15 @@ class _DevicesPageState extends State<DevicesPage> {
       // 桌面宽屏下限制内容宽度并居中,避免横条拉伸。
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 920),
-        child: CustomScrollView(
-          slivers: [
+        child: RefreshIndicator(
+          // 下拉刷新:立即重宣告 + 子网扫描,快速发现新设备。
+          onRefresh: () async {
+            await engine.discovery.rescan();
+            await Future<void>.delayed(const Duration(milliseconds: 600));
+          },
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
             SliverToBoxAdapter(child: _header(engine)),
             if (peers.isNotEmpty) ...[
               const _SectionLabel(''),
@@ -542,6 +574,7 @@ class _DevicesPageState extends State<DevicesPage> {
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         ),
+      ),
       ),
     );
   }
@@ -666,8 +699,15 @@ class _DevicesPageState extends State<DevicesPage> {
                   .withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: Icon(isPhone ? Icons.smartphone : Icons.computer_outlined,
-                color: online ? Colors.green : Colors.grey, size: 22),
+            child: CircleAvatar(
+              backgroundColor: Colors.transparent,
+              backgroundImage:
+                  Avatars.imageOf(engine, peerId: peer.deviceId),
+              child: Avatars.imageOf(engine, peerId: peer.deviceId) == null
+                  ? Icon(isPhone ? Icons.smartphone : Icons.computer_outlined,
+                      color: online ? Colors.green : Colors.grey, size: 22)
+                  : null,
+            ),
           ),
           title: Text(peer.deviceName,
               style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -691,8 +731,8 @@ class _DevicesPageState extends State<DevicesPage> {
               IconButton(
                 icon: Icon(
                   engine.isSelfDevice(peer.deviceId)
-                      ? Icons.link
-                      : Icons.link_off_outlined,
+                      ? Icons.devices
+                      : Icons.devices_other_outlined,
                   size: 20,
                   color: engine.isSelfDevice(peer.deviceId)
                       ? scheme.primary
@@ -714,7 +754,8 @@ class _DevicesPageState extends State<DevicesPage> {
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.link_off_outlined, size: 20),
+                icon: Icon(Icons.link_off_outlined,
+                    size: 20, color: scheme.error),
                 tooltip: '解除配对(双端清除数据)',
                 onPressed: () => _confirmUnpair(peer),
               ),

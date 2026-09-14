@@ -91,6 +91,9 @@ class _ChatPageState extends State<ChatPage> {
       } else if (e is PeerStatusChanged && !_isGroup && e.peerId == _convKey) {
         _online = e.online;
         changed = true;
+      } else if (e is MessageStateChanged &&
+          _messages.any((m) => m.msgId == e.msgId)) {
+        changed = true; // 发送状态变化(发送中/成功/失败)
       } else if (e is ReceiptsUpdated && e.convKey == _convKey) {
         changed = true; // 自己的消息被对方读了
       } else if (e is ReactionsChanged && e.convKey == _convKey) {
@@ -791,6 +794,7 @@ class _ChatPageState extends State<ChatPage> {
       avatarImage: mine
           ? Avatars.imageOf(engine)
           : Avatars.imageOf(engine, peerId: m.senderId),
+      onResend: mine ? () => widget.engine.resendMessage(m.msgId) : null,
       onReaction: (emoji) => _react(m, emoji),
       onTap: () {
         if (_selecting) {
@@ -1003,6 +1007,7 @@ class _MessageBubble extends StatelessWidget {
     required this.onLongPress,
     required this.avatarIcon,
     this.avatarImage,
+    this.onResend,
     this.senderName,
     this.showSender = true,
     this.onReaction,
@@ -1014,6 +1019,7 @@ class _MessageBubble extends StatelessWidget {
   final bool showSender; // 分组中隐藏发送者名(头像仍显示)
   final IconData avatarIcon;
   final ImageProvider? avatarImage;
+  final VoidCallback? onResend; // 发送失败重发(仅自己消息)
   final TransferProgress? progress;
   final bool selected;
   final bool selecting;
@@ -1140,9 +1146,19 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  /// 自己消息的已读状态(✓ 已送达 / ✓✓ 已读)。
+  /// 自己消息的发送状态:⏱发送中 / !失败(点击重发) / ✓送达 / ✓✓已读。
   Widget _statusIcon() {
     if (!mine) return const SizedBox.shrink();
+    if (message.sendState == Message.sendFailed) {
+      return GestureDetector(
+        onTap: onResend,
+        child: const Icon(Icons.error_outline,
+            size: 14, color: Color(0xFFFF6B6B)),
+      );
+    }
+    if (message.sendState == Message.sendSending) {
+      return const Icon(Icons.schedule, size: 12, color: Colors.white60);
+    }
     return Icon(
       message.read ? Icons.done_all : Icons.done,
       size: 13,

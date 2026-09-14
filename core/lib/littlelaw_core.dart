@@ -60,7 +60,8 @@ export 'src/sync/sync_engine.dart'
         GroupSynced,
         ReceiptsUpdated,
         ReactionsChanged,
-        ProfileUpdated;
+        ProfileUpdated,
+        MessageStateChanged;
 export 'src/generated/littlelaw.pb.dart'
     show
         Envelope,
@@ -648,6 +649,26 @@ class LittleLawEngine {
   /// 设置/取消表情回应(emoji 空串=取消)。
   void setReaction(String convKey, String msgId, String emoji) =>
       sync.setReaction(convKey, msgId, emoji);
+  /// 重发消息:文本/自己发的文件重推元数据;收到的文件消息触发重新拉取。
+  Future<void> resendMessage(String msgId) async {
+    final m = store.getMessage(msgId);
+    if (m == null) return;
+    final mine = m.senderId == identity.deviceId || isSelfDevice(m.senderId);
+    if (!mine) {
+      if (Message.hasFilePayload(m.kind) && m.fileId != null) {
+        final convKey = m.convId.startsWith('g:')
+            ? m.convId.substring(2)
+            : m.convId
+                .split(':')
+                .firstWhere((p) => p != identity.deviceId,
+                    orElse: () => m.convId.split(':').first);
+        await transfer.receiveFile(convKey, m);
+      }
+      return;
+    }
+    sync.repushMessage(m);
+  }
+
   /// 全库消息搜索(文本 + 文件名)。
   List<Message> searchMessages(String query, {int limit = 200}) =>
       store.searchMessages(query, limit: limit);

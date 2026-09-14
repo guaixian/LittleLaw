@@ -134,6 +134,12 @@ class ProfileUpdated extends EngineEvent {
   final String peerId;
 }
 
+/// 本端消息发送状态变化(发送中/成功/失败)。
+class MessageStateChanged extends EngineEvent {
+  MessageStateChanged(this.msgId);
+  final String msgId;
+}
+
 // ---------------------------------------------------------------------------
 // 同步引擎:1:1 会话的端到端一致同步。
 //
@@ -234,12 +240,66 @@ class SyncEngine extends pbg.SyncServiceBase {
     final msg = build(store.nextLamport(convId),
         DateTime.now().millisecondsSinceEpoch);
     store.insertMessage(msg);
+    store.setSendState(msg.msgId, Message.sendSending);
     final proto = _chatToProto(msg);
     final seq = store.appendOp(peerId, Op.typeMsg, proto.writeToBuffer());
     proto.opSeq = Int64(seq);
+    _trackPending(peerId, seq, msg.msgId);
     _push(peerId, pb.Envelope(id: const Uuid().v4(), chat: proto));
     _events.add(MessageAdded(peerId, msg));
     return msg;
+  }
+
+  // ------------------------------------------------ 发送状态机(ACK 驱动)
+
+  /// peerId → {opSeq → msgId}:等对端游标 ACK 的发出消息。
+  final _pendingAcks = <String, Map<int, String>>{};
+
+  void _trackPending(String peerId, int seq, String msgId) {
+    _pendingAcks.putIfAbsent(peerId, () => {})[seq] = msgId;
+  }
+
+  /// 对端游标推进:seq ≤ cursor 的挂起消息 → 已送达。
+  void _markDelivered(String peerId, int cursor) {
+    final pend = _pendingAcks[peerId];
+    if (pend == null || pend.isEmpty) return;
+    final done = <String>[];
+    pend.removeWhere((seq, msgId) {
+      if (seq <= cursor) {
+        done.add(msgId);
+        return true;
+      }
+      return false;
+    });
+    for (final id in done) {
+      store.setSendState(id, Message.sendOk);
+      _events.add(MessageStateChanged(id));
+    }
+  }
+
+  /// 标记发送失败(传输异常等)。
+  void markFailed(String msgId) {
+    store.setSendState(msgId, Message.sendFailed);
+    _events.add(MessageStateChanged(msgId));
+  }
+
+  /// 重推一条自己发的消息(失败重发;接收方文件消息则触发重新拉取)。
+  void repushMessage(Message m) {
+    store.setSendState(m.msgId, Message.sendSending);
+    _events.add(MessageStateChanged(m.msgId));
+    final proto = _chatToProto(m);
+    if (m.convId.startsWith('g:')) {
+      final gid = m.convId.substring(2);
+      _fanOutGroup(gid, proto..groupId = gid);
+    } else {
+      // 1:1:convId = 'devA:devB',取不是我的那段。
+      final parts = m.convId.split(':');
+      final other = (parts.length > 1 && parts.first == identity.deviceId)
+          ? parts.last
+          : parts.first;
+      _trackPending(other, 0, m.msgId); // seq=0 立即可被任意 ACK 清
+      _push(other, pb.Envelope(id: const Uuid().v4(), chat: proto));
+    }
   }
 
   /// 多设备镜像:把发给 [peerId] 的消息同步给"我的设备"(带 conv_peer 标记)。
@@ -487,10 +547,19 @@ class SyncEngine extends pbg.SyncServiceBase {
       ..sender = identity.deviceId
       ..groupId = groupId;
     final recipients = store.groupRecipients(groupId);
+    var firstSeq = -1;
     for (final memberId in recipients) {
       proto.opSeq = Int64(store.appendOp(
           memberId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer()));
+      if (firstSeq < 0) firstSeq = proto.opSeq.toInt();
       _push(memberId, pb.Envelope(id: const Uuid().v4(), chat: proto));
+    }
+    // 发送状态:任一成员 ACK 即视为送达。
+    if (firstSeq >= 0) {
+      for (final memberId in recipients) {
+        _trackPending(memberId, firstSeq, proto.msgId);
+        break;
+      }
     }
     // 镜像到我的设备(group_id 已带,接收端按群会话落地)。
     for (final self in store.selfPeers()) {
@@ -668,11 +737,13 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// 收到群头像(随 GroupSync 到达,门面落盘)。
   void Function(String groupId, List<int> avatarPng)? onGroupAvatar;
 
-  /// 头像/名称变更后广播给全部已配对设备。
+  /// 头像/名称变更后广播给全部已配对设备(含 op 离线补发)。
   void broadcastProfile() {
     final profile = profileProvider?.call();
     if (profile == null) return;
+    final bytes = profile.writeToBuffer();
     for (final p in store.allPeers()) {
+      store.appendOp(p.deviceId, Op.typeProfile, bytes);
       _push(p.deviceId,
           pb.Envelope(id: const Uuid().v4(), profileUpdate: profile));
     }
@@ -689,39 +760,60 @@ class SyncEngine extends pbg.SyncServiceBase {
   }
 
   void _push(String peerId, pb.Envelope env) {
-    final set = _sinks[peerId];
-    final hasLive = set != null && set.isNotEmpty;
-    if (hasLive) {
-      // 同一设备可能有双向两条链路(我方连出 + 对方连入):
-      // 每个信封只投递一条,避免有状态信封(文件帧/拉取)被重复处理;
-      // 优先最新注册的链路(对端重连后新链路后注册,旧链路拆除存在竞态窗口),
-      // 加不进去(已关闭)则退回次新。
-      final sinks = set.toList();
-      for (final sink in sinks.reversed) {
-        try {
-          sink.add(env);
-          return;
-        } catch (_) {}
-      }
-      return;
-    }
-    // 无活通道:有中转服务器则投离线邮箱(应用层 E2E 加密);
-    // ops 表同时留存,任意通道重连后还会按游标补发(msg_id 幂等去重)。
+    // 双路投递:幂等族信封(消息/删除/回执/回应/群定义/资料/剪贴板)在连着
+    // 中转服务器时同时落一份到离线邮箱——活链路即时达,链路僵死时靠对端
+    // 轮询邮箱兜底(msg_id 幂等去重,双份无害)。有状态信封(文件帧/拉取)
+    // 绝不走邮箱,无活链路时丢弃,由调用方的超时/重试兜底。
+    _pushLive(peerId, env);
     final rc = _rendezvous;
-    if (rc != null && rc.connected) {
+    if (rc != null && rc.connected && _mailboxSafe(env)) {
       unawaited(rc.pushMailbox(peerId, env.writeToBuffer()));
+    }
+  }
+
+  /// 尝试经活 sink 投递;返回是否投出。
+  bool _pushLive(String peerId, pb.Envelope env) {
+    final set = _sinks[peerId];
+    if (set == null || set.isEmpty) return false;
+    // 同一设备可能有双向两条链路:每个信封只投递一条(避免有状态信封重复
+    // 处理),优先最新注册的链路(对端重连后新链路后注册,旧链路拆除有竞态)。
+    final sinks = set.toList();
+    for (final sink in sinks.reversed) {
+      try {
+        sink.add(env);
+        return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /// 信封是否可安全进离线邮箱(幂等 + 尺寸可控)。
+  bool _mailboxSafe(pb.Envelope env) {
+    switch (env.whichPayload()) {
+      case pb.Envelope_Payload.chat:
+      case pb.Envelope_Payload.chatDeleted:
+      case pb.Envelope_Payload.readReceipt:
+      case pb.Envelope_Payload.reaction:
+      case pb.Envelope_Payload.groupSync:
+      case pb.Envelope_Payload.profileUpdate:
+      case pb.Envelope_Payload.clipboard:
+        return env.writeToBuffer().length <= 128 * 1024;
+      default:
+        return false;
     }
   }
 
   /// 处理来自对端的信封(两个方向共用)。
   void _handleIncoming(Peer peer, pb.Envelope env) {
     final peerId = peer.deviceId;
+    _noteIncoming(peerId, env);
     switch (env.whichPayload()) {
       case pb.Envelope_Payload.hello:
-        // 对端告知"已应用我的 op 到第 N 条":补发 (N, +∞) 并压缩。
+        // 对端告知"我已应用到你的 op 第 N 条":补发 (N, +∞) 并压缩。
         final cursor = env.hello.appliedPeerSeq.toInt();
         store.setPeerAppliedSeq(peerId, cursor);
         store.compactOps(peerId, cursor);
+        _markDelivered(peerId, cursor);
         _replayOps(peer, cursor);
       case pb.Envelope_Payload.chat:
         _applyChat(peer, env.chat);
@@ -735,6 +827,7 @@ class SyncEngine extends pbg.SyncServiceBase {
         final cursor = env.syncAck.appliedPeerSeq.toInt();
         store.setPeerAppliedSeq(peerId, cursor);
         store.compactOps(peerId, cursor);
+        _markDelivered(peerId, cursor);
       case pb.Envelope_Payload.fileFetch:
         _events.add(FileFetchRequested(
             peerId, env.fileFetch.fileId, env.fileFetch.offset.toInt()));
@@ -778,6 +871,83 @@ class SyncEngine extends pbg.SyncServiceBase {
   final _externalSubs =
       <StreamController<pb.Envelope>, StreamSubscription<pb.Envelope>>{};
 
+  /// 外部链路(WebRTC)活性跟踪:
+  /// 对端最后一次来信时间 / 是否见过对端心跳(兼容旧版判定)/ 心跳与看门狗。
+  final _lastRecvAt = <String, int>{};
+  final _extHeartbeatSeen = <String, bool>{};
+  Timer? _extHeartbeatTimer;
+  Timer? _extWatchdogTimer;
+
+  static const _extStaleMs = 45 * 1000; // 无来信判定僵死
+
+  void _noteIncoming(String peerId, pb.Envelope env) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _lastRecvAt[peerId] = now;
+    if (env.whichPayload() == pb.Envelope_Payload.heartbeat) {
+      _extHeartbeatSeen[peerId] = true;
+    }
+  }
+
+  void _startExtTimers() {
+    _extHeartbeatTimer ??= Timer.periodic(heartbeatInterval, (_) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      _sinks.forEach((peerId, set) {
+        // 只有存在外部链路且对端也会发心跳时,才向其发送心跳/检测。
+        final ext = _externalSubs.keys
+            .any((s) => _sinks[peerId]?.contains(s) ?? false);
+        if (!ext) return;
+        _lastRecvAt.putIfAbsent(peerId, () => now);
+        for (final sink in set.toList()) {
+          if (!_externalSubs.containsKey(sink)) continue;
+          try {
+            sink.add(pb.Envelope(
+              id: const Uuid().v4(),
+              heartbeat:
+                  pb.Heartbeat(atMs: Int64(DateTime.now().millisecondsSinceEpoch)),
+            ));
+          } catch (_) {}
+        }
+      });
+    });
+    _extWatchdogTimer ??= Timer.periodic(const Duration(seconds: 10), (_) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final stalePeers = <String>[];
+      _sinks.forEach((peerId, set) {
+        final sawHeartbeat = _extHeartbeatSeen[peerId] ?? false;
+        if (!sawHeartbeat) return; // 旧版对端不发心跳:跳过判定,兼容
+        final last = _lastRecvAt[peerId];
+        if (last != null && now - last > _extStaleMs) {
+          stalePeers.add(peerId);
+        }
+      });
+      for (final peerId in stalePeers) {
+        // 判死:强制拆除外部链路(触发重连),UI 即时转离线。
+        final sinks = (_sinks[peerId] ?? const {}).toList();
+        var wasOnline = (_sinks[peerId]?.isNotEmpty) ?? false;
+        for (final sink in sinks) {
+          final sub = _externalSubs.remove(sink);
+          unawaited(sub?.cancel() ?? Future.value());
+          _unregisterSink(peerId, sink);
+          unawaited(sink.close());
+        }
+        _extHeartbeatSeen.remove(peerId);
+        _lastRecvAt.remove(peerId);
+        if (wasOnline) {
+          _events.add(PeerStatusChanged(peerId, false));
+        }
+      }
+    });
+  }
+
+  void _stopExtTimers() {
+    _extHeartbeatTimer?.cancel();
+    _extHeartbeatTimer = null;
+    _extWatchdogTimer?.cancel();
+    _extWatchdogTimer = null;
+    _lastRecvAt.clear();
+    _extHeartbeatSeen.clear();
+  }
+
   /// 外部传输层(WebRTC DataChannel 等)注册一条到 [peerId] 的信封链路。
   ///
   /// 前置条件(调用方保证):链路已加密且对端 LinkAuth 已校验通过。
@@ -797,6 +967,7 @@ class SyncEngine extends pbg.SyncServiceBase {
     );
     _externalSubs[sink] = sub;
     _registerSink(peerId, sink);
+    _startExtTimers();
     sink.add(buildHello(peerId));
     return sink;
   }
@@ -826,6 +997,9 @@ class SyncEngine extends pbg.SyncServiceBase {
       } else if (op.type == Op.typeGroup) {
         final gs = pb.GroupSync.fromBuffer(op.payload);
         env = pb.Envelope(id: const Uuid().v4(), groupSync: gs);
+      } else if (op.type == Op.typeProfile) {
+        final pu = pb.ProfileUpdate.fromBuffer(op.payload);
+        env = pb.Envelope(id: const Uuid().v4(), profileUpdate: pu);
       } else if (op.type == Op.typeReaction) {
         final ru = pb.ReactionUpdate.fromBuffer(op.payload);
         env = pb.Envelope(id: const Uuid().v4(), reaction: ru);
@@ -1038,6 +1212,8 @@ class SyncEngine extends pbg.SyncServiceBase {
       unawaited(sub.cancel());
     }
     _externalSubs.clear();
+    _stopExtTimers();
+    _stopExtTimers();
     // 3) 关闭所有服务端入向 sink,让 channel handler 的 yield* 收尾,
     //    连接才能 finish,server.shutdown() 才不会挂起。
     for (final set in _sinks.values) {

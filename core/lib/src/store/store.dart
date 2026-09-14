@@ -62,6 +62,7 @@ class Message {
     this.durationMs = 0,
     this.read = false,
     Map<String, String>? reactions,
+    this.sendState = 0,
   }) : reactions = reactions ?? {};
 
   static const kindText = 0;
@@ -80,6 +81,11 @@ class Message {
   static const fileStateTransferring = 2;
   static const fileStateDone = 3;
   static const fileStateFailed = 4;
+
+  /// 本端发送状态(仅自己发的消息,不同步):0=已送达 1=发送中 2=失败。
+  static const sendOk = 0;
+  static const sendSending = 1;
+  static const sendFailed = 2;
 
   final String msgId;
   final String convId;
@@ -101,6 +107,9 @@ class Message {
   /// 语义按行区分:sender=自己 → 对方已读;sender=他人 → 我已读(回执已发)。
   bool read;
 
+  /// 本端发送状态(sendOk/sendSending/sendFailed)。
+  int sendState;
+
   /// 表情回应:device_id → emoji。增量更新,天然可交换。
   Map<String, String> reactions;
 }
@@ -115,6 +124,7 @@ class Op {
   static const typeGroup = 'group';
   static const typeReaction = 'reaction';
   static const typeReceipt = 'receipt';
+  static const typeProfile = 'profile';
 
   final int seq;
   final String peerId;
@@ -228,7 +238,6 @@ class Store {
         payload BLOB NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_ops_peer ON ops(peer_id, seq);
-
       CREATE TABLE IF NOT EXISTS groups (
         group_id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -261,6 +270,12 @@ class Store {
     try {
       _db.execute(
           "ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '{}'");
+    } catch (_) {}
+    try {
+      _db.execute('ALTER TABLE messages ADD COLUMN send_state INTEGER NOT NULL DEFAULT 0');
+    } catch (_) {}
+    try {
+      _db.execute('ALTER TABLE ops ADD COLUMN created_ms INTEGER NOT NULL DEFAULT 0');
     } catch (_) {}
   }
 
@@ -378,13 +393,13 @@ class Store {
       '''INSERT OR IGNORE INTO messages
            (msg_id, conv_id, sender_id, lamport, created_at_ms, kind, text,
             file_id, file_name, file_size, file_sha256, file_path, file_state,
-            duration_ms, read, reactions)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            duration_ms, read, reactions, send_state)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
       [
         m.msgId, m.convId, m.senderId, m.lamport, m.createdAtMs, m.kind,
         m.text, m.fileId, m.fileName, m.fileSize, m.fileSha256,
         m.filePath, m.fileState, m.durationMs, m.read ? 1 : 0,
-        jsonEncode(m.reactions),
+        jsonEncode(m.reactions), m.sendState,
       ],
     );
     return _db.updatedRows > 0;
@@ -430,6 +445,11 @@ class Store {
     }
   }
 
+  void setSendState(String msgId, int state) {
+    _db.execute('UPDATE messages SET send_state=? WHERE msg_id=?',
+        [state, msgId]);
+  }
+
   /// 会话内下一条消息的 Lamport 时钟值。
   int nextLamport(String convId) {
     final rows = _db.select(
@@ -455,6 +475,7 @@ class Store {
         durationMs: (r['duration_ms'] as int? ?? 0),
         read: ((r['read'] as int? ?? 0) == 1),
         reactions: _decodeReactions(r['reactions'] as String?),
+        sendState: (r['send_state'] as int? ?? 0),
       );
 
   static Map<String, String> _decodeReactions(String? raw) {
@@ -574,25 +595,39 @@ class Store {
 
   /// 追加 op,返回分配的 seq。调用方需在同一逻辑单元内先写业务表。
   int appendOp(String peerId, String type, Uint8List payload) {
-    _db.execute('INSERT INTO ops (peer_id, type, payload) VALUES (?,?,?)',
-        [peerId, type, payload]);
+    _db.execute(
+        'INSERT INTO ops (peer_id, type, payload, created_ms) VALUES (?,?,?,?)',
+        [peerId, type, payload, DateTime.now().millisecondsSinceEpoch]);
     final rows = _db.select('SELECT last_insert_rowid() AS s');
     return rows.first['s'] as int;
   }
 
-  /// 对端游标之后的全部 op(重连补发)。
+  /// 对端游标之后的全部 op(重连补发)。删除类 op 超过 [deleteOpTtl] 未送达即跳过
+  /// (墓碑过期:对端长期不上线就不再追删,保持数据自然存在)。
+  static const deleteOpTtlMs = 48 * 3600 * 1000; // 2 天
+
   List<Op> opsSince(String peerId, int seq) {
+    final now = DateTime.now().millisecondsSinceEpoch;
     final rows = _db.select(
         'SELECT * FROM ops WHERE peer_id=? AND seq>? ORDER BY seq ASC',
         [peerId, seq]);
-    return rows
-        .map((r) => Op(
-              seq: r['seq'] as int,
-              peerId: r['peer_id'] as String,
-              type: r['type'] as String,
-              payload: r['payload'] as Uint8List,
-            ))
-        .toList();
+    final out = <Op>[];
+    for (final r in rows) {
+      final type = r['type'] as String;
+      final created = (r['created_ms'] as int?) ?? 0;
+      if ((type == Op.typeDelete || type == Op.typeClear) &&
+          created > 0 &&
+          now - created > deleteOpTtlMs) {
+        continue; // 过期墓碑:不再补发
+      }
+      out.add(Op(
+        seq: r['seq'] as int,
+        peerId: r['peer_id'] as String,
+        type: type,
+        payload: r['payload'] as Uint8List,
+      ));
+    }
+    return out;
   }
 
   /// 对端已 ACK 的 op 压缩清理。

@@ -9,7 +9,8 @@ import 'globals.dart';
 import 'group_create_page.dart';
 import 'group_info_page.dart';
 import 'i18n.dart';
-import 'main.dart' show ConnectPage, ProfilePage;
+import 'main.dart'
+    show ConnectPage, ProfilePage, startPairFlow;
 import 'search_page.dart';
 import 'theme/app_theme.dart';
 
@@ -23,9 +24,10 @@ class AdaptiveHomeShell extends StatefulWidget {
 }
 
 class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
-  int _tab = 0; // 0=聊天 1=连接 2=我的
+  int _tab = 0; // 0=聊天 1=连接 2=设置
   String? _activeKey; // 打开的会话(群 ID 或对方设备 ID)
   final _subscriptions = <StreamSubscription>[];
+  final _discovered = <String, DiscoveredDevice>{};
 
   LittleLawEngine get engine => activeEngine!;
 
@@ -43,6 +45,14 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           ev is ProfileUpdated) {
         if (mounted) setState(() {});
       }
+    }));
+    // 附近的设备(未配对):桌面端配对入口。
+    _subscriptions.add(e.discoveredDevices.listen((d) {
+      if (e.peerById(d.deviceId) != null) return;
+      if (mounted) setState(() => _discovered[d.deviceId] = d);
+    }));
+    _subscriptions.add(e.discovery.expiredDevices.listen((id) {
+      if (_discovered.remove(id) != null && mounted) setState(() {});
     }));
   }
 
@@ -198,18 +208,20 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
     }
     for (final p in engine.peers) {
       final s = summaryByConv[Store.convIdFor(engine.identity.deviceId, p.deviceId)];
+      if (s == null) continue; // 无消息的 1:1 不显示(删除会话后即消失)
       entries.add(_ConvEntry(
         key: p.deviceId,
         isGroup: false,
         title: p.deviceName,
-        atMs: s?.atMs ?? 0,
-        unread: s?.unread ?? 0,
-        preview: s == null ? '' : _previewOf(s),
+        atMs: s.atMs,
+        unread: s.unread,
+        preview: _previewOf(s),
         online: engine.isOnline(p.deviceId),
         subtitle: p.deviceModel.isNotEmpty ? p.deviceModel : p.platform,
       ));
     }
     entries.sort((a, b) => b.atMs.compareTo(a.atMs));
+    final discovered = _discovered.values.toList();
 
     return Column(
       children: [
@@ -242,11 +254,63 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
         Divider(height: 1, color: scheme.outlineVariant),
         Expanded(
           child: ListView.builder(
-            itemCount: entries.length,
+            itemCount: entries.length + (discovered.isEmpty ? 0 : 2),
             itemBuilder: (ctx, i) {
-              final e = entries[i];
-              final selected = _activeKey == e.key && _tab == 0;
-              return _convTile(e, selected, scheme);
+              if (i < entries.length) {
+                final e = entries[i];
+                final selected = _activeKey == e.key && _tab == 0;
+                return _convTile(e, selected, scheme);
+              }
+              final j = i - entries.length;
+              if (j == 0) {
+                return Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                  child: Text(L10n.t('devices.nearby'),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurfaceVariant)),
+                );
+              }
+              // 附近的设备(未配对):点击发起配对。
+              return Column(
+                children: [
+                  for (final d in discovered)
+                    ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor:
+                            scheme.secondaryContainer,
+                        child: Icon(Icons.add,
+                            size: 18,
+                            color:
+                                scheme.onSecondaryContainer),
+                      ),
+                      title: Text(d.info.deviceName,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        d.info.deviceModel.isNotEmpty
+                            ? d.info.deviceModel
+                            : d.info.platform,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: FilledButton.tonal(
+                        onPressed: () async {
+                          await startPairFlow(d);
+                          if (mounted) {
+                            setState(() =>
+                                _discovered.remove(d.deviceId));
+                          }
+                        },
+                        child: const Text('配对'),
+                      ),
+                    ),
+                ],
+              );
             },
           ),
         ),

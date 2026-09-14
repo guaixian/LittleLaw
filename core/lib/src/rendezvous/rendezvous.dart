@@ -70,6 +70,16 @@ class RendezvousClient {
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
   Timer? _reconnectTimer;
+
+  /// 邮箱轮询:链路僵死时兜底(双路投递的接收端),15s 一次。
+  Timer? _mailPollTimer;
+
+  void _startMailPolling() {
+    _mailPollTimer?.cancel();
+    _mailPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_up) fetchMailbox();
+    });
+  }
   Duration _backoff = const Duration(seconds: 1);
   bool _stopping = false;
 
@@ -142,6 +152,8 @@ class RendezvousClient {
   }
 
   void _markDown() {
+    _mailPollTimer?.cancel();
+    _mailPollTimer = null;
     if (_up) {
       _up = false;
       _connected.add(false);
@@ -206,6 +218,7 @@ class RendezvousClient {
         _connected.add(true);
         subscribePeers();
         fetchMailbox();
+        _startMailPolling();
       case 'presence':
         for (final raw in (f['online'] as List? ?? const [])) {
           String id;
