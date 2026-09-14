@@ -453,11 +453,31 @@ class _ChatPageState extends State<ChatPage> {
                 setState(() => _menuMsgId = null);
               }),
             if (Message.hasFilePayload(m.kind) &&
-                m.fileState == Message.fileStateDone)
+                m.fileState == Message.fileStateDone) ...[
               _barBtn(const Icon(Icons.open_in_new, size: 15), () {
                 _openMessage(m);
                 setState(() => _menuMsgId = null);
               }),
+              // 桌面:资源管理器定位;手机:系统"打开方式"。
+              _barBtn(
+                Icon(
+                  Platform.isWindows || Platform.isMacOS || Platform.isLinux
+                      ? Icons.folder_open
+                      : Icons.open_with,
+                  size: 15,
+                ),
+                () async {
+                  setState(() => _menuMsgId = null);
+                  final plain = await _plainPathOf(m);
+                  if (plain == null) return;
+                  if (Platform.isAndroid) {
+                    await ShareOut.openWithOther(plain);
+                  } else {
+                    await ShareOut.revealInFolder(plain);
+                  }
+                },
+              ),
+            ],
             if (m.kind == Message.kindText ||
                 (Message.hasFilePayload(m.kind) &&
                     m.fileState == Message.fileStateDone)) ...[

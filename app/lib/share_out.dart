@@ -56,4 +56,28 @@ class ShareOut {
       return null;
     }
   }
+
+  /// 桌面:在文件管理器中定位并选中该文件。
+  static Future<void> revealInFolder(String path) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('explorer.exe', ['/select,', path]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', path]);
+      } else if (Platform.isLinux) {
+        final dir = File(path).parent.path;
+        await Process.run('xdg-open', [dir]);
+      }
+    } catch (_) {}
+  }
+
+  /// 手机:用其他应用打开(系统"打开方式"选择器)。
+  static Future<void> openWithOther(String path) async {
+    if (Platform.isAndroid) {
+      await _channel.invokeMethod('openFile', {'path': path});
+      return;
+    }
+    // 桌面兜底:定位文件。
+    await revealInFolder(path);
+  }
 }

@@ -69,7 +69,28 @@ class MainActivity : FlutterActivity() {
                         nfcPayloadText = ""
                         result.success(true)
                     }
-                    else -> result.notImplemented()
+                // ---- 用其他应用打开(系统"打开方式"选择器) ----
+                "openFile" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    try {
+                        val file = File(path)
+                        val uri = FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", file)
+                        val ext = file.extension.lowercase()
+                        val mime =
+                            MimeTypeMap.getSingleton()
+                                .getMimeTypeFromExtension(ext) ?: "*/*"
+                        val view = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, mime)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(view, "打开方式"))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("OPEN", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
                 }
             }
         // 分享面板通道:Dart 取冷启动分享 + 监听热启动分享。
