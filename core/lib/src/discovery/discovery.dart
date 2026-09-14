@@ -83,11 +83,22 @@ class DiscoveryService {
   List<DiscoveredDevice> get current => _devices.values.toList(growable: false);
 
   bool _started = false;
+  bool _rebinding = false;
 
   Future<void> start() async {
     if (_started) return;
     _started = true;
+    await _bindSocket();
 
+    _announceTimer = Timer.periodic(announceInterval, (_) => unawaited(_announce()));
+    _scanTimer = Timer.periodic(scanInterval, (_) => unawaited(_scanSubnet()));
+    // 过期检测频率 = 宣告间隔,保证离线判定延迟稳定在 TTL±interval。
+    _expiryTimer = Timer.periodic(announceInterval, (_) => _expireStale());
+
+    await _announce();
+  }
+
+  Future<void> _bindSocket() async {
     final socket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
       discoveryPort,
@@ -100,14 +111,36 @@ class DiscoveryService {
     } catch (_) {
       // 某些平台/网卡不支持组播,降级为广播+扫描,不致命。
     }
-    _socketSub = socket.listen(_onSocketEvent);
+    // Windows:子网扫描探测到不可达地址会触发 ICMP,让 receive() 抛
+    // ConnectionReset;异常未接住会杀死监听订阅,发现从此失聪(重启才恢复)。
+    // 这里全部兜住,出错即重建 socket 自愈。
+    _socketSub = socket.listen(
+      _onSocketEvent,
+      onError: (_) => unawaited(_rebindSocket()),
+      onDone: () => unawaited(_rebindSocket()),
+    );
+  }
 
-    _announceTimer = Timer.periodic(announceInterval, (_) => unawaited(_announce()));
-    _scanTimer = Timer.periodic(scanInterval, (_) => unawaited(_scanSubnet()));
-    // 过期检测频率 = 宣告间隔,保证离线判定延迟稳定在 TTL±interval。
-    _expiryTimer = Timer.periodic(announceInterval, (_) => _expireStale());
-
-    await _announce();
+  Future<void> _rebindSocket() async {
+    if (!_started || _rebinding) return;
+    _rebinding = true;
+    try {
+      await _socketSub?.cancel();
+      _socketSub = null;
+      _socket?.close();
+      _socket = null;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await _bindSocket();
+      await _announce(); // 重建后立即宣告
+    } catch (_) {
+      // 再失败:5s 后重试。
+      Future.delayed(const Duration(seconds: 5), () {
+        _rebinding = false;
+        unawaited(_rebindSocket());
+      });
+      return;
+    }
+    _rebinding = false;
   }
 
   /// 手动重扫(下拉刷新触发):立即宣告一次 + 子网扫描。
@@ -127,6 +160,7 @@ class DiscoveryService {
     _socketSub = null;
     _socket?.close();
     _socket = null;
+    _rebinding = false;
     _devices.clear();
     _replyCache.clear();
     // 控制器保留,stop 后可重新 start。
@@ -247,13 +281,22 @@ class DiscoveryService {
   // ------------------------------------------------------------ 接收
 
   void _onSocketEvent(RawSocketEvent event) {
-    if (event != RawSocketEvent.read) return;
     final socket = _socket;
     if (socket == null) return;
-    while (true) {
-      final dg = socket.receive();
-      if (dg == null) break;
-      _handleDatagram(dg.data, dg.address.address, dg.port);
+    if (event == RawSocketEvent.closed) {
+      unawaited(_rebindSocket());
+      return;
+    }
+    if (event != RawSocketEvent.read) return;
+    try {
+      while (true) {
+        final dg = socket.receive();
+        if (dg == null) break;
+        _handleDatagram(dg.data, dg.address.address, dg.port);
+      }
+    } catch (_) {
+      // Windows ICMP 触发的 ConnectionReset 等:吞掉并重建 socket。
+      unawaited(_rebindSocket());
     }
   }
 

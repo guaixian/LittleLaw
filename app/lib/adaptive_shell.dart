@@ -289,14 +289,18 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
                 );
               }
               final d = discovered[j - 1];
-              // 附近的设备(未配对):点击配对。
+              // 附近的设备(未配对):点击配对;曾配对过(有本地头像)则显示头像。
+              final dAvatar = Avatars.imageOf(engine, peerId: d.deviceId);
               return ListTile(
                 dense: true,
                 leading: CircleAvatar(
                   radius: 18,
                   backgroundColor: scheme.secondaryContainer,
-                  child: Icon(Icons.add,
-                      size: 18, color: scheme.onSecondaryContainer),
+                  backgroundImage: dAvatar,
+                  child: dAvatar == null
+                      ? Icon(Icons.add,
+                          size: 18, color: scheme.onSecondaryContainer)
+                      : null,
                 ),
                 title: Text(d.info.deviceName,
                     style: const TextStyle(

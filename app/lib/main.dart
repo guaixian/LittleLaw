@@ -603,18 +603,25 @@ class _DevicesPageState extends State<DevicesPage> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.22),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Identity.platformName() == 'android' ||
-                          Identity.platformName() == 'ios'
-                      ? Icons.smartphone
-                      : Icons.computer_outlined,
-                  color: Colors.white,
-                  size: 24,
+                child: CircleAvatar(
+                  radius: 21,
+                  backgroundColor: Colors.transparent,
+                  backgroundImage: Avatars.imageOf(engine),
+                  child: Avatars.imageOf(engine) == null
+                      ? Icon(
+                          Identity.platformName() == 'android' ||
+                                  Identity.platformName() == 'ios'
+                              ? Icons.smartphone
+                              : Icons.computer_outlined,
+                          color: Colors.white,
+                          size: 24,
+                        )
+                      : null,
                 ),
               ),
               const SizedBox(width: 12),
@@ -839,8 +846,16 @@ class _DevicesPageState extends State<DevicesPage> {
               color: skin.primary.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: Icon(isPhone ? Icons.smartphone : Icons.computer_outlined,
-                color: skin.primary, size: 22),
+            // 曾经配对过的设备(本地有头像缓存)直接显示头像。
+            child: CircleAvatar(
+              backgroundColor: Colors.transparent,
+              backgroundImage:
+                  Avatars.imageOf(_engine!, peerId: d.deviceId),
+              child: Avatars.imageOf(_engine!, peerId: d.deviceId) == null
+                  ? Icon(isPhone ? Icons.smartphone : Icons.computer_outlined,
+                      color: skin.primary, size: 22)
+                  : null,
+            ),
           ),
           title: Text(d.info.deviceName,
               style: const TextStyle(fontWeight: FontWeight.w600)),
