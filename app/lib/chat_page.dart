@@ -1054,8 +1054,11 @@ class _MessageBubble extends StatelessWidget {
             child: CircleAvatar(
               radius: 16,
               backgroundColor: scheme.secondaryContainer,
-              child: Icon(avatarIcon,
-                  size: 16, color: scheme.onSecondaryContainer),
+              backgroundImage: avatarImage,
+              child: avatarImage == null
+                  ? Icon(avatarIcon,
+                      size: 16, color: scheme.onSecondaryContainer)
+                  : null,
             ),
           ),
         Flexible(
@@ -1100,8 +1103,11 @@ class _MessageBubble extends StatelessWidget {
             child: CircleAvatar(
               radius: 16,
               backgroundColor: scheme.primaryContainer,
-              child: Icon(avatarIcon,
-                  size: 16, color: scheme.onPrimaryContainer),
+              backgroundImage: avatarImage,
+              child: avatarImage == null
+                  ? Icon(avatarIcon,
+                      size: 16, color: scheme.onPrimaryContainer)
+                  : null,
             ),
           ),
       ],
@@ -1271,8 +1277,9 @@ class _MessageBubble extends StatelessWidget {
 
     return Container(
       constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.62,
-        maxHeight: 320,
+        // 紧凑上限:大屏也不过分放大,避免盖住悬浮工具条。
+        maxWidth: (MediaQuery.of(context).size.width * 0.5).clamp(220.0, 380.0),
+        maxHeight: 280,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
