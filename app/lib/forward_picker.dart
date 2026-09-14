@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
+import 'avatar.dart';
 import 'chat_page.dart';
 import 'globals.dart';
 import 'i18n.dart';
@@ -117,11 +118,15 @@ class _ForwardSheet extends StatelessWidget {
           ListTile(
             leading: CircleAvatar(
               backgroundColor: scheme.primaryContainer,
-              child: Icon(Icons.groups_outlined,
-                  size: 20, color: scheme.onPrimaryContainer),
+              backgroundImage:
+                  Avatars.imageOf(engine, groupId: g.id),
+              child: Avatars.imageOf(engine, groupId: g.id) == null
+                  ? Icon(Icons.groups_outlined,
+                      size: 20, color: scheme.onPrimaryContainer)
+                  : null,
             ),
             title: Text(g.name),
-            subtitle: Text('${g.memberIds.length} 名成员',
+            subtitle: Text(L10n.t('devices.groupMembers', {'n': g.memberIds.length}),
                 style: const TextStyle(fontSize: 12)),
             onTap: () => _sendTo(g.id, isGroup: true),
           ),
@@ -129,13 +134,17 @@ class _ForwardSheet extends StatelessWidget {
           ListTile(
             leading: CircleAvatar(
               backgroundColor: scheme.secondaryContainer,
-              child: Icon(
-                p.platform == 'android' || p.platform == 'ios'
-                    ? Icons.smartphone
-                    : Icons.computer_outlined,
-                size: 20,
-                color: scheme.onSecondaryContainer,
-              ),
+              backgroundImage:
+                  Avatars.imageOf(engine, peerId: p.deviceId),
+              child: Avatars.imageOf(engine, peerId: p.deviceId) == null
+                  ? Icon(
+                      p.platform == 'android' || p.platform == 'ios'
+                          ? Icons.smartphone
+                          : Icons.computer_outlined,
+                      size: 20,
+                      color: scheme.onSecondaryContainer,
+                    )
+                  : null,
             ),
             title: Text(p.deviceName),
             subtitle: Text(

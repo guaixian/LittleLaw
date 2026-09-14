@@ -428,20 +428,24 @@ class _ChatPageState extends State<ChatPage> {
   /// 内联工具条:emoji + 复制/打开/转发/分享/多选/删除。
   Widget _inlineToolbar(Message m) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 2, left: 4, right: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final emoji in _quickReactions)
-              _barBtn(Text(emoji, style: const TextStyle(fontSize: 17)),
+    return GestureDetector(
+      // 拦截空白处点击,防止穿透到下方气泡(图片气泡的 onTap 会开大图)。
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 2, left: 4, right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final emoji in _quickReactions)
+                _barBtn(Text(emoji, style: const TextStyle(fontSize: 17)),
                   () {
                 _react(m, emoji);
                 setState(() => _menuMsgId = null);
@@ -518,6 +522,7 @@ class _ChatPageState extends State<ChatPage> {
             }),
           ],
         ),
+      ),
       ),
     );
   }

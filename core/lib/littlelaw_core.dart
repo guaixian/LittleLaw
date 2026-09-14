@@ -533,13 +533,17 @@ class LittleLawEngine {
 
   /// 解密消息附件到缓存并返回明文路径(查看/打开/分享用)。
   /// 未启用加密时直接返回原路径。
+  /// 缓存文件名去掉 .llenc 后缀:分享/打开时的扩展名与 MIME 保持正确。
   Future<String> plaintextPathFor(Message msg) async {
     final p = msg.filePath;
     final v = vault;
     if (p == null) throw StateError('file not downloaded');
     if (v == null || !p.endsWith(FileVault.encExt)) return p;
-    return v.decryptToCache(p, 'msg-${msg.msgId}-'
-        '${p.split(Platform.pathSeparator).last}');
+    final base = p
+        .split(Platform.pathSeparator)
+        .last
+        .replaceAll(FileVault.encExt, '');
+    return v.decryptToCache(p, 'msg-${msg.msgId}-$base');
   }
 
   /// 解锁回执计数入口(UI 刷新会话未读徽标用)。

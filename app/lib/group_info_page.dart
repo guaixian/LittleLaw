@@ -259,15 +259,24 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
       dense: true,
       leading: CircleAvatar(
         backgroundColor: scheme.secondaryContainer,
-        child: Icon(
-          isMe
-              ? Icons.person
-              : (peer?.platform == 'android' || peer?.platform == 'ios'
-                  ? Icons.smartphone
-                  : Icons.computer_outlined),
-          size: 20,
-          color: scheme.onSecondaryContainer,
-        ),
+        backgroundImage: isMe
+            ? Avatars.imageOf(engine)
+            : Avatars.imageOf(engine, peerId: memberId),
+        child: (isMe
+                    ? Avatars.imageOf(engine)
+                    : Avatars.imageOf(engine, peerId: memberId)) ==
+                null
+            ? Icon(
+                isMe
+                    ? Icons.person
+                    : (peer?.platform == 'android' ||
+                            peer?.platform == 'ios'
+                        ? Icons.smartphone
+                        : Icons.computer_outlined),
+                size: 20,
+                color: scheme.onSecondaryContainer,
+              )
+            : null,
       ),
       title: Text(name),
       subtitle: Text(
