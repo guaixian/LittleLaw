@@ -52,3 +52,4 @@ app/android/littlelaw-release-original-backup.keystore
 
 # 本地构建产物
 server/littlelaw-rendezvous.exe
+core/doc/
