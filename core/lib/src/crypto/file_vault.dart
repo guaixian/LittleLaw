@@ -229,10 +229,9 @@ class FileVault {
   /// 原子写:先写随机 .tmp 再改名,中断不会留下半包缓存毒化后续复用;
   /// 同 key 并发调用共享同一次解密,避免竞态交错写坏缓存。
   ///
-  /// 缓存键:调用方给的语义键(含用户可控文件名)只做 sha256 摘要,
-  /// 并混入密文文件的 size+mtime——旧版把非法字符折叠成 `_` 再拿
-  /// String.hashCode(32bit 可碰撞)当标识,碰撞时会把 A 会话的文件
-  /// 明文当 B 会话的发出去;密文变化(重收)后旧缓存自动失效。
+  /// 缓存文件名 = 摘要前缀(防碰撞/密文变化自动失效)+ 调用方语义键
+  /// (含原始文件名与扩展名)。纯摘要文件名没有扩展名,分享出去会被
+  /// 对端存成 .bin——扩展名必须保留(MIME/打开方式全靠它)。
   Future<String> decryptToCache(String encPath, String cacheKey) async {
     final f = File(encPath);
     String stat;
@@ -244,18 +243,24 @@ class FileVault {
     }
     final digest = sha256
         .convert(utf8.encode('$cacheKey|$stat|${f.path.length}'))
-        .toString();
-    final out = File('${cacheDir.path}/$digest');
-    final pending = _cacheInflight[digest];
+        .toString()
+        .substring(0, 16);
+    final safeKey = cacheKey
+        .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final fileName = safeKey.isEmpty ? digest : '$digest-$safeKey';
+    final out = File('${cacheDir.path}/$fileName');
+    final pending = _cacheInflight[fileName];
     if (pending != null) return pending;
     final task = _decryptToCacheInner(encPath, out);
-    _cacheInflight[digest] = task;
+    _cacheInflight[fileName] = task;
     try {
       final r = await task;
       _sweepCacheMaybe();
       return r;
     } finally {
-      _cacheInflight.remove(digest);
+      _cacheInflight.remove(fileName);
     }
   }
 

@@ -307,6 +307,9 @@ class LittleLawEngine {
     engine._discoveryExpiredSub = discovery.expiredDevices.listen((_) {});
 
     await discovery.start();
+    // 接收看门狗的"应有流量"判定:有已配对设备时,发现层 90s 完全
+    // 静默即判 socket 聋、主动重建(孤立设备静默属正常,不触发)。
+    discovery.expectTraffic = () => store.allPeers().isNotEmpty;
     sync.bootstrapSessions();
     return engine;
     } catch (e) {

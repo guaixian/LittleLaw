@@ -457,7 +457,20 @@ class SyncEngine extends pbg.SyncServiceBase {
     for (final peer in store.allPeers()) {
       ensureSession(peer);
     }
+    // 周期复活扫描:发现层事件丢失/重试耗尽(gaveUp)后,会话不再有
+    // 任何复活驱动——长时间挂机后"对方明明在却显示离线,重启才好"。
+    // 每 30s 对无活链路且不再自重试的会话重建拨号,自愈。
+    _reviveTimer ??= Timer.periodic(const Duration(seconds: 30), (_) {
+      for (final peer in store.allPeers()) {
+        if (_sinks[peer.deviceId]?.isNotEmpty == true) continue;
+        final s = _sessions[peer.deviceId];
+        if (s != null && !s.gaveUp) continue; // 还在自身退避重试中
+        ensureSession(peer);
+      }
+    });
   }
+
+  Timer? _reviveTimer;
 
   /// 对端从局域网消失(发现层超时未再出现):立即断开全部链路并标记离线。
   ///
@@ -1397,6 +1410,8 @@ class SyncEngine extends pbg.SyncServiceBase {
   Future<void> dispose() async {
     _idleSweepTimer?.cancel();
     _idleSweepTimer = null;
+    _reviveTimer?.cancel();
+    _reviveTimer = null;
     _peerLastRecv.clear();
     _announcedOnline.clear();
     // 1) 关闭所有连出会话(客户端侧)。

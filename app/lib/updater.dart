@@ -51,7 +51,7 @@ class Updater {
   static const _channel = MethodChannel('dev.littlelaw/share');
 
   /// 当前应用版本(与 pubspec 同步维护;发布时一起改)。
-  static const currentVersion = '2.6.1';
+  static const currentVersion = '2.6.2';
 
   /// 下载源白名单:只允许 GitHub 官方域名,防 API/链路被劫持后跳到任意主机。
   static const _allowedHosts = {

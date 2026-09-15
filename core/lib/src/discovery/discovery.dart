@@ -74,8 +74,8 @@ class DiscoveryService {
   Timer? _expiryTimer;
   Timer? _netWatchTimer;
 
-  /// 当前宣告间隔(空闲指数退避省电:3s → 最高 15s;发现邻居即回 3s)。
-  int _curAnnounceMs = 0;
+  /// 最近一次收到任何合法发现报文的时刻(接收看门狗依据)。
+  int _lastRecvAnyMs = 0;
 
   /// 组播是否加入成功(false = 当前网络组播被禁,发现依赖子网扫描)。
   bool multicastJoined = false;
@@ -83,6 +83,10 @@ class DiscoveryService {
   /// 组播状态变化事件(UI 提示"当前网络组播被禁"用)。
   Stream<bool> get multicastHealth => _mcastHealth.stream;
   final _mcastHealth = StreamController<bool>.broadcast();
+
+  /// 接收看门狗的"应有流量"判定(引擎注入:存在已配对设备时,静默
+  /// 90s 属异常;一台孤立设备长期静默是正常的,不该反复重建 socket)。
+  bool Function()? expectTraffic;
 
   final _devices = <String, DiscoveredDevice>{};
   final _replyCache = <String, int>{};
@@ -122,34 +126,38 @@ class DiscoveryService {
     if (_started) return;
     _started = true;
     await _bindSocket();
+    _lastRecvAnyMs = DateTime.now().millisecondsSinceEpoch;
 
-    _curAnnounceMs = announceInterval.inMilliseconds;
+    // 固定 3s 宣告(不做空闲退避:曾实测长时间空闲后互发现退化,
+    // 可靠性优先;移动端耗电优化改由平台侧处理)。
     _announceTimer =
-        Timer.periodic(announceInterval, (_) => unawaited(_announceTick()));
+        Timer.periodic(announceInterval, (_) => unawaited(_announce()));
     _scanTimer = Timer.periodic(scanInterval, (_) => unawaited(_scanSubnet()));
     // 过期检测频率 = 宣告间隔,保证离线判定延迟稳定在 TTL±interval。
     _expiryTimer = Timer.periodic(announceInterval, (_) => _expireStale());
-    // 网卡签名监测:WiFi 漫游/换网后组播成员资格失效,必须重建 socket。
+    // 网卡监测 + 接收看门狗:漫游/换网后组播成员资格失效要重建 socket;
+    // 长时间收不到【任何】报文说明 socket 已聋(驱动/组播状态丢失等,
+    // 重启 App 才能恢复的那类故障),主动重建 socket 自愈。
     _netWatchTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       unawaited(_checkNetworkChanged());
+      _watchdogSweep();
     });
 
     await _announce();
   }
 
-  /// 宣告节拍:空闲(周围没有任何 LittleLaw 设备)时指数退避省电,
-  /// 邻居出现/收到报文即恢复最快频率。移动端每 3s 组播是耗电大户。
-  Future<void> _announceTick() async {
-    if (_devices.isEmpty) {
-      _curAnnounceMs = (_curAnnounceMs * 2)
-          .clamp(announceInterval.inMilliseconds, 15 * 1000);
-    } else {
-      _curAnnounceMs = announceInterval.inMilliseconds;
-    }
-    await _announce();
-    // 退避期间宣告变慢,补偿一次单播扫描,保证被发现延迟不退化。
-    if (_curAnnounceMs > announceInterval.inMilliseconds) {
-      unawaited(_scanSubnet());
+  /// 接收看门狗:已运行且"应有流量"(有已配对设备),但 90s 内一个包
+  /// 都没收到——正常网络里配对设备的宣告/回复远比这密集,判定 socket
+  /// 已聋(驱动/组播状态丢失等"重启 App 才能恢复"类故障),
+  /// 主动重建 socket 自愈。
+  void _watchdogSweep() {
+    if (!_started || _rebinding) return;
+    if (_lastRecvAnyMs <= 0) return;
+    if (!(expectTraffic?.call() ?? true)) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastRecvAnyMs > 90 * 1000) {
+      _lastRecvAnyMs = now; // 防止重建期间重复触发
+      unawaited(_rebindSocket());
     }
   }
 
@@ -227,6 +235,7 @@ class DiscoveryService {
     _scanTimer?.cancel();
     _expiryTimer?.cancel();
     _netWatchTimer?.cancel();
+    _lastRecvAnyMs = 0;
     // 先停订阅再关 socket,防止在途报文写入已关闭的流。
     await _socketSub?.cancel();
     _socketSub = null;
@@ -537,6 +546,9 @@ class DiscoveryService {
     if (packet.device.deviceId == identity.deviceId) return;
     if (packet.device.port <= 0 || packet.device.port > 65535) return;
 
+    // 通过基础校验即视为链路活着(接收看门狗依据)。
+    _lastRecvAnyMs = DateTime.now().millisecondsSinceEpoch;
+
     // ---- v2 安全校验 ----
     // 1) 新鲜度:时间戳超出 ±30s 视为重放,直接丢弃
     //    (防止重放旧宣告让已离线设备在别人 UI 里"永远在线")。
@@ -587,11 +599,7 @@ class DiscoveryService {
 
   void _expireStale() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    // TTL 跟随当前宣告间隔(退避时同步放宽,不会误判)。
-    final ttl = (_curAnnounceMs <= 0
-            ? announceInterval.inMilliseconds
-            : _curAnnounceMs) *
-        4;
+    final ttl = announceInterval.inMilliseconds * 4;
     final expired = <String>[];
     _devices.removeWhere((id, d) {
       final stale = now - d.lastSeenMs > ttl;
