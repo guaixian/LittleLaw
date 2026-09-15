@@ -214,7 +214,7 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           ),
           const SizedBox(height: 14),
           item(Icons.forum_outlined, L10n.t('nav.chats'), 0),
-          item(Icons.hub_outlined, L10n.t('nav.connect'), 1),
+          item(Icons.qr_code_scanner_outlined, L10n.t('nav.connect'), 1),
           const Spacer(),
           // 设置固定在图标栏底部(搜索入口在会话列表头部)。
           item(Icons.settings_outlined, L10n.t('nav.settings'), 2),

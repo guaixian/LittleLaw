@@ -586,9 +586,11 @@ class _HomeShellState extends State<HomeShell> {
             selectedIcon: const Icon(Icons.devices),
             label: L10n.t('nav.devices'),
           ),
+          // 连接页 = 扫码/碰一碰/远程邀请入口:用扫码图标
+          //(旧 hub 网络拓扑图标语义弱、造型也偏丑)。
           NavigationDestination(
-            icon: const Icon(Icons.hub_outlined),
-            selectedIcon: const Icon(Icons.hub),
+            icon: const Icon(Icons.qr_code_scanner_outlined),
+            selectedIcon: const Icon(Icons.qr_code_scanner),
             label: L10n.t('nav.connect'),
           ),
           NavigationDestination(
