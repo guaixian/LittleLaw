@@ -210,8 +210,22 @@ void main() {
       () => a.peerById(idB()) == null && b.peerById(idA()) == null,
       description: '双端信任记录已清除',
     );
-    // 会话消息也已清空(Telegram 模式)。
-    expect(a.loadMessages(idB()), isEmpty);
-    expect(b.loadMessages(idA()), isEmpty);
+    // 墓碑会话:双端各留一条解绑系统消息(Telegram 全删模型 + 可观察性)。
+    final tombA =
+        a.loadMessages(idB()).where((m) => m.kind == Message.kindSystem);
+    expect(tombA.length, 1, reason: 'A 侧应有解绑墓碑');
+    expect(tombA.first.text, contains('解除配对'));
+    final tombB =
+        b.loadMessages(idA()).where((m) => m.kind == Message.kindSystem);
+    expect(tombB.length, 1, reason: 'B 侧应有解绑墓碑(经 Unpair RPC 清库)');
+    // 普通消息全部清除。
+    expect(
+        a.loadMessages(idB())
+            .where((m) => m.kind != Message.kindSystem),
+        isEmpty);
+    expect(
+        b.loadMessages(idA())
+            .where((m) => m.kind != Message.kindSystem),
+        isEmpty);
   }, timeout: const Timeout(Duration(minutes: 5)));
 }

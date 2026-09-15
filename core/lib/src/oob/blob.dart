@@ -23,6 +23,7 @@ class OobBlob {
     required this.fingerprint,
     required this.token,
     this.deviceModel = '',
+    this.certDer = const [],
     this.sdp,
     this.candidates = const [],
     this.rendezvousUrl,
@@ -42,6 +43,10 @@ class OobBlob {
   final String platform;
   final String fingerprint; // 自签证书 SHA-256,hex
   final String deviceModel; // 机型
+
+  /// 证书 DER(base64 传输)。配对后令牌轮换(ECDH 派生)的公钥来源;
+  /// 旧版本引导包可能为空(轮换退化为令牌原文派生)。
+  final List<int> certDer;
 
   /// 共享会话令牌(hex)。offer 方生成,answer 方必须原样回显(证明往返)。
   final String token;
@@ -85,6 +90,7 @@ class OobBlob {
         'platform': platform,
         'fpr': fingerprint,
         'model': deviceModel,
+        if (certDer.isNotEmpty) 'crt': base64Url.encode(certDer),
       },
       'token': token,
       if (sdp != null) 'rtc': {'sdp': sdp, 'candidates': compactCandidates},
@@ -102,6 +108,11 @@ class OobBlob {
   /// (否则结尾为空格的合法载荷会被截断)。
   static OobBlob decode(String encoded) {
     final text = encoded.replaceAll(RegExp(r'[\r\n\t]'), '');
+    if (text.length > 256 * 1024) {
+      // 引导包是二维码/粘贴内容,合理上限远小于此;超限直接拒绝,
+      // 缓解解压炸弹(LLB3 无解压上限原语,先挡住异常输入)。
+      throw const FormatException('引导包超长');
+    }
     List<int> jsonBytes;
     if (text.startsWith('LLB3.')) {
       try {
@@ -111,18 +122,30 @@ class OobBlob {
       }
     } else if (text.startsWith('LLB2.')) {
       try {
-        jsonBytes = gzip.decode(base64Url.decode(text.substring(5)));
+        var b64 = text.substring(5);
+        // 容忍缺 '=' 填充(base64url 粘贴场景常见)。
+        while (b64.length % 4 != 0) {
+          b64 += '=';
+        }
+        jsonBytes = gzip.decode(base64Url.decode(b64));
       } catch (_) {
         throw const FormatException('引导包内容损坏(gzip 解压失败)');
       }
     } else if (text.startsWith('LLB1.')) {
       try {
-        jsonBytes = base64Url.decode(text.substring(5));
+        var b64 = text.substring(5);
+        while (b64.length % 4 != 0) {
+          b64 += '=';
+        }
+        jsonBytes = base64Url.decode(b64);
       } catch (_) {
         throw const FormatException('引导包内容损坏');
       }
     } else {
       throw const FormatException('不是 LittleLaw 引导包(缺少 LLB 前缀)');
+    }
+    if (jsonBytes.length > 1024 * 1024) {
+      throw const FormatException('引导包解压后超长(疑似解压炸弹)');
     }
     Map<String, dynamic> json;
     try {
@@ -133,29 +156,61 @@ class OobBlob {
     if (json['v'] != currentVersion) {
       throw FormatException('引导包版本不兼容: ${json['v']}');
     }
-    final device = json['device'] as Map<String, dynamic>? ??
-        (throw const FormatException('缺少设备信息'));
-    final type = json['type'] as String? ?? '';
-    if (type != typeOffer && type != typeAnswer) {
+    if (json['device'] is! Map) {
+      throw const FormatException('缺少设备信息');
+    }
+    final device = json['device'] as Map<String, dynamic>;
+    final type = json['type'];
+    if (type is! String || (type != typeOffer && type != typeAnswer)) {
       throw FormatException('未知类型: $type');
     }
-    final rtc = json['rtc'] as Map<String, dynamic>?;
+    // 时间戳双向窗口:过老 = 过期重放;明显未来 = 时钟回拨伪造。
+    final ts = json['ts'];
+    if (ts is! int || ts <= 0) {
+      throw const FormatException('缺少时间戳');
+    }
+    final ageMs = DateTime.now().millisecondsSinceEpoch - ts;
+    if (ageMs < -Duration.minutesPerDay * 60 * 1000) {
+      throw const FormatException('引导包时间戳异常(未来时间)');
+    }
+    final rtc = json['rtc'];
+    final rtcMap = rtc is Map<String, dynamic> ? rtc : null;
+    final addr = json['addr'];
+    final tokenStr = json['token'];
+    final fpr = device['fpr'];
+    if (fpr is! String || !RegExp(r'^[0-9a-f]{64}$').hasMatch(fpr)) {
+      throw const FormatException('证书指纹缺失或格式非法');
+    }
+    if (tokenStr is! String || tokenStr.isEmpty) {
+      throw const FormatException('缺少会话令牌');
+    }
+    final crt = device['crt'];
+    List<int> certDer = const [];
+    if (crt is String && crt.isNotEmpty) {
+      try {
+        certDer = base64Url.decode(crt);
+      } catch (_) {
+        throw const FormatException('证书字段损坏');
+      }
+    }
+    final sdpObj = rtcMap?['sdp'];
+    final rvuObj = json['rvu'];
     return OobBlob(
       type: type,
-      deviceId: device['id'] as String? ??
-          (throw const FormatException('缺少 deviceId')),
-      deviceName: device['name'] as String? ?? '未知设备',
-      platform: device['platform'] as String? ?? 'unknown',
-      fingerprint: device['fpr'] as String? ??
-          (throw const FormatException('缺少证书指纹')),
-      deviceModel: device['model'] as String? ?? '',
-      token: json['token'] as String? ??
-          (throw const FormatException('缺少会话令牌')),
-      sdp: rtc?['sdp'] as String?,
-      candidates: _decodeCandidates(rtc?['candidates']),
-      rendezvousUrl: json['rvu'] as String?,
-      addresses: (json['addr'] as List?)?.cast<String>() ?? const [],
-      createdAtMs: json['ts'] as int? ?? 0,
+      deviceId: device['id'] is String ? device['id'] as String : '',
+      deviceName:
+          device['name'] is String ? device['name'] as String : '未知设备',
+      platform:
+          device['platform'] is String ? device['platform'] as String : 'unknown',
+      fingerprint: fpr,
+      deviceModel: device['model'] is String ? device['model'] as String : '',
+      certDer: certDer,
+      token: tokenStr,
+      sdp: sdpObj is String ? sdpObj : null,
+      candidates: _decodeCandidates(rtcMap?['candidates']),
+      rendezvousUrl: rvuObj is String ? rvuObj : null,
+      addresses: addr is List ? addr.cast<String>() : const [],
+      createdAtMs: ts,
     );
   }
 

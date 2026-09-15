@@ -98,7 +98,7 @@ void main() {
       );
       // B 收到 offer(扫码/粘贴/NFC)→ 入账 A → 生成 answer。
       final peerAinB = b.acceptRemoteOffer(OobBlob.decode(offer.encode()));
-      expect(peerAinB.token, token);
+      expect(peerAinB.token, isNot(token), reason: '入账令牌已轮换');
       final answer = OobBlob(
         type: OobBlob.typeAnswer,
         deviceId: idB,
@@ -109,7 +109,8 @@ void main() {
       );
       // A 收到 answer → 校验回显 → 入账 B。
       final peerBinA = a.acceptRemoteAnswer(OobBlob.decode(answer.encode()));
-      expect(peerBinA.token, token);
+      expect(peerBinA.token, peerAinB.token, reason: '双方轮换结果一致');
+      expect(peerBinA.token, isNot(token), reason: '令牌轮换');
       expect(a.peerById(idB), isNotNull);
       expect(b.peerById(idA), isNotNull);
 

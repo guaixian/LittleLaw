@@ -29,6 +29,13 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
   final _subscriptions = <StreamSubscription>[];
   final _discovered = <String, DiscoveredDevice>{};
 
+  /// 当前网络组播是否被禁(禁用时发现依赖子网扫描,提示用户)。
+  bool _mcastOk = true;
+
+  /// 事件风暴下的刷新合并:群消息高峰每条事件全量 setState + 重建
+  /// (每次 build 重查 conversationSummaries),改为 120ms 合并一次。
+  Timer? _refreshTimer;
+
   LittleLawEngine get engine => activeEngine!;
 
   @override
@@ -39,12 +46,13 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
       if (ev is MessageAdded ||
           ev is MessagesDeleted ||
           ev is PeerStatusChanged ||
+          ev is PeerRemoved ||
           ev is GroupSynced ||
           ev is ReceiptsUpdated ||
           ev is ReactionsChanged ||
           ev is ProfileUpdated) {
         if (ev is ProfileUpdated) Avatars.invalidate();
-        if (mounted) setState(() {});
+        _scheduleRefresh();
       }
     }));
     // 附近的设备(未配对):桌面端配对入口。
@@ -55,10 +63,24 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
     _subscriptions.add(e.discovery.expiredDevices.listen((id) {
       if (_discovered.remove(id) != null && mounted) setState(() {});
     }));
+    // 组播健康:被禁时提示(发现退化为子网扫描,大子网可能遗漏)。
+    _mcastOk = e.discovery.multicastJoined;
+    _subscriptions.add(e.discovery.multicastHealth.listen((ok) {
+      if (mounted) setState(() => _mcastOk = ok);
+    }));
+  }
+
+  void _scheduleRefresh() {
+    if (!mounted) return;
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer(const Duration(milliseconds: 120), () {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     for (final s in _subscriptions) {
       s.cancel();
     }
@@ -136,10 +158,9 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
         message: label,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () => setState(() {
-            _tab = index;
-            if (index != 0) _activeKey = null;
-          }),
+          onTap: () => setState(() => _tab = index),
+          // 保留 _activeKey:点一下设置再回来,聊天面板/草稿不丢
+          //(旧版强制清空,回来变占位页)。
           child: Container(
             width: 44,
             height: 44,
@@ -416,7 +437,9 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: Text(
-              '正在搜索同一网络内未配对的设备…\n手机端:设备页下拉刷新即可被搜索到',
+              _mcastOk
+                  ? '正在搜索同一网络内未配对的设备…\n手机端:设备页下拉刷新即可被搜索到'
+                  : '当前网络组播被禁,发现依赖子网扫描(可能较慢或不全)\n可在对端设备页输入本机 IP 手动添加',
               style:
                   TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
@@ -662,9 +685,9 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
     );
     if (ok != true) return;
     await engine.unpair(peerId);
-    if (mounted && _activeKey == peerId) {
-      setState(() => _activeKey = null);
-    }
+    // 保留 _activeKey:右栏切到墓碑会话面板(解绑说明 + 删除入口),
+    // 用户确认后自行关闭。
+    if (mounted) setState(() {});
   }
 
   void _popupMenu(_ConvEntry e, Offset position) {
@@ -762,7 +785,10 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
     final key = _activeKey!;
     final g = engine.groupById(key);
     if (g != null && engine.peers.isNotEmpty) {
+      // key:桌面三栏切换会话时同类型 widget 会复用旧 State
+      //(标题 B、消息列表却是 A 的内容)——按会话 key 强制重建。
       return ChatPage(
+        key: ValueKey('g:$key'),
         peer: engine.peers.first,
         engine: engine,
         group: g,
@@ -773,13 +799,67 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
     final peer = engine.peerById(key);
     if (peer != null) {
       return ChatPage(
+        key: ValueKey('p:$key'),
         peer: peer,
         engine: engine,
         embedded: true,
         onClose: () => setState(() => _activeKey = null),
       );
     }
-    return const SizedBox.shrink();
+    // 墓碑会话(对端已解绑):不再返回空白面板(旧版右栏永久空白
+    // 且无关闭按钮),给出解绑说明与"删除会话"入口。
+    return _tombstonePane(key, scheme);
+  }
+
+  /// 墓碑会话面板:系统消息 + 删除会话。
+  Widget _tombstonePane(String key, ColorScheme scheme) {
+    final msgs = engine.loadMessages(key);
+    return Scaffold(
+      backgroundColor: scheme.surfaceContainerLowest,
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: '关闭',
+          icon: const Icon(Icons.close),
+          onPressed: () => setState(() => _activeKey = null),
+        ),
+        title: const Text('已解除配对'),
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(14),
+        itemCount: msgs.length,
+        itemBuilder: (ctx, i) => Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              msgs[i].kind == Message.kindSystem
+                  ? msgs[i].text
+                  : '(历史消息已删除)',
+              style:
+                  TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('删除会话'),
+            onPressed: () async {
+              await engine.removeConversation(key);
+              if (mounted) setState(() => _activeKey = null);
+            },
+          ),
+        ),
+      ),
+    );
   }
 }
 

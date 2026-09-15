@@ -109,8 +109,12 @@ void main() {
       expect(delivered.first, answer1);
       // A 的 WebRTC 层(此处模拟)应用应答 → 入账 B。
       final peerB = a.acceptRemoteAnswer(OobBlob.decode(delivered.first));
-      expect(peerB.token, token1);
-      expect(a.peerById(b.identity.deviceId)!.token, token1);
+      // 令牌已轮换(ECDH 派生),不再是二维码明文的 offer 令牌。
+      expect(peerB.token, isNot(token1));
+      expect(a.peerById(b.identity.deviceId)!.token, peerB.token);
+      expect(
+          b.peerById(a.identity.deviceId)!.token, peerB.token,
+          reason: '双方各自轮换结果一致');
 
       // ---------- 方式二:一次性临时连接推回(模拟未配置服务器的设备) ----------
       final token2 = a.beginRemoteOffer();
@@ -125,7 +129,8 @@ void main() {
           description: 'A 经一次性连接收到配对应答');
       expect(delivered.first, answer2);
       final peerB2 = a.acceptRemoteAnswer(OobBlob.decode(delivered.first));
-      expect(peerB2.token, token2);
+      expect(peerB2.token, isNot(token2), reason: '令牌轮换');
+      expect(b.peerById(a.identity.deviceId)!.token, peerB2.token);
 
       await sub.cancel();
     } finally {

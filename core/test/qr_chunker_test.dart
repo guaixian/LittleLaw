@@ -11,10 +11,10 @@ void main() {
           List.generate(5000, (_) => 33 + rng.nextInt(90)));
       final frames = QrChunker.split(payload);
       expect(frames.length, greaterThan(10));
-      // 每帧都是合法帧,且体积小。
+      // 每帧都是合法帧,且体积小(帧头 + 第 1 帧的 64-hex 摘要计入)。
       for (final f in frames) {
         expect(QrChunker.isChunk(f), isTrue);
-        expect(f.length, lessThanOrEqualTo(QrChunker.defaultChunkSize + 20));
+        expect(f.length, lessThanOrEqualTo(QrChunker.defaultChunkSize + 90));
       }
       // 乱序喂入也能重组。
       final shuffled = List.of(frames)..shuffle();

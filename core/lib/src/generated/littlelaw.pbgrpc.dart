@@ -33,12 +33,22 @@ class PairingServiceClient extends $grpc.Client {
   PairingServiceClient(super.channel, {super.options, super.interceptors});
 
   /// 请求配对。双方各自用对方证书指纹计算相同 PIN 并肉眼核对,
-  /// 被请求方用户点击同意后返回一次性会话令牌,双方写入 trusted_peers。
+  /// 被请求方用户点击同意后返回一次性会话令牌(此时**未入账**)。
+  /// 发起方核验 TLS 观测指纹与响应宣称一致后,调 ConfirmPair 提交——
+  /// 两阶段提交:响应方只在收到发起方身份密钥签名确认后才落库,
+  /// 防止"发起方已发现中间人放弃,响应方却已入账"的单边提交劫持。
   $grpc.ResponseFuture<$0.PairResponse> requestPair(
     $0.PairRequest request, {
     $grpc.CallOptions? options,
   }) {
     return $createUnaryCall(_$requestPair, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.PairConfirmResponse> confirmPair(
+    $0.PairConfirmRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createUnaryCall(_$confirmPair, request, options: options);
   }
 
   /// 一碰/一扫配对(免 PIN):请求方携带通过物理通道(NFC 触碰 /
@@ -85,6 +95,11 @@ class PairingServiceClient extends $grpc.Client {
           '/littlelaw.v1.PairingService/RequestPair',
           ($0.PairRequest value) => value.writeToBuffer(),
           $0.PairResponse.fromBuffer);
+  static final _$confirmPair =
+      $grpc.ClientMethod<$0.PairConfirmRequest, $0.PairConfirmResponse>(
+          '/littlelaw.v1.PairingService/ConfirmPair',
+          ($0.PairConfirmRequest value) => value.writeToBuffer(),
+          $0.PairConfirmResponse.fromBuffer);
   static final _$pairWithTap =
       $grpc.ClientMethod<$0.TapPairRequest, $0.TapPairResponse>(
           '/littlelaw.v1.PairingService/PairWithTap',
@@ -119,6 +134,15 @@ abstract class PairingServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $0.PairRequest.fromBuffer(value),
         ($0.PairResponse value) => value.writeToBuffer()));
+    $addMethod(
+        $grpc.ServiceMethod<$0.PairConfirmRequest, $0.PairConfirmResponse>(
+            'ConfirmPair',
+            confirmPair_Pre,
+            false,
+            false,
+            ($core.List<$core.int> value) =>
+                $0.PairConfirmRequest.fromBuffer(value),
+            ($0.PairConfirmResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.TapPairRequest, $0.TapPairResponse>(
         'PairWithTap',
         pairWithTap_Pre,
@@ -158,6 +182,14 @@ abstract class PairingServiceBase extends $grpc.Service {
 
   $async.Future<$0.PairResponse> requestPair(
       $grpc.ServiceCall call, $0.PairRequest request);
+
+  $async.Future<$0.PairConfirmResponse> confirmPair_Pre($grpc.ServiceCall $call,
+      $async.Future<$0.PairConfirmRequest> $request) async {
+    return confirmPair($call, await $request);
+  }
+
+  $async.Future<$0.PairConfirmResponse> confirmPair(
+      $grpc.ServiceCall call, $0.PairConfirmRequest request);
 
   $async.Future<$0.TapPairResponse> pairWithTap_Pre($grpc.ServiceCall $call,
       $async.Future<$0.TapPairRequest> $request) async {

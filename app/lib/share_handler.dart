@@ -12,8 +12,14 @@ class ShareHandler {
   ShareHandler._();
   static const _channel = MethodChannel('dev.littlelaw/share');
 
+  /// 引擎未就绪时暂存的待分发分享(冷启动竞态:peers 尚未加载完时
+  /// initial share 直接被丢弃并提示错误)。
+  static Map<String, dynamic>? _pendingShare;
+  static LittleLawEngine? _engine;
+
   /// 接线(HomeShell 启动时调用一次)。
   static void attach(LittleLawEngine engine) {
+    _engine = engine;
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onShare' && call.arguments is Map) {
         _dispatch(engine, Map<String, dynamic>.from(call.arguments as Map));
@@ -25,7 +31,21 @@ class ShareHandler {
         final initial =
             await _channel.invokeMethod<Map>('getInitialShare');
         if (initial != null) {
-          _dispatch(engine, Map<String, dynamic>.from(initial));
+          final payload = Map<String, dynamic>.from(initial);
+          // 引擎可能仍在初始化(peers 未加载):延迟重试而不是丢弃。
+          if (engine.peers.isEmpty && engine.groups.isEmpty) {
+            _pendingShare = payload;
+            Future.delayed(const Duration(seconds: 2), () {
+              final p = _pendingShare;
+              final e = _engine;
+              if (p == null || e == null) return;
+              if (e.peers.isEmpty && e.groups.isEmpty) return; // 仍未就绪
+              _pendingShare = null;
+              _dispatch(e, p);
+            });
+            return;
+          }
+          _dispatch(engine, payload);
         }
       } catch (_) {}
     });

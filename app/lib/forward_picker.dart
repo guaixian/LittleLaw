@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
@@ -6,6 +8,17 @@ import 'chat_page.dart';
 import 'globals.dart';
 import 'i18n.dart';
 import 'toast.dart';
+
+/// 当前是否处于桌面三栏外壳(宽屏桌面):转发后不 push 全屏聊天页,
+/// 由外壳 _activeKey 驱动嵌入面板。
+bool get isDesktopShell {
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null) return false;
+  if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+    return false;
+  }
+  return MediaQuery.sizeOf(ctx).width >= 850;
+}
 
 /// 转发选择器:把内容(text / 文件,可多个)发到某个会话(1:1 或群)。
 /// 供消息长按"转发"、批量转发与系统分享入口共用。
@@ -88,24 +101,28 @@ class _ForwardSheet extends StatelessWidget {
           ? engine.groupById(target)?.name
           : engine.peerById(target)?.deviceName;
       showToast('已发送到 $name', type: ToastType.success);
-      // 发送后直达目标会话。
+      // 发送后直达目标会话。桌面三栏外壳:嵌入面板由 _activeKey 驱动,
+      // 不再 push 全屏页(旧版覆盖三栏外壳,关闭后嵌入面板并非目标会话);
+      // 移动端 push 整页。
       final nav = navigatorKey.currentState;
       if (nav != null) {
         nav.popUntil((route) => route.isFirst);
-        if (isGroup) {
-          final group = engine.groupById(target);
-          if (group != null && engine.peers.isNotEmpty) {
-            nav.push(MaterialPageRoute(
-              builder: (_) => ChatPage(
-                  peer: engine.peers.first, engine: engine, group: group),
-            ));
-          }
-        } else {
-          final peer = engine.peerById(target);
-          if (peer != null) {
-            nav.push(MaterialPageRoute(
-              builder: (_) => ChatPage(peer: peer, engine: engine),
-            ));
+        if (!isDesktopShell) {
+          if (isGroup) {
+            final group = engine.groupById(target);
+            if (group != null && engine.peers.isNotEmpty) {
+              nav.push(MaterialPageRoute(
+                builder: (_) => ChatPage(
+                    peer: engine.peers.first, engine: engine, group: group),
+              ));
+            }
+          } else {
+            final peer = engine.peerById(target);
+            if (peer != null) {
+              nav.push(MaterialPageRoute(
+                builder: (_) => ChatPage(peer: peer, engine: engine),
+              ));
+            }
           }
         }
       }

@@ -43,6 +43,14 @@ class CallManager {
   CallOffer? _pendingOffer;
   Timer? _ringTimeout;
 
+  /// 被叫响铃期间先到的 ICE 候选缓冲(主叫 host 候选几秒内收完,
+  /// 晚接电话≈全部到达;旧版 _pc == null 直接丢弃,对称 NAT 下
+  /// 打洞必败)。SRD 完成后统一 flush。
+  final _earlyCandidates = <RTCIceCandidate>[];
+
+  /// 已处理过的 answer(防重复投递触发 "wrong state" 异常)。
+  final _answeredCallIds = <String>{};
+
   CallState _state = CallState.idle;
   CallState get state => _state;
   String? get peerId => _peerId;
@@ -79,7 +87,9 @@ class CallManager {
     _peerId = peerId;
     _video = video;
     _callId = const Uuid().v4();
-
+    // 同步先占状态:openUserMedia 有秒级 await,双击发起会创建两个 PC
+    //(第一个 PC 与摄像头/麦克风轨道永不释放),失败时 teardown 复位。
+    _setState(CallState.outgoing);
     try {
       await _openUserMedia(video);
       _pc = await _createPc();
@@ -89,7 +99,6 @@ class CallManager {
         id: const Uuid().v4(),
         callOffer: CallOffer(callId: _callId, sdp: offer.sdp!, video: video),
       ));
-      _setState(CallState.outgoing);
       _armRingTimeout();
     } catch (e) {
       await _teardown('startCall failed: $e');
@@ -102,11 +111,14 @@ class CallManager {
     final offer = _pendingOffer;
     if (_state != CallState.incoming || offer == null) return;
     _ringTimeout?.cancel();
+    // 同步先占状态(重入保护,同 startCall)。
+    _setState(CallState.connecting);
     try {
       await _openUserMedia(_video);
       _pc = await _createPc();
       await _pc!.setRemoteDescription(
           RTCSessionDescription(offer.sdp, 'offer'));
+      await _flushEarlyCandidates();
       final answer = await _pc!.createAnswer();
       await _pc!.setLocalDescription(answer);
       engine.sync.sendEnvelope(_peerId!, Envelope(
@@ -114,7 +126,6 @@ class CallManager {
         callAnswer: CallAnswer(
             callId: _callId!, sdp: answer.sdp!, accepted: true),
       ));
-      _setState(CallState.connecting);
     } catch (e) {
       await _teardown('accept failed: $e');
     }
@@ -200,22 +211,53 @@ class CallManager {
 
   Future<void> _onAnswer(String peerId, CallAnswer answer) async {
     if (peerId != _peerId || answer.callId != _callId || _pc == null) return;
+    // 重复投递防护:同一 callId 的 answer 只处理一次(重复 SRD 抛
+    // "wrong state" 未处理 zone 异常,状态机卡 connecting 等 45s 超时)。
+    if (!_answeredCallIds.add(answer.callId)) return;
     _ringTimeout?.cancel();
     if (!answer.accepted) {
       await _teardown('reject');
       return;
     }
-    await _pc!
-        .setRemoteDescription(RTCSessionDescription(answer.sdp, 'answer'));
-    _setState(CallState.connecting);
+    try {
+      await _pc!
+          .setRemoteDescription(RTCSessionDescription(answer.sdp, 'answer'));
+      await _flushEarlyCandidates();
+      _setState(CallState.connecting);
+    } catch (e) {
+      await _teardown('bad answer: $e');
+    }
   }
 
   Future<void> _onCandidate(String peerId, CallCandidate candidate) async {
-    if (peerId != _peerId || candidate.callId != _callId || _pc == null) {
+    if (peerId != _peerId || candidate.callId != _callId) {
       return;
     }
-    await _pc!.addCandidate(RTCIceCandidate(candidate.candidate,
-        candidate.sdpMid, candidate.sdpMlineIndex));
+    final c = RTCIceCandidate(
+        candidate.candidate, candidate.sdpMid, candidate.sdpMlineIndex);
+    // 响铃期间 PC 未建:缓冲等 SRD 后补(SRD 前直接 addCandidate 会抛错)。
+    if (_pc == null) {
+      if (_earlyCandidates.length < 64) _earlyCandidates.add(c);
+      return;
+    }
+    try {
+      await _pc!.addCandidate(c);
+    } catch (_) {
+      // SRD 恰好还在进行等时序错位:缓冲到下一个候选前重试一次。
+      if (_earlyCandidates.length < 64) _earlyCandidates.add(c);
+    }
+  }
+
+  Future<void> _flushEarlyCandidates() async {
+    final pc = _pc;
+    if (pc == null) return;
+    final pending = List.of(_earlyCandidates);
+    _earlyCandidates.clear();
+    for (final c in pending) {
+      try {
+        await pc.addCandidate(c);
+      } catch (_) {}
+    }
   }
 
   // ------------------------------------------------------------ 内部
@@ -284,6 +326,8 @@ class CallManager {
     final wasActive = _state != CallState.idle;
     _state = CallState.ended;
     _pendingOffer = null;
+    _earlyCandidates.clear();
+    if (_answeredCallIds.length > 64) _answeredCallIds.clear();
     try {
       await _pc?.close();
     } catch (_) {}

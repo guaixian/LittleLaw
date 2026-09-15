@@ -4,7 +4,8 @@ import 'dart:typed_data';
 ///
 /// 字符集与 QR 字母数字(Alphanumeric)模式完全一致,配合该模式时
 /// 每字符承载 5.5 bit 数据,远优于 base64+字节模式(8 bit/6bit)。
-/// 编码规则:2 字节 → 3 字符;末尾单字节 → 2 字符。
+/// 编码规则:2 字节 → 3 字符(低位数字在前,按 RFC 9285 §4);
+/// 末尾单字节 → 2 字符。
 class Base45 {
   Base45._();
 
@@ -31,22 +32,17 @@ class Base45 {
     final sb = StringBuffer();
     var i = 0;
     while (i + 1 < bytes.length) {
-      var x = (bytes[i] << 8) | bytes[i + 1];
-      final c2 = x % 45;
-      x ~/= 45;
-      final c1 = x % 45;
-      final c0 = x ~/ 45;
-      sb.write(alphabet[c0]);
-      sb.write(alphabet[c1]);
-      sb.write(alphabet[c2]);
+      final n = (bytes[i] << 8) | bytes[i + 1];
+      // RFC 9285:n = c0 + c1*45 + c2*45^2,依次输出 c0 c1 c2(低位在前)。
+      sb.write(alphabet[n % 45]);
+      sb.write(alphabet[(n ~/ 45) % 45]);
+      sb.write(alphabet[(n ~/ 45 ~/ 45) % 45]);
       i += 2;
     }
     if (i < bytes.length) {
-      final b = bytes[i];
-      final c1 = b % 45;
-      final c0 = b ~/ 45;
-      sb.write(alphabet[c0]);
-      sb.write(alphabet[c1]);
+      final n = bytes[i];
+      sb.write(alphabet[n % 45]);
+      sb.write(alphabet[n ~/ 45]);
     }
     return sb.toString();
   }
@@ -59,7 +55,7 @@ class Base45 {
       final c0 = _value(units[i]);
       final c1 = _value(units[i + 1]);
       final c2 = _value(units[i + 2]);
-      final x = c0 * 45 * 45 + c1 * 45 + c2;
+      final x = c0 + c1 * 45 + c2 * 45 * 45;
       if (x > 65535) {
         throw const FormatException('base45 数据损坏(值越界)');
       }
@@ -74,7 +70,7 @@ class Base45 {
       }
       final c0 = _value(units[i]);
       final c1 = _value(units[i + 1]);
-      final x = c0 * 45 + c1;
+      final x = c0 + c1 * 45;
       if (x > 255) {
         throw const FormatException('base45 数据损坏(值越界)');
       }

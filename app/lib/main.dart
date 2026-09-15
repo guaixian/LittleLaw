@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'backup.dart';
 import 'call.dart';
 import 'call_page.dart';
 import 'chat_page.dart';
@@ -25,6 +27,7 @@ import 'quick_pair_page.dart';
 import 'remote_pair_page.dart';
 import 'settings_page.dart';
 import 'share_handler.dart';
+import 'share_out.dart';
 import 'theme/app_theme.dart';
 import 'toast.dart';
 import 'updater.dart';
@@ -100,6 +103,111 @@ class _BootPageState extends State<BootPage> {
     _boot();
   }
 
+  /// 解析数据目录,优先级:
+  /// 1) 命令行 --data-dir(多实例测试用);
+  /// 2) 便携模式:exe 旁存在 portable.marker 或 `<exeDir>/data` 且可写 → 数据随程序目录;
+  /// 3) Windows:%LOCALAPPDATA%\LittleLaw(Roaming 放 SQLite/私钥会在域环境漫游同步,
+  ///    登录变慢且双机并用会损坏 db);旧 Roaming 数据首次自动迁移;
+  /// 4) 其他平台:系统支持目录。
+  static Future<String> _resolveDataDir() async {
+    if (_argDataDir != null) return _argDataDir!;
+    if (Platform.isWindows || Platform.isLinux) {
+      try {
+        final exeDir = File(Platform.resolvedExecutable).parent;
+        final sep = Platform.pathSeparator;
+        final marker = File('${exeDir.path}${sep}portable.marker');
+        final portable = Directory('${exeDir.path}${sep}data');
+        if (marker.existsSync() || portable.existsSync()) {
+          try {
+            portable.createSync(recursive: true);
+            final probe = File('${portable.path}$sep.probe');
+            probe.writeAsStringSync('ok');
+            probe.deleteSync();
+            return portable.path;
+          } catch (_) {
+            // exe 目录不可写(装进 Program Files)→ 回退标准目录。
+          }
+        }
+      } catch (_) {}
+    }
+    if (Platform.isWindows) {
+      final local = Platform.environment['LOCALAPPDATA'];
+      if (local != null && local.isNotEmpty) {
+        final dir = Directory('$local\\LittleLaw');
+        try {
+          dir.createSync(recursive: true);
+          await _maybeMigrateRoamingTo(dir.path);
+          return dir.path;
+        } catch (_) {}
+      }
+    }
+    return (await getApplicationSupportDirectory()).path;
+  }
+
+  /// 一次性迁移:目标目录还没有 db 而旧 Roaming 目录有 → 全量搬过来。
+  static Future<void> _maybeMigrateRoamingTo(String target) async {
+    try {
+      final roaming = Platform.environment['APPDATA'];
+      if (roaming == null || roaming.isEmpty) return;
+      if (File('$target\\littlelaw.db').existsSync()) return;
+      final candidates = [
+        '$roaming\\dev.littlelaw\\littlelaw', // path_provider 旧默认
+        '$roaming\\littlelaw',
+      ];
+      for (final srcPath in candidates) {
+        final src = Directory(srcPath);
+        if (!File('${src.path}\\littlelaw.db').existsSync()) continue;
+        for (final e in src.listSync(recursive: false)) {
+          final name =
+              e.path.split(Platform.pathSeparator).last.split('/').last;
+          if (name == 'tmp') continue;
+          try {
+            await e.rename('$target\\$name');
+          } catch (_) {
+            // 被占用等:尝试复制。
+            try {
+              if (e is File) {
+                await e.copy('$target\\$name');
+              } else if (e is Directory) {
+                await _copyDir(e, Directory('$target\\$name'));
+              }
+            } catch (_) {}
+          }
+        }
+        return; // 旧目录找到即止
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> _copyDir(Directory src, Directory dst) async {
+    await dst.create(recursive: true);
+    await for (final e in src.list()) {
+      final name = e.path.split(Platform.pathSeparator).last.split('/').last;
+      if (e is File) {
+        await e.copy('${dst.path}\\$name');
+      } else if (e is Directory) {
+        await _copyDir(e, Directory('${dst.path}\\$name'));
+      }
+    }
+  }
+
+  /// 清掉数据目录 tmp 下超过 48h 的残留(录音崩溃残留、下载中断件等)。
+  static void _sweepOldTmp(String dataDir) {
+    try {
+      final d = Directory('$dataDir/tmp');
+      if (!d.existsSync()) return;
+      final cutoff = DateTime.now().subtract(const Duration(hours: 48));
+      for (final e in d.listSync()) {
+        try {
+          final st = e.statSync();
+          if (st.modified.isBefore(cutoff)) {
+            e.deleteSync(recursive: true);
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   Future<void> _maybeShowIntro() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -118,8 +226,7 @@ class _BootPageState extends State<BootPage> {
 
   Future<void> _boot() async {
     try {
-      final dataDir =
-          _argDataDir ?? (await getApplicationSupportDirectory()).path;
+      final dataDir = await _resolveDataDir();
       // 机型采集(显示用);桌面端缺省名带计算机名,移动端由引擎按 "平台-型号" 生成。
       final model = await gatherDeviceModel();
       final defaultName = _argDeviceName ?? await gatherDesktopDefaultName();
@@ -135,6 +242,10 @@ class _BootPageState extends State<BootPage> {
         upnpEnabled: await SettingsPage.loadUpnpEnabled(),
         encryptFilesAtRest: true, // 收件按设备分目录 + 落盘加密
       );
+      // 临时区清理:上次异常退出的备份残留、旧更新包、>48h 的临时文件。
+      BackupManager.cleanupResidual(dataDir);
+      Updater.cleanupInstallers(dataDir);
+      _sweepOldTmp(dataDir);
       final iceServers = await SettingsPage.loadIceServers();
       final rtc = WebRtcLinkManager(engine: engine, iceServers: iceServers)
         ..start();
@@ -389,7 +500,11 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    // WebRTC 远程链路事件:建立后自动进入聊天页,断开/失败 toast。
+    // WebRTC 远程链路事件。语义拆分(旧版把"配对成功"与"链路建立"压在
+    // 同一布尔流里,导致迟到 toast + 聊天页重复 push 重建):
+    //  - 配对成功 → 配对页自己跳聊天页并立即 toast(不归这里管);
+    //  - 链路建立/断开(异步网络事件)→ 只 toast + 导航去重:
+    //    栈顶已是该设备聊天页则不重复 push。
     _rtcSub = rtcManager?.linkEvents.listen((e) {
       if (e.error != null) {
         showToast('远程应答处理失败: ${e.error}', type: ToastType.error);
@@ -402,9 +517,15 @@ class _HomeShellState extends State<HomeShell> {
         type: e.connected ? ToastType.success : ToastType.info,
       );
       if (e.connected && peer != null) {
-        // 回到主页并直接进入与该设备的聊天页。
         final nav = navigatorKey.currentState;
-        if (nav != null) {
+        if (nav == null) return;
+        // 导航去重:栈顶已是该 peer 的 ChatPage 就只刷新状态,不重复 push。
+        final top = nav.context.widget;
+        var alreadyThere = false;
+        if (top is ChatPage && top.peer.deviceId == peer.deviceId) {
+          alreadyThere = true;
+        }
+        if (!alreadyThere) {
           nav.popUntil((route) => route.isFirst);
           nav.push(MaterialPageRoute(
             builder: (_) => ChatPage(peer: peer, engine: _engine!),
@@ -423,13 +544,31 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     // 桌面端(宽屏):三栏外壳(图标栏 + 会话列表 + 聊天面板)。
-    final desktop = (defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.linux) &&
-        MediaQuery.sizeOf(context).width >= 850;
-    if (desktop) {
-      return const AdaptiveHomeShell();
+    // 宽度跨 850px 阈值时两棵子树 Offstage 共存而不是整棵替换——
+    // 旧版切换会把 AdaptiveHomeShell 的全部状态(打开的会话、草稿、
+    // 多选、录音态)整棵销毁。
+    final desktopPlatform = defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux;
+    if (desktopPlatform) {
+      final wide = MediaQuery.sizeOf(context).width >= 850;
+      return Stack(
+        children: [
+          Offstage(
+            offstage: wide,
+            child: _mobileScaffold(),
+          ),
+          Offstage(
+            offstage: !wide,
+            child: const AdaptiveHomeShell(),
+          ),
+        ],
+      );
     }
+    return _mobileScaffold();
+  }
+
+  Widget _mobileScaffold() {
     final pages = [
       const DevicesPage(),
       const ConnectPage(),
@@ -494,6 +633,7 @@ class _DevicesPageState extends State<DevicesPage> {
     }));
     _subscriptions.add(engine.events.listen((e) {
       if (e is PeerStatusChanged) setState(() {});
+      if (e is PeerRemoved) setState(() {}); // 解绑即时刷新设备列表
       if (e is GroupSynced) setState(() {}); // 群列表刷新(建群/改群扇出)
       if (e is ProfileUpdated) {
         Avatars.invalidate(); // 对端头像落盘,存在性缓存失效
@@ -1118,6 +1258,31 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   AppUpdate? _update;
   bool _checkingUpdate = false;
+  bool _avatarBusy = false;
+
+  /// 移除头像(长按头像触发;广播空头像,对端同步清除)。
+  Future<void> _confirmRemoveAvatar(LittleLawEngine engine) async {
+    if (Avatars.imageOf(engine) == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('移除头像'),
+        content: const Text('移除后恢复为默认图标,并同步给已配对设备。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('移除')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await engine.removeMyAvatar();
+    Avatars.invalidate();
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
@@ -1128,14 +1293,18 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _checkUpdate({bool silent = false}) async {
     if (_checkingUpdate) return;
     setState(() => _checkingUpdate = true);
-    final u = await Updater.checkLatest();
+    final r = await Updater.checkLatest();
     if (!mounted) return;
     setState(() {
-      _update = u;
+      _update = r.update;
       _checkingUpdate = false;
     });
-    if (!silent && u == null) {
-      showToast('当前已是最新版本', type: ToastType.success);
+    if (!silent) {
+      if (r.status == UpdateCheckStatus.upToDate) {
+        showToast('当前已是最新版本', type: ToastType.success);
+      } else if (r.status == UpdateCheckStatus.error) {
+        showToast('检查更新失败: ${r.errorText ?? '网络错误'}', type: ToastType.error);
+      }
     }
   }
 
@@ -1216,7 +1385,7 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     ));
     try {
-      final path = await Updater.download(u, (d, t) {
+      final path = await Updater.download(u, _engine!.dataDir, (d, t) {
         done = d;
         total = t;
         setDlg(() {});
@@ -1252,16 +1421,23 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Row(
                 children: [
-                  // 头像:点击设置(选择图片,自动缩放;同步给已配对设备)。
+                  // 头像:点击进裁剪页(拖动/缩放圆形遮罩,所见即所得;
+                  // 旧的保比例缩放中心裁剪会把不在正中的脸切掉)。
                   GestureDetector(
-                    onTap: () async {
-                      final bytes = await Avatars.pickResized();
-                      if (bytes != null) {
-                        Avatars.invalidate();
-                        await engine.setMyAvatar(bytes);
-                        setState(() {});
+                    onTap: _avatarBusy ? null : () async {
+                      setState(() => _avatarBusy = true);
+                      try {
+                        final bytes = await Avatars.pickAndCropped(context);
+                        if (bytes != null) {
+                          Avatars.invalidate();
+                          await engine.setMyAvatar(bytes);
+                          setState(() {});
+                        }
+                      } finally {
+                        if (mounted) setState(() => _avatarBusy = false);
                       }
                     },
+                    onLongPress: () => _confirmRemoveAvatar(engine),
                     child: Container(
                       width: 56,
                       height: 56,
@@ -1277,10 +1453,16 @@ class _ProfilePageState extends State<ProfilePage> {
                                 fit: BoxFit.cover)
                             : null,
                       ),
-                      child: Avatars.imageOf(engine) == null
-                          ? const Icon(Icons.person,
-                              color: Colors.white, size: 28)
-                          : null,
+                      child: _avatarBusy
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : (Avatars.imageOf(engine) == null
+                              ? const Icon(Icons.person,
+                                  color: Colors.white, size: 28)
+                              : null),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1340,6 +1522,23 @@ class _ProfilePageState extends State<ProfilePage> {
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => SettingsPage(rtc: rtcManager!),
             )),
+          ),
+        ),
+        const SizedBox(height: 14),
+        // 数据目录:展示位置 + 一键打开(此前无任何 UI 暴露 dataDir,
+        // 用户找不到数据在哪;便携模式拷贝/迁移也需要知道位置)。
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: const Text('数据目录'),
+            subtitle: Text(
+              '${engine.dataDir}\n'
+              '${engine.dataDir.contains('${Platform.pathSeparator}data') ? '便携模式:数据随程序目录' : '标准模式:用户应用数据目录'}',
+              style: const TextStyle(fontSize: 11),
+            ),
+            isThreeLine: true,
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => ShareOut.revealInFolder(engine.dataDir),
           ),
         ),
         const SizedBox(height: 14),

@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import 'avatar.dart';
@@ -58,7 +57,6 @@ class _ChatPageState extends State<ChatPage> {
   final _selection = <String>{};
   bool _online = false;
   bool _attachOpen = false; // 附件面板展开态(输入栏上方内联撑开)
-  String? _menuMsgId; // 内联消息工具条目标(长按/右键打开)
   bool _dragOver = false; // 桌面拖拽文件悬停高亮
   bool _recording = false; // 语音录制中
   int _recordMs = 0; // 录制时长(毫秒)
@@ -67,6 +65,21 @@ class _ChatPageState extends State<ChatPage> {
   String? _recordPath;
   final Stopwatch _recordWatch = Stopwatch();
 
+  /// 在线状态防抖(迟滞):引擎已修根因(建连前不报在线、重试有上限),
+  /// 这里再加 UI 滞回——离线→在线需稳定 3s 才点亮,在线→离线立即熄灭,
+  /// 吸收 Android 唤醒等毫秒级抖动。
+  Timer? _onlineConfirmTimer;
+
+  /// 图片气泡解密 future 缓存(msgId → future):FutureBuilder 的 future
+  /// 在 build 里反复创建会每次 setState 闪 spinner + 重复解密 IO。
+  final _plainFutures = <String, Future<String>>{};
+
+  /// 分页加载中标志(滚顶加载更多)。
+  bool _loadingMore = false;
+
+  /// 滚顶加载历史的单页条数。
+  static const _pageLimit = 200;
+
   bool get _selecting => _selection.isNotEmpty;
 
   /// 会话标识:群 ID 或对方设备 ID(事件流的 key)。
@@ -74,7 +87,9 @@ class _ChatPageState extends State<ChatPage> {
 
   bool get _isGroup => widget.group != null;
 
-  @override
+  /// 对端已解绑(墓碑会话):隐藏输入栏,提供"删除会话"入口。
+  bool get _peerGone =>
+      !_isGroup && widget.engine.peerById(widget.peer.deviceId) == null;  @override
   void initState() {
     super.initState();
     final engine = widget.engine;
@@ -88,14 +103,18 @@ class _ChatPageState extends State<ChatPage> {
         changed = true;
         engine.markRead(_convKey); // 会话打开时新消息自动已读
       } else if (e is MessagesDeleted && e.peerId == _convKey) {
-        if (e.clearAll) _selection.clear();
+        if (e.clearAll) {
+          _selection.clear();
+        } else {
+          // 多选时对端删除:选中集同步移除,避免把不存在的 id 传给引擎。
+          _selection.removeAll(e.msgIds);
+        }
         changed = true;
       } else if (e is PeerStatusChanged && !_isGroup && e.peerId == _convKey) {
-        _online = e.online;
-        changed = true;
+        _onOnlineChanged(e.online);
       } else if (e is MessageStateChanged &&
           _messages.any((m) => m.msgId == e.msgId)) {
-        changed = true; // 发送状态变化(发送中/成功/失败)
+        changed = true; // 发送状态变化(发送中/待投递/成功)
       } else if (e is ReceiptsUpdated && e.convKey == _convKey) {
         changed = true; // 自己的消息被对方读了
       } else if (e is ReactionsChanged && e.convKey == _convKey) {
@@ -104,6 +123,18 @@ class _ChatPageState extends State<ChatPage> {
         // 对端头像/名称到达:刷新顶栏与气泡头像。
         Avatars.invalidate();
         changed = true;
+      } else if (e is GroupSynced && _isGroup && e.groupId == _convKey) {
+        // 群解散/被移出:关闭嵌入面板/整页(旧版桌面右栏永久空白)。
+        changed = true;
+        if (widget.engine.groupById(_convKey) == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            widget.onClose?.call();
+            if (!widget.embedded && Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+          });
+        }
       } else if (e is ClipboardReceived && !_isGroup && e.peerId == _convKey) {
         Clipboard.setData(ClipboardData(text: e.text));
         if (mounted) {
@@ -118,25 +149,81 @@ class _ChatPageState extends State<ChatPage> {
       }
     }));
 
+    // 传输进度:运行态只更新 _transfers 定向重绘(旧版每个进度事件都
+    // 全量 SQL 重载 + 整页 setState,4GB 文件 ≈ 4000 次);终态才重载
+    // 消息(刷新 fileState),并移除已完成条目。
     _subscriptions.add(widget.engine.transferProgress.listen((p) {
       if (p.peerId != _convKey && !_messages.any((m) => m.msgId == p.msgId)) return;
+      final terminal = p.state != TransferProgress.stateRunning;
       setState(() {
         _transfers[p.msgId] = p;
-        _messages = _isGroup ? widget.engine.loadGroupMessages(_convKey) : widget.engine.loadMessages(_convKey);
+        if (terminal) {
+          _messages = _isGroup ? widget.engine.loadGroupMessages(_convKey) : widget.engine.loadMessages(_convKey);
+          _transfers.remove(p.msgId);
+        }
       });
     }));
 
+    // 滚顶分页:接近顶部时加载更早的历史。
+    _scroll.addListener(_maybeLoadMore);
+
     WidgetsBinding.instance.addPostFrameCallback((_) => _forceScrollToBottom());
+  }
+
+  /// 在线状态迟滞。
+  void _onOnlineChanged(bool online) {
+    _onlineConfirmTimer?.cancel();
+    if (online) {
+      _onlineConfirmTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _online = true);
+      });
+    } else {
+      if (mounted) setState(() => _online = false);
+    }
+  }
+
+  /// 接近顶部 → 加载上一页(保持阅读位置不跳)。
+  void _maybeLoadMore() {
+    if (_loadingMore || !_scroll.hasClients) return;
+    if (_scroll.position.pixels > 120) return;
+    if (_messages.isEmpty) return;
+    _loadingMore = true;
+    final firstLamport = _messages.first.lamport;
+    Future<void>.microtask(() async {
+      try {
+        final older = _isGroup
+            ? widget.engine.loadGroupMessages(_convKey,
+                limit: _pageLimit, beforeLamport: firstLamport)
+            : widget.engine.loadMessages(_convKey,
+                limit: _pageLimit, beforeLamport: firstLamport);
+        if (!mounted || older.isEmpty) return;
+        // 记录加载前的滚动几何,加载后补偿高度差,阅读位置不跳。
+        final oldMax =
+            _scroll.hasClients ? _scroll.position.maxScrollExtent : 0.0;
+        final oldPixels = _scroll.hasClients ? _scroll.position.pixels : 0.0;
+        setState(() => _messages = [...older, ..._messages]);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_scroll.hasClients) return;
+          final newMax = _scroll.position.maxScrollExtent;
+          _scroll.jumpTo((oldPixels + (newMax - oldMax))
+              .clamp(0.0, _scroll.position.maxScrollExtent));
+        });
+      } finally {
+        _loadingMore = false;
+      }
+    });
   }
 
   @override
   void dispose() {
     widget.engine.markRead(_convKey);
     _recordTicker?.cancel();
+    _onlineConfirmTimer?.cancel();
     if (_recording) {
-      // 页面销毁时终止录制并丢弃草稿。
-      unawaited(_recorder.stop());
-      unawaited(_recorder.dispose());
+      // 页面销毁时终止录制并丢弃草稿(stop 完成后再释放 recorder,
+      // 直接 dispose 未完成的 stop 会漏平台异常/录音未落盘)。
+      unawaited(_recorder.stop().whenComplete(() => _recorder.dispose()));
+      _discardRecordFile();
     }
     for (final s in _subscriptions) {
       s.cancel();
@@ -226,9 +313,12 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final granted = await _recorder.hasPermission();
       if (!granted) return;
-      final tmp = await getTemporaryDirectory();
+      // 录音写本端数据目录 tmp(唯一临时位置约定),不进系统共享
+      // 临时目录——%TEMP% 同用户所有进程可读,且企业终端管控常扫。
+      final dir = Directory('${widget.engine.dataDir}/tmp');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
       _recordPath =
-          '${tmp.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
       await _recorder.start(
         const RecordConfig(encoder: AudioEncoder.aacLc, numChannels: 1),
         path: _recordPath!,
@@ -264,7 +354,25 @@ class _ChatPageState extends State<ChatPage> {
         _isGroup
             ? await widget.engine.sendGroupVoice(_convKey, path, ms)
             : await widget.engine.sendVoice(_convKey, path, ms);
+        // 已发送:文件成为后续拉取的发送源,保留在 dataDir/tmp
+        //(启动清扫按 48h TTL 兜底;不再进系统临时目录)。
+        _recordPath = null;
+        return;
       }
+      // 取消/误触:立即删除,不留私密语音残留。
+      _discardRecordFile();
+    } catch (_) {
+      _discardRecordFile();
+    }
+  }
+
+  void _discardRecordFile() {
+    final p = _recordPath;
+    _recordPath = null;
+    if (p == null) return;
+    try {
+      final f = File(p);
+      if (f.existsSync()) f.deleteSync();
     } catch (_) {}
   }
 
@@ -519,11 +627,14 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// 长按/右键:桌面(嵌入三栏)在消息上方展开内联工具条;
-  /// 移动端弹底部操作面板(表情一排 + 功能一排)。
+  /// 长按/右键菜单:
+  ///  - 桌面(含嵌入三栏):跟随光标的标准上下文菜单(Windows/macOS 用户
+  ///    预期),不再用"流内嵌工具栏"(把消息往下推、固定靠左、第二排
+  ///    还要横向滚动)。
+  ///  - 移动端:底部操作面板(表情一排 + 固定栅格功能按钮)。
   void _showMessageMenu(Message m, Offset position) {
-    if (widget.embedded) {
-      setState(() => _menuMsgId = (_menuMsgId == m.msgId) ? null : m.msgId);
+    if (_isDesktopPlatform) {
+      unawaited(_showDesktopMenu(m, position));
       return;
     }
     showModalBottomSheet<void>(
@@ -532,17 +643,205 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  /// 移动端底部操作面板:第一排表情,第二排功能。
+  /// 桌面标准上下文菜单:首行快捷表情 + 列表式功能项(图标+文字左对齐)。
+  Future<void> _showDesktopMenu(Message m, Offset position) async {
+    final scheme = Theme.of(context).colorScheme;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final size = overlay.size;
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx.clamp(0, size.width - 220),
+        position.dy.clamp(0, size.height - 380),
+        24,
+        24,
+      ),
+      constraints: const BoxConstraints(minWidth: 210),
+      items: [
+        // 快捷表情行(视觉与功能行分隔)。
+        PopupMenuItem<String>(
+          padding: EdgeInsets.zero,
+          enabled: false,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final emoji in _quickReactions)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _react(m, emoji);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(emoji,
+                          style: const TextStyle(fontSize: 19)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (m.kind == Message.kindText)
+          _menuItem('copy', Icons.content_copy_outlined, '复制'),
+        if (Message.hasFilePayload(m.kind) &&
+            m.fileState == Message.fileStateDone)
+          _menuItem('open', Icons.open_in_new, '打开'),
+        if (m.kind == Message.kindText ||
+            (Message.hasFilePayload(m.kind) &&
+                m.fileState == Message.fileStateDone)) ...[
+          _menuItem('forward', Icons.shortcut, '转发'),
+          _menuItem('share', Icons.share_outlined, '分享'),
+        ],
+        if (Message.hasFilePayload(m.kind) &&
+            m.fileState == Message.fileStateDone &&
+            _isDesktopPlatform)
+          _menuItem('reveal', Icons.folder_open_outlined, '在文件夹中显示'),
+        if (Message.hasFilePayload(m.kind) &&
+            m.fileState == Message.fileStateDone &&
+            Platform.isAndroid)
+          _menuItem('openWith', Icons.open_in_new, '其他应用打开'),
+        _menuItem('select', Icons.checklist_outlined, '多选'),
+        _menuItem('delete', Icons.delete_outline, '删除',
+            color: scheme.error),
+      ],
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'copy':
+        _copyMessage(m);
+      case 'open':
+        _openMessage(m);
+      case 'forward':
+        if (m.kind == Message.kindText) {
+          showForwardPicker(widget.engine, text: m.text);
+        } else {
+          final plain = await _plainPathOf(m);
+          if (plain != null) showForwardPicker(widget.engine, filePath: plain);
+        }
+      case 'share':
+        if (m.kind == Message.kindText) {
+          await ShareOut.shareText(m.text);
+        } else {
+          final plain = await _plainPathOf(m);
+          if (plain != null) await ShareOut.shareFile(plain);
+        }
+      case 'reveal':
+        final plain = await _plainPathOf(m);
+        if (plain != null) await ShareOut.revealInFolder(plain);
+      case 'openWith':
+        final plain = await _plainPathOf(m);
+        if (plain != null) await ShareOut.openWithOther(plain);
+      case 'select':
+        setState(() {
+          if (!_selecting) _toggleSelect(m.msgId);
+        });
+      case 'delete':
+        _isGroup
+            ? widget.engine.deleteGroupMessages(_convKey, [m.msgId])
+            : widget.engine.deleteMessages(_convKey, [m.msgId]);
+    }
+  }
+
+  PopupMenuItem<String> _menuItem(String value, IconData icon, String label,
+      {Color? color}) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 42,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Text(label, style: TextStyle(color: color, fontSize: 13.5)),
+        ],
+      ),
+    );
+  }
+
+  /// 移动端底部操作面板:第一排表情,下方固定栅格功能按钮(每行 4 个,
+  /// 不足留空——同一功能在不同消息上位置固定,肌肉记忆有效)。
   Widget _messageSheet(BuildContext sctx, Message m) {
     final scheme = Theme.of(sctx).colorScheme;
     void close() => Navigator.of(sctx).pop();
+    // 功能项构建(与桌面菜单同源语义;图标统一 Material outlined 家族)。
+    final entries = <(_SheetEntry, VoidCallback)>[
+      if (m.kind == Message.kindText)
+        (
+          _SheetEntry(Icons.content_copy_outlined, L10n.t('chat.copy')),
+          () => _copyMessage(m)
+        ),
+      if (Message.hasFilePayload(m.kind) && m.fileState == Message.fileStateDone)
+        (
+          _SheetEntry(Icons.open_in_new, L10n.t('chat.open')),
+          () => _openMessage(m)
+        ),
+      if (m.kind == Message.kindText ||
+          (Message.hasFilePayload(m.kind) && m.fileState == Message.fileStateDone))
+        (
+          _SheetEntry(Icons.shortcut, L10n.t('chat.forward')),
+          () async {
+            if (m.kind == Message.kindText) {
+              showForwardPicker(widget.engine, text: m.text);
+            } else {
+              final plain = await _plainPathOf(m);
+              if (plain != null) {
+                showForwardPicker(widget.engine, filePath: plain);
+              }
+            }
+          }
+        ),
+      // 文本分享入口(与桌面一致;旧版外层条件只放行文件消息,
+      // 内层文本分支是永远走不到的死代码)。
+      if (m.kind == Message.kindText ||
+          (Message.hasFilePayload(m.kind) && m.fileState == Message.fileStateDone))
+        (
+          _SheetEntry(Icons.share_outlined, L10n.t('chat.share')),
+          () async {
+            if (m.kind == Message.kindText) {
+              await ShareOut.shareText(m.text);
+            } else {
+              final plain = await _plainPathOf(m);
+              if (plain != null) await ShareOut.shareFile(plain);
+            }
+          }
+        ),
+      if (Message.hasFilePayload(m.kind) &&
+          m.fileState == Message.fileStateDone &&
+          Platform.isAndroid)
+        (
+          _SheetEntry(Icons.open_in_new, L10n.t('chat.openWith')),
+          () async {
+            final plain = await _plainPathOf(m);
+            if (plain != null) await ShareOut.openWithOther(plain);
+          }
+        ),
+      (
+        _SheetEntry(Icons.checklist_outlined, L10n.t('chat.multiSelect')),
+        () {
+          if (!_selecting) _toggleSelect(m.msgId);
+        }
+      ),
+      (
+        _SheetEntry(Icons.delete_outline, L10n.t('common.delete'),
+            color: scheme.error),
+        () => _isGroup
+            ? widget.engine.deleteGroupMessages(_convKey, [m.msgId])
+            : widget.engine.deleteMessages(_convKey, [m.msgId])
+      ),
+    ];
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 第一排:快捷表情。
+            // 第一排:快捷表情(统一容器底色,与功能行视觉分隔)。
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -562,248 +861,43 @@ class _ChatPageState extends State<ChatPage> {
               ],
             ),
             const Divider(height: 20, indent: 12, endIndent: 12),
-            // 第二排:功能按钮。
-            Row(
-              children: [
-                if (m.kind == Message.kindText)
-                  _sheetAction(sctx, Icons.copy_outlined, L10n.t('chat.copy'),
-                      () {
-                    _copyMessage(m);
-                    close();
-                  }),
-                if (Message.hasFilePayload(m.kind) &&
-                    m.fileState == Message.fileStateDone)
-                  _sheetAction(sctx, Icons.open_in_new, L10n.t('chat.open'),
-                      () {
-                    _openMessage(m);
-                    close();
-                  }),
-                if (m.kind == Message.kindText ||
-                    (Message.hasFilePayload(m.kind) &&
-                        m.fileState == Message.fileStateDone))
-                  _sheetAction(sctx, Icons.shortcut, L10n.t('chat.forward'),
-                      () async {
-                    close();
-                    if (m.kind == Message.kindText) {
-                      showForwardPicker(widget.engine, text: m.text);
-                    } else {
-                      final plain = await _plainPathOf(m);
-                      if (plain != null) {
-                        showForwardPicker(widget.engine, filePath: plain);
-                      }
-                    }
-                  }),
-                _sheetAction(
-                    sctx,
-                    Icons.checklist,
-                    L10n.t('chat.multiSelect'),
-                    () {
-                      close();
-                      setState(() {
-                        if (!_selecting) _toggleSelect(m.msgId);
-                      });
-                    },
-                    growable: true),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                if (Message.hasFilePayload(m.kind) &&
-                    m.fileState == Message.fileStateDone)
-                  _sheetAction(sctx, Icons.ios_share, L10n.t('chat.share'),
-                      () async {
-                    close();
-                    if (m.kind == Message.kindText) {
-                      ShareOut.shareText(m.text);
-                    } else {
-                      final plain = await _plainPathOf(m);
-                      if (plain != null) ShareOut.shareFile(plain);
-                    }
-                  }),
-                if (Message.hasFilePayload(m.kind) &&
-                    m.fileState == Message.fileStateDone &&
-                    Platform.isAndroid)
-                  _sheetAction(
-                      sctx, Icons.open_with, L10n.t('chat.openWith'), () async {
-                    close();
-                    final plain = await _plainPathOf(m);
-                    if (plain != null) await ShareOut.openWithOther(plain);
-                  }),
-                if (Message.hasFilePayload(m.kind) &&
-                    m.fileState == Message.fileStateDone &&
-                    (Platform.isWindows || Platform.isMacOS || Platform.isLinux))
-                  _sheetAction(
-                      sctx, Icons.folder_open, L10n.t('chat.reveal'), () async {
-                    close();
-                    final plain = await _plainPathOf(m);
-                    if (plain != null) await ShareOut.revealInFolder(plain);
-                  }),
-                _sheetAction(sctx, Icons.delete_outline, L10n.t('common.delete'),
-                    () {
-                  close();
-                  _isGroup
-                      ? widget.engine
-                          .deleteGroupMessages(_convKey, [m.msgId])
-                      : widget.engine.deleteMessages(_convKey, [m.msgId]);
-                }, color: scheme.error, growable: true),
-              ],
-            ),
+            // 固定栅格:每行 4 个,不足留空位。
+            for (var r = 0; r * 4 < entries.length; r++)
+              Row(
+                children: [
+                  for (var c = 0; c < 4; c++)
+                    r * 4 + c < entries.length
+                        ? Expanded(
+                            child: _sheetAction(
+                                sctx, entries[r * 4 + c].$1, entries[r * 4 + c].$2),
+                          )
+                        : const Expanded(child: SizedBox(height: 64)),
+                ],
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _sheetAction(BuildContext sctx, IconData icon, String label,
-      VoidCallback onTap,
-      {Color? color, bool growable = false}) {
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: color),
-              const SizedBox(height: 4),
-              Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: color)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 桌面内联工具条(占位在消息上方,可正常点击):
-  /// 第一排表情,第二排紧凑功能按钮。无底色卡片 + 轻投影。
-  Widget _inlineToolbar(Message m) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 2, left: 4, right: 4),
-      padding: const EdgeInsets.fromLTRB(8, 3, 8, 4),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.14),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 第一排:表情。
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final emoji in _quickReactions)
-                _barBtn(Text(emoji, style: const TextStyle(fontSize: 17)),
-                    () {
-                  _react(m, emoji);
-                  setState(() => _menuMsgId = null);
-                }),
-            ],
-          ),
-          const Divider(height: 6, indent: 4, endIndent: 4),
-          // 第二排:功能。
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                if (m.kind == Message.kindText)
-                  _barBtn(const Icon(Icons.copy, size: 15), () {
-                    _copyMessage(m);
-                    setState(() => _menuMsgId = null);
-                  }),
-                if (Message.hasFilePayload(m.kind) &&
-                    m.fileState == Message.fileStateDone) ...[
-                  _barBtn(const Icon(Icons.open_in_new, size: 15), () {
-                    _openMessage(m);
-                    setState(() => _menuMsgId = null);
-                  }),
-                  _barBtn(
-                    Icon(
-                      Platform.isWindows || Platform.isMacOS || Platform.isLinux
-                          ? Icons.folder_open
-                          : Icons.open_with,
-                      size: 15,
-                    ),
-                    () async {
-                      setState(() => _menuMsgId = null);
-                      final plain = await _plainPathOf(m);
-                      if (plain == null) return;
-                      if (Platform.isAndroid) {
-                        await ShareOut.openWithOther(plain);
-                      } else {
-                        await ShareOut.revealInFolder(plain);
-                      }
-                    },
-                  ),
-                ],
-                if (m.kind == Message.kindText ||
-                    (Message.hasFilePayload(m.kind) &&
-                        m.fileState == Message.fileStateDone)) ...[
-                  _barBtn(const Icon(Icons.shortcut, size: 15), () async {
-                    setState(() => _menuMsgId = null);
-                    if (m.kind == Message.kindText) {
-                      showForwardPicker(widget.engine, text: m.text);
-                    } else {
-                      final plain = await _plainPathOf(m);
-                      if (plain != null) {
-                        showForwardPicker(widget.engine, filePath: plain);
-                      }
-                    }
-                  }),
-                  _barBtn(const Icon(Icons.ios_share, size: 15), () async {
-                    setState(() => _menuMsgId = null);
-                    if (m.kind == Message.kindText) {
-                      ShareOut.shareText(m.text);
-                    } else {
-                      final plain = await _plainPathOf(m);
-                      if (plain != null) ShareOut.shareFile(plain);
-                    }
-                  }),
-                ],
-                _barBtn(const Icon(Icons.checklist, size: 15), () {
-                  setState(() {
-                    if (!_selecting) _toggleSelect(m.msgId);
-                    _menuMsgId = null;
-                  });
-                }),
-                _barBtn(
-                    Icon(Icons.delete_outline, size: 15, color: scheme.error),
-                    () {
-                  setState(() => _menuMsgId = null);
-                  _isGroup
-                      ? widget.engine
-                          .deleteGroupMessages(_convKey, [m.msgId])
-                      : widget.engine.deleteMessages(_convKey, [m.msgId]);
-                }),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _barBtn(Widget child, VoidCallback onTap) {
+  Widget _sheetAction(
+      BuildContext sctx, _SheetEntry entry, VoidCallback onTap) {
     return InkWell(
+      borderRadius: BorderRadius.circular(12),
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-        child: child,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(entry.icon, size: 22, color: entry.color),
+            const SizedBox(height: 4),
+            Text(entry.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: entry.color)),
+          ],
+        ),
       ),
     );
   }
@@ -822,7 +916,7 @@ class _ChatPageState extends State<ChatPage> {
             child: _messages.isEmpty
                 ? _emptyState()
                 : GestureDetector(
-                    onTap: () => setState(() => _menuMsgId = null),
+                    onTap: () => setState(() {}),
                     behavior: HitTestBehavior.translucent,
                     child: ListView.builder(
                       controller: _scroll,
@@ -833,7 +927,11 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ),
           ),
-          SafeArea(top: false, child: _inputBar()),
+          // 墓碑会话(对端已解绑):不显示输入栏,给"删除会话"提示条。
+          SafeArea(
+            top: false,
+            child: _peerGone ? _tombstoneBar(scheme) : _inputBar(),
+          ),
         ],
       ),
     );
@@ -1114,8 +1212,42 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  /// 图片气泡解密 future(按 msgId 缓存;失败缓存空串避免反复重试)。
+  Future<String> _plainFutureFor(Message m) {
+    return _plainFutures.putIfAbsent(m.msgId, () async {
+      try {
+        return await widget.engine.plaintextPathFor(m);
+      } catch (_) {
+        return '';
+      }
+    });
+  }
+
   Widget _buildItem(BuildContext ctx, int i, String myId, LittleLawEngine engine) {
     final m = _messages[i];
+    // 本地系统消息(解绑墓碑等):居中提示条,无头像/菜单/长按。
+    if (m.kind == Message.kindSystem) {
+      final scheme = Theme.of(ctx).colorScheme;
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.sizeOf(ctx).width * 0.7),
+            child: Text(
+              m.text,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ),
+      );
+    }
     final children = <Widget>[];
     final mine = engine.isFromMe(m.senderId);
     // 消息分组:与上一条同发送者且间隔 < 4 分钟 → 隐藏发送者名与头像间距收紧。
@@ -1144,6 +1276,10 @@ class _ChatPageState extends State<ChatPage> {
           ? Avatars.imageOf(engine)
           : Avatars.imageOf(engine, peerId: m.senderId),
       engine: engine,
+      plainFuture: (m.kind == Message.kindImage &&
+              m.fileState == Message.fileStateDone)
+          ? _plainFutureFor(m)
+          : null,
       onResend: mine ? () => widget.engine.resendMessage(m.msgId) : null,
       onReaction: (emoji) => _react(m, emoji),
       onTap: () {
@@ -1157,15 +1293,6 @@ class _ChatPageState extends State<ChatPage> {
         if (!_selecting) _showMessageMenu(m, pos);
       },
     );
-    // 桌面内联工具条:作为常规布局子项放在消息上方(占位,可正常点击;
-    // 之前 Positioned 负偏移画得出但命中不了,菜单永远点不动)。
-    if (_menuMsgId == m.msgId) {
-      children.add(ConstrainedBox(
-        constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width - 24),
-        child: _inlineToolbar(m),
-      ));
-    }
     children.add(bubble);
     return Column(children: children);
   }
@@ -1304,6 +1431,38 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  /// 墓碑会话尾部:说明 + 删除会话按钮(移除后列表不再显示)。
+  Widget _tombstoneBar(ColorScheme scheme) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.zero,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text('对方已解除配对,无法继续发送消息',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.delete_outline, size: 16),
+            label: const Text('删除会话'),
+            onPressed: () async {
+              await widget.engine.removeConversation(widget.peer.deviceId);
+              if (!mounted) return;
+              widget.onClose?.call();
+              if (!widget.embedded && Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _confirmClearAll() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -1331,6 +1490,14 @@ class _ChatPageState extends State<ChatPage> {
 // ---------------------------------------------------------------------------
 // 时间分隔条
 // ---------------------------------------------------------------------------
+
+/// 移动端操作面板的功能项描述(图标统一 Material outlined 家族)。
+class _SheetEntry {
+  _SheetEntry(this.icon, this.label, {this.color});
+  final IconData icon;
+  final String label;
+  final Color? color;
+}
 
 class _TimeDivider extends StatelessWidget {
   const _TimeDivider({required this.ms});
@@ -1382,6 +1549,7 @@ class _MessageBubble extends StatelessWidget {
     this.showSender = true,
     this.onReaction,
     this.engine,
+    this.plainFuture,
   });
 
   final Message message;
@@ -1400,6 +1568,9 @@ class _MessageBubble extends StatelessWidget {
 
   /// 引擎引用:图片气泡需要走解密缓存路径(vault 模式 filePath 是 .llenc)。
   final LittleLawEngine? engine;
+
+  /// 解密 future(父 State 按 msgId 缓存,防 build 中反复创建闪 spinner)。
+  final Future<String>? plainFuture;
 
   /// 皮肤渐变上的前景色:浅色渐变(白桃/青提等)用深字,深色渐变用白字。
   static Color skinOn() {
@@ -1536,7 +1707,8 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  /// 自己消息的发送状态:⏱发送中 / !失败(点击重发) / ✓送达 / ✓✓已读。
+  /// 自己消息的发送状态:⏱发送中 / 🕐待投递(离线已入队) /
+  /// !失败(点击重发) / ✓送达 / ✓✓已读。
   Widget _statusIcon() {
     if (!mine) return const SizedBox.shrink();
     final on = skinOn();
@@ -1549,6 +1721,11 @@ class _MessageBubble extends StatelessWidget {
     }
     if (message.sendState == Message.sendSending) {
       return Icon(Icons.schedule, size: 12, color: on.withValues(alpha: 0.6));
+    }
+    if (message.sendState == Message.sendQueued) {
+      // 离线存储转发:待投递(时钟描边),不是失败。
+      return Icon(Icons.watch_later_outlined,
+          size: 12, color: on.withValues(alpha: 0.6));
     }
     return Icon(
       message.read ? Icons.done_all : Icons.done,
@@ -1626,18 +1803,22 @@ class _MessageBubble extends StatelessWidget {
   /// 图片/视频气泡。
   Widget _media(BuildContext context, ColorScheme scheme, {required bool image}) {
     final path = message.filePath;
-    final transferring = progress != null &&
-        progress!.state == TransferProgress.stateRunning;
+    // 传输中口径:有运行态进度事件,或 DB 记录的 fileState 就是
+    // transferring(传输开始于打开页前/App 中途重启,进度事件已丢失,
+    // 旧版此时只显示黑占位,与文件卡片口径不一致)。
+    final transferring = (progress != null &&
+            progress!.state == TransferProgress.stateRunning) ||
+        message.fileState == Message.fileStateTransferring;
     final done = message.fileState == Message.fileStateDone && path != null;
 
     Widget inner;
     if (image && done) {
       // 落盘加密开启时 filePath 是 .llenc 密文,必须先解密到缓存再显示
       // (与全屏查看器同一路径),否则 Image 解码失败显示灰底占位。
+      // future 由父 State 按 msgId 缓存,build 反复执行不重复解密。
       inner = FutureBuilder<String>(
-        future: engine != null
-            ? engine!.plaintextPathFor(message)
-            : Future.value(path),
+        future:
+            plainFuture ?? (engine != null ? engine!.plaintextPathFor(message) : Future.value(path)),
         builder: (_, snap) {
           final p = snap.data;
           if (p == null || !File(p).existsSync()) {
@@ -1883,7 +2064,12 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
   Player? _player;
   bool _playing = false;
   double _progress = 0;
-  StreamSubscription? _sub;
+  StreamSubscription? _posSub;
+  StreamSubscription? _stateSub;
+  StreamSubscription? _complSub;
+
+  /// 全局播放互斥:同一时刻只有一条语音在播(点另一条先停当前的)。
+  static _VoiceBubbleState? _currentPlaying;
 
   static String _durationText(int ms) {
     final s = (ms / 1000).ceil();
@@ -1896,41 +2082,71 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
         widget.message.fileState != Message.fileStateDone) {
       return;
     }
+    if (_playing) {
+      await _player?.pause();
+      return;
+    }
     String path;
     try {
       path = await engine.plaintextPathFor(widget.message);
     } catch (_) {
       return;
     }
-    if (_playing) {
-      await _player?.pause();
-      return;
+    // 互斥:停掉正在播的其他气泡。
+    final cur = _currentPlaying;
+    if (cur != null && cur != this && cur.mounted) {
+      await cur._player?.pause();
     }
-    _player ??= () {
-      final p = Player();
-      _sub = p.stream.position.listen((pos) {
-        final dur = widget.message.durationMs > 0
-            ? widget.message.durationMs / 1000
-            : (p.state.duration.inMilliseconds / 1000);
-        if (dur > 0 && mounted) {
-          setState(() => _progress = (pos.inMilliseconds / 1000 / dur)
-              .clamp(0.0, 1.0));
-        }
-      });
-      return p;
-    }();
+    _player ??= _createPlayer();
     if (_player!.state.playlist.medias.isEmpty ||
         _player!.state.playlist.medias.first.uri != path) {
       await _player!.open(Media(path));
     } else {
       await _player!.play();
     }
-    if (mounted) setState(() => _playing = true);
+  }
+
+  /// 播放器状态流驱动(旧版 _playing 只被置 true 从不置 false,
+  /// 暂停后永远无法续播、播完后无法重播)。
+  Player _createPlayer() {
+    final p = Player();
+    _posSub = p.stream.position.listen((pos) {
+      final dur = widget.message.durationMs > 0
+          ? widget.message.durationMs / 1000
+          : (p.state.duration.inMilliseconds / 1000);
+      if (dur > 0 && mounted) {
+        setState(() => _progress = (pos.inMilliseconds / 1000 / dur)
+            .clamp(0.0, 1.0));
+      }
+    });
+    _stateSub = p.stream.playing.listen((playing) {
+      if (!mounted) return;
+      if (playing) {
+        _currentPlaying = this;
+      } else if (_currentPlaying == this) {
+        _currentPlaying = null;
+      }
+      setState(() => _playing = playing);
+    });
+    // 播完自动复位:进度归零,可再次点击重播。
+    _complSub = p.stream.completed.listen((completed) {
+      if (completed && mounted) {
+        setState(() {
+          _playing = false;
+          _progress = 0;
+        });
+        if (_currentPlaying == this) _currentPlaying = null;
+      }
+    });
+    return p;
   }
 
   @override
   void dispose() {
-    unawaited(_sub?.cancel() ?? Future.value());
+    if (_currentPlaying == this) _currentPlaying = null;
+    unawaited(_posSub?.cancel() ?? Future.value());
+    unawaited(_stateSub?.cancel() ?? Future.value());
+    unawaited(_complSub?.cancel() ?? Future.value());
     unawaited(_player?.dispose() ?? Future.value());
     super.dispose();
   }

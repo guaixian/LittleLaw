@@ -5,16 +5,21 @@ import (
 )
 
 // 在线注册表:deviceID → 连接;订阅关系:观察者 deviceID → 关注的 deviceID 集合。
+// watchedBy 反向索引:被关注 deviceID → 关注者集合(上线/下线广播 O(1)
+// 定位关注者;旧版每次全表扫描且持写锁,4096 连接 × 512 订阅时单次
+// ~2M 查找,连接抖动可让 presence 全局停摆)。
 type Hub struct {
-	mu       sync.RWMutex
-	online   map[string]*Client
-	watchers map[string]map[string]bool // watcherID → {watchedID: true}
+	mu        sync.RWMutex
+	online    map[string]*Client
+	watchers  map[string]map[string]bool // watcherID → {watchedID: true}
+	watchedBy map[string]map[string]bool // watchedID → {watcherID: true}
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		online:   make(map[string]*Client),
-		watchers: make(map[string]map[string]bool),
+		online:    make(map[string]*Client),
+		watchers:  make(map[string]map[string]bool),
+		watchedBy: make(map[string]map[string]bool),
 	}
 }
 
@@ -26,6 +31,8 @@ func (h *Hub) isOnline(id string) bool {
 }
 
 // 注册上线,并广播 peer_online 给关注者。
+// endpoint(对端家庭公网 IP:port)只披露给【双向关注】的观察者——
+// 真实配对设备互相订阅;单向订阅者(陌生人/探测者)只看到在线状态。
 func (h *Hub) register(c *Client) {
 	h.mu.Lock()
 	// 同设备重复连接:踢掉旧连接(以新为准)。
@@ -34,10 +41,15 @@ func (h *Hub) register(c *Client) {
 	}
 	h.online[c.deviceID] = c
 	watchers := h.watchersOfLocked(c.deviceID)
+	mutual := h.mutualWatchersLocked(c.deviceID)
 	h.mu.Unlock()
 
 	for _, w := range watchers {
-		w.sendJSON(PeerEventFrame{Type: "peer_online", ID: c.deviceID, Endpoint: c.endpoint})
+		endpoint := ""
+		if mutual[w.deviceID] {
+			endpoint = c.endpoint
+		}
+		w.sendJSON(PeerEventFrame{Type: "peer_online", ID: c.deviceID, Endpoint: endpoint})
 	}
 }
 
@@ -49,7 +61,7 @@ func (h *Hub) unregister(c *Client) {
 		return
 	}
 	delete(h.online, c.deviceID)
-	delete(h.watchers, c.deviceID)
+	h.setWatchLocked(c.deviceID, nil)
 	watchers := h.watchersOfLocked(c.deviceID)
 	h.mu.Unlock()
 
@@ -67,31 +79,68 @@ func (h *Hub) subscribe(c *Client, ids []string) {
 			set[id] = true
 		}
 	}
-	h.watchers[c.deviceID] = set
-	h.mu.Unlock()
+	h.setWatchLocked(c.deviceID, set)
 
-	// 快照。
 	online := make([]PresenceItem, 0)
 	offline := make([]string, 0)
-	h.mu.RLock()
 	for id := range set {
-		if c, ok := h.online[id]; ok {
-			online = append(online, PresenceItem{ID: id, Endpoint: c.endpoint})
+		if oc, ok := h.online[id]; ok {
+			item := PresenceItem{ID: id}
+			// endpoint 仅双向关注可见(隐私:家庭 IP 不向陌生订阅者披露)。
+			if set2, ok := h.watchers[id]; ok && set2[c.deviceID] {
+				item.Endpoint = oc.endpoint
+			}
+			online = append(online, item)
 		} else {
 			offline = append(offline, id)
 		}
 	}
-	h.mu.RUnlock()
+	h.mu.Unlock()
+
 	c.sendJSON(PresenceFrame{Type: "presence", Online: online, Offline: offline})
 }
 
+// setWatchLocked 全量替换某观察者的关注集合,同步维护反向索引。
+func (h *Hub) setWatchLocked(watcherID string, set map[string]bool) {
+	old := h.watchers[watcherID]
+	for id := range old {
+		if m := h.watchedBy[id]; m != nil {
+			delete(m, watcherID)
+			if len(m) == 0 {
+				delete(h.watchedBy, id)
+			}
+		}
+	}
+	if set == nil {
+		delete(h.watchers, watcherID)
+		return
+	}
+	h.watchers[watcherID] = set
+	for id := range set {
+		if h.watchedBy[id] == nil {
+			h.watchedBy[id] = make(map[string]bool)
+		}
+		h.watchedBy[id][watcherID] = true
+	}
+}
+
+// watchersOfLocked 反向索引 O(1) 取关注者。
 func (h *Hub) watchersOfLocked(watchedID string) []*Client {
 	var out []*Client
-	for watcherID, set := range h.watchers {
-		if set[watchedID] {
-			if c, ok := h.online[watcherID]; ok {
-				out = append(out, c)
-			}
+	for watcherID := range h.watchedBy[watchedID] {
+		if c, ok := h.online[watcherID]; ok {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// mutualWatchersLocked 双向关注(互相订阅 = 配对关系)的在线观察者集合。
+func (h *Hub) mutualWatchersLocked(id string) map[string]bool {
+	out := make(map[string]bool)
+	for watcherID := range h.watchedBy[id] {
+		if h.watchers[watcherID][id] {
+			out[watcherID] = true
 		}
 	}
 	return out

@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:grpc/grpc.dart';
+import 'package:pointycastle/export.dart';
 import 'package:uuid/uuid.dart';
 
 import '../generated/littlelaw.pb.dart' as pb;
@@ -50,10 +54,26 @@ class PairResult {
   final String message;
 }
 
+/// 两阶段提交的暂存条目:用户已同意、令牌已签发,等发起方签名确认。
+class _StagedPairing {
+  _StagedPairing({
+    required this.peer,
+    required this.token,
+    required this.nonce,
+    required this.expiresAt,
+  });
+  final Peer peer;
+  final String token;
+  final String nonce;
+  final DateTime expiresAt;
+}
+
 /// 配对管理:实现 PairingService 服务端,同时提供主动配对客户端。
 ///
 /// 信任模型:TOFU + SAS。双方各自用对方指纹算同一个 6 位 PIN 并肉眼核对,
-/// 通过后被请求方签发共享会话令牌,双方写入 trusted_peers。
+/// 通过后两阶段提交:响应方先暂存,发起方核验 TLS 观测指纹与宣称一致后
+/// 回发身份私钥签名确认,响应方验签通过才落库——发起方发现中间人而放弃时,
+/// 响应方不会留下可被冒充的信任条目。
 class PairingManager extends pbg.PairingServiceBase {
   PairingManager({
     required this.identity,
@@ -64,18 +84,28 @@ class PairingManager extends pbg.PairingServiceBase {
 
   final Identity identity;
   final Store store;
-  final int grpcPort;
   final Duration requestTimeout;
+
+  /// gRPC 服务端口。final 改可变:47520 被占退化随机端口时,
+  /// 引擎在 serveEngine 成功后回填实际绑定端口(配对广播用)。
+  int grpcPort;
 
   /// 配对关系变化回调(引擎用于同步中转服务器的订阅列表)。
   void Function()? onPeersChanged;
+
+  /// 解绑完成回调(引擎用于发 PeerRemoved 事件 + forceDisconnect)。
+  void Function(String deviceId)? onPeerRemoved;
 
   void _notifyPeersChanged() => onPeersChanged?.call();
 
   static const _maxPending = 3;
 
   final _pending = <String, PairRequestEvent>{};
+  final _staged = <String, _StagedPairing>{};
   final _requestsController = StreamController<PairRequestEvent>.broadcast();
+
+  /// 每来源主机的请求频次(弹窗骚扰/槽位占满 DoS 防护)。
+  final _requestRates = <String, List<int>>{};
 
   /// 配对请求事件(UI 监听并弹窗)。
   Stream<PairRequestEvent> get requests => _requestsController.stream;
@@ -88,14 +118,23 @@ class PairingManager extends pbg.PairingServiceBase {
         port: grpcPort,
         protocolVersion: DiscoveryProtocol.version,
         deviceModel: identity.deviceModel,
+        certDer: Identity.derOfCertPem(identity.certPem),
       );
 
   // ---------------------------------------------------------- 服务端
+
+  bool _rateLimited(String host) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final list = (_requestRates[host] ??= <int>[])..add(now);
+    list.removeWhere((t) => now - t > 30000); // 30s 窗口
+    return list.length > 8;
+  }
 
   @override
   Future<pb.PairResponse> requestPair(
       ServiceCall call, pb.PairRequest request) async {
     final requester = request.requester;
+    final host = _remoteHost(call);
     // 基础校验。
     if (requester.deviceId.isEmpty ||
         requester.certFingerprint.length != 64 ||
@@ -106,6 +145,18 @@ class PairingManager extends pbg.PairingServiceBase {
       return pb.PairResponse(
           accepted: false, message: 'protocol version mismatch');
     }
+    // 请求方证书必须携带且与宣称指纹一致(两阶段提交的验签依据)。
+    final certDer = requester.certDer;
+    if (certDer.isEmpty || sha256.convert(certDer).toString() != requester.certFingerprint) {
+      return pb.PairResponse(accepted: false, message: 'requester cert invalid');
+    }
+    if (_rateLimited(host)) {
+      return pb.PairResponse(accepted: false, message: 'too many requests');
+    }
+
+    _sweepStaged();
+    // 先淘汰过期挂起,再查容量(顺序颠倒会让 stale 占据槽位)。
+    _pending.removeWhere((_, e) => e.completer.isCompleted);
     if (_pending.length >= _maxPending) {
       return pb.PairResponse(accepted: false, message: 'too many pending');
     }
@@ -117,6 +168,22 @@ class PairingManager extends pbg.PairingServiceBase {
     for (final key in stale) {
       _pending.remove(key)?.completer.complete(false);
     }
+    // requestId 冲突防护:同 ID 不同设备 → 拒绝,防"覆盖他人挂起请求 /
+    // respond() 批准了覆盖者"的混乱代理。
+    final conflict = _pending[request.requestId];
+    if (request.requestId.isNotEmpty &&
+        conflict != null &&
+        conflict.requester.deviceId != requester.deviceId) {
+      return pb.PairResponse(accepted: false, message: 'request id conflict');
+    }
+    // 已配对设备重新配对:指纹一致允许(幂等重配),指纹变化必须先解绑
+    // (一次误点同意就静默替换指纹 = 身份劫持)。
+    final existing = store.getPeer(requester.deviceId);
+    if (existing != null &&
+        existing.certFingerprint != requester.certFingerprint) {
+      return pb.PairResponse(
+          accepted: false, message: 'fingerprint changed; unpair first');
+    }
 
     final pin = Identity.computeSasPin(
         identity.fingerprint, requester.certFingerprint);
@@ -126,7 +193,7 @@ class PairingManager extends pbg.PairingServiceBase {
           : const Uuid().v4(),
       requester: requester,
       pin: pin,
-      host: _remoteHost(call),
+      host: host,
       completer: Completer<bool>(),
     );
     _pending[event.requestId] = event;
@@ -143,25 +210,76 @@ class PairingManager extends pbg.PairingServiceBase {
       return pb.PairResponse(accepted: false, message: 'rejected or timeout');
     }
 
-    // 批准:签发令牌,写入可信设备。
+    // 批准:签发令牌并【暂存】(不落库)——等发起方 ConfirmPair 签名确认。
     final token = Auth.newToken();
-    store.upsertPeer(Peer(
-      deviceId: requester.deviceId,
-      deviceName: requester.deviceName,
-      platform: requester.platform,
-      certFingerprint: requester.certFingerprint,
+    final nonce = Auth.newToken().substring(0, 32);
+    _staged[event.requestId] = _StagedPairing(
+      peer: Peer(
+        deviceId: requester.deviceId,
+        deviceName: requester.deviceName,
+        platform: requester.platform,
+        certFingerprint: requester.certFingerprint,
+        token: token,
+        deviceModel: requester.deviceModel,
+        certDerBase64: base64Encode(certDer),
+        lastHost: host,
+        lastPort: requester.port,
+        pairedAtMs: DateTime.now().millisecondsSinceEpoch,
+      ),
       token: token,
-      deviceModel: requester.deviceModel,
-      lastHost: _remoteHost(call),
-      lastPort: requester.port,
-      pairedAtMs: DateTime.now().millisecondsSinceEpoch,
-    ));
-    _notifyPeersChanged();
+      nonce: nonce,
+      expiresAt: DateTime.now().add(const Duration(seconds: 30)),
+    );
     return pb.PairResponse(
       accepted: true,
       responder: myInfo,
       sessionToken: token.codeUnits,
+      confirmNonce: nonce,
     );
+  }
+
+  void _sweepStaged() {
+    final now = DateTime.now();
+    _staged.removeWhere((_, s) => s.expiresAt.isBefore(now));
+  }
+
+  /// 两阶段提交第二阶段:验签通过才落库。
+  /// 签名内容 "pair-confirm-v1|requestId|nonce|responderFingerprint",
+  /// 用请求时携带的证书公钥验——纯转发者没有发起方私钥,无法伪造。
+  @override
+  Future<pb.PairConfirmResponse> confirmPair(
+      ServiceCall call, pb.PairConfirmRequest request) async {
+    final staged = _staged[request.requestId];
+    if (staged == null) {
+      return pb.PairConfirmResponse(ok: false, message: 'no staged pairing');
+    }
+    if (request.requesterId != staged.peer.deviceId) {
+      return pb.PairConfirmResponse(ok: false, message: 'requester mismatch');
+    }
+    final certDer = base64Decode(staged.peer.certDerBase64);
+    final msg = ascii.encode(
+        'pair-confirm-v1|${request.requestId}|${staged.nonce}|${identity.fingerprint}');
+    if (!Identity.verifyWithCertDer(certDer, msg, request.signature)) {
+      return pb.PairConfirmResponse(ok: false, message: 'bad signature');
+    }
+    _staged.remove(request.requestId);
+    // 落库令牌 = 轮换值(ECDH 派生),配对会话令牌不再兼任长期凭据。
+    final rotated = rotateSessionToken(staged.token, certDer);
+    final p = staged.peer;
+    store.upsertPeer(Peer(
+      deviceId: p.deviceId,
+      deviceName: p.deviceName,
+      platform: p.platform,
+      certFingerprint: p.certFingerprint,
+      token: rotated,
+      deviceModel: p.deviceModel,
+      certDerBase64: p.certDerBase64,
+      lastHost: p.lastHost,
+      lastPort: p.lastPort,
+      pairedAtMs: p.pairedAtMs,
+    ));
+    _notifyPeersChanged();
+    return pb.PairConfirmResponse(ok: true);
   }
 
   /// 发起方取消挂起的配对请求:完成对应的 completer 为拒绝。
@@ -189,20 +307,49 @@ class PairingManager extends pbg.PairingServiceBase {
     return pb.UnpairResponse(ok: true);
   }
 
-  /// 本地数据一并清除(Telegram 模式:双方各自调用后双端归零)。
-  void _wipePeer(String deviceId) {
+  /// 本地数据清除 + 墓碑会话 + 解绑出箱(Telegram 模式:双端各自归零)。
+  /// 解绑会触发 onPeerRemoved(旧版不发事件,桌面会话列表残留到重启)。
+  void _wipePeer(String deviceId, {bool queueNotice = false}) {
+    final peer = store.getPeer(deviceId);
     final convId = Store.convIdFor(identity.deviceId, deviceId);
-    store.clearConversation(convId);
+    final name = peer?.deviceName ?? deviceId.substring(0, 8);
+    store.clearConversation(convId, removeConversation: false);
+    if (queueNotice && peer != null) {
+      // 对端离线没收到通知:进 outbox,链路恢复后引擎补发 UnpairNotice。
+      store.queueUnpairNotice(peer);
+    }
     store.compactOps(deviceId, 1 << 62);
     store.removePeer(deviceId);
+    store.removeFromAllGroups(deviceId);
+    // 墓碑系统消息(本地):会话保留在列表里,带解绑说明,可手动清除。
+    store.ensureConversation(convId, deviceId);
+    store.insertMessage(Message(
+      msgId: const Uuid().v4(),
+      convId: convId,
+      senderId: identity.deviceId,
+      lamport: store.nextLamport(convId),
+      createdAtMs: DateTime.now().millisecondsSinceEpoch,
+      kind: Message.kindSystem,
+      text: '已与 $name 解除配对,聊天记录已删除',
+      sendState: Message.sendOk,
+    ));
+    onPeerRemoved?.call(deviceId);
+  }
+
+  /// 应用对端经信封送达的解绑通知(幂等:对端已不在 peers 表时跳过)。
+  void applyRemoteUnpair(String peerId) {
+    if (store.getPeer(peerId) == null) return;
+    _wipePeer(peerId, queueNotice: false);
   }
 
   /// 解除配对(双端):通知对方 + 本地清除。
   Future<void> unpairWith(Peer peer) async {
+    var notified = false;
     final ch = PeerChannel.connect(
       host: peer.lastHost ?? '',
       port: peer.lastPort ?? grpcPort,
       pinnedFingerprint: peer.certFingerprint,
+      selfCertPem: identity.certPem,
     );
     try {
       final client = pbg.PairingServiceClient(ch.channel);
@@ -211,12 +358,13 @@ class PairingManager extends pbg.PairingServiceBase {
         options: CallOptions(
             metadata: Auth.metadata(identity.deviceId, peer.token)),
       );
+      notified = true;
     } catch (_) {
-      // 对方不在线:本地照常清除,对方重连时令牌失效即等同解绑。
+      // 对方不在线:走 outbox,链路恢复后补发解绑通知。
     } finally {
       await ch.shutdown();
     }
-    _wipePeer(peer.deviceId);
+    _wipePeer(peer.deviceId, queueNotice: !notified);
   }
 
   // ---------------------------------------------------------- 客户端
@@ -239,45 +387,73 @@ class PairingManager extends pbg.PairingServiceBase {
     if (targetDeviceId != null && targetDeviceId.isNotEmpty) {
       _outgoingRequests[targetDeviceId] = (requestId, host, port);
     }
-    final ch = PeerChannel.connect(host: host, port: port);
     try {
-      final client = pbg.PairingServiceClient(ch.channel);
-      final resp = await client.requestPair(
-        pb.PairRequest(requester: myInfo, requestId: requestId),
-        options: CallOptions(timeout: requestTimeout + const Duration(seconds: 5)),
+      final ch = PeerChannel.connect(
+        host: host,
+        port: port,
+        selfCertPem: identity.certPem,
       );
+      try {
+        final client = pbg.PairingServiceClient(ch.channel);
+        final resp = await client.requestPair(
+          pb.PairRequest(requester: myInfo, requestId: requestId),
+          options:
+              CallOptions(timeout: requestTimeout + const Duration(seconds: 5)),
+        );
+        final observed = ch.observedFingerprint;
+        if (!resp.accepted) {
+          return PairResult.rejected(resp.message);
+        }
+        if (observed == null || observed != resp.responder.certFingerprint) {
+          // TLS 观测指纹与宣称指纹不一致:中间人嫌疑,拒绝并【不确认】,
+          // 响应方暂存条目超时作废,不会单边入账。
+          return PairResult.rejected('fingerprint mismatch, possible MITM');
+        }
+        // 指纹核验通过:两阶段提交第二阶段——签名确认。
+        final msg = ascii.encode(
+            'pair-confirm-v1|$requestId|${resp.confirmNonce}|${resp.responder.certFingerprint}');
+        final sig = identity.signMessage(msg);
+        final confirm = await client.confirmPair(
+          pb.PairConfirmRequest(
+              requestId: requestId,
+              requesterId: identity.deviceId,
+              signature: sig),
+          options: CallOptions(timeout: const Duration(seconds: 10)),
+        );
+        if (!confirm.ok) {
+          return PairResult.rejected('confirm failed: ${confirm.message}');
+        }
+        final offerToken = String.fromCharCodes(resp.sessionToken);
+        // 本地入账:令牌轮换为 ECDH 派生值(与响应方落库值一致)。
+        final rotated =
+            rotateSessionToken(offerToken, resp.responder.certDer);
+        final r = resp.responder;
+        store.upsertPeer(Peer(
+          deviceId: r.deviceId,
+          deviceName: r.deviceName,
+          platform: r.platform,
+          certFingerprint: r.certFingerprint,
+          token: rotated,
+          deviceModel: r.deviceModel,
+          certDerBase64: base64Encode(r.certDer),
+          lastHost: host,
+          lastPort: port,
+          pairedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ));
+        _notifyPeersChanged();
+        return PairResult.accepted(
+          peerInfo: r,
+          token: rotated,
+          observedFingerprint: observed,
+        );
+      } finally {
+        await ch.shutdown();
+      }
+    } finally {
+      // 异常路径同样清理(旧版残留过期条目)。
       if (targetDeviceId != null) {
         _outgoingRequests.remove(targetDeviceId);
       }
-      final observed = ch.observedFingerprint;
-      if (!resp.accepted) {
-        return PairResult.rejected(resp.message);
-      }
-      if (observed == null || observed != resp.responder.certFingerprint) {
-        // TLS 观测指纹与宣称指纹不一致:中间人嫌疑,拒绝入账。
-        return PairResult.rejected('fingerprint mismatch, possible MITM');
-      }
-      final token = String.fromCharCodes(resp.sessionToken);
-      // 我方同样入账:对方成为可信设备。
-      store.upsertPeer(Peer(
-        deviceId: resp.responder.deviceId,
-        deviceName: resp.responder.deviceName,
-        platform: resp.responder.platform,
-        certFingerprint: resp.responder.certFingerprint,
-        token: token,
-        deviceModel: resp.responder.deviceModel,
-        lastHost: host,
-        lastPort: port,
-        pairedAtMs: DateTime.now().millisecondsSinceEpoch,
-      ));
-      _notifyPeersChanged();
-      return PairResult.accepted(
-        peerInfo: resp.responder,
-        token: token,
-        observedFingerprint: observed,
-      );
-    } finally {
-      await ch.shutdown();
     }
   }
 
@@ -287,7 +463,11 @@ class PairingManager extends pbg.PairingServiceBase {
     final active = _outgoingRequests.remove(targetDeviceId);
     if (active == null) return;
     final (requestId, host, port) = active;
-    final ch = PeerChannel.connect(host: host, port: port);
+    final ch = PeerChannel.connect(
+      host: host,
+      port: port,
+      selfCertPem: identity.certPem,
+    );
     try {
       final client = pbg.PairingServiceClient(ch.channel);
       await client.cancelPair(
@@ -335,8 +515,10 @@ class PairingManager extends pbg.PairingServiceBase {
       deviceName: blob.deviceName,
       platform: blob.platform,
       certFingerprint: blob.fingerprint,
-      token: blob.token,
+      token: rotateSessionToken(blob.token, blob.certDer),
       deviceModel: blob.deviceModel,
+      certDerBase64:
+          blob.certDer.isEmpty ? '' : base64Encode(blob.certDer),
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
     store.upsertPeer(peer);
@@ -359,8 +541,8 @@ class PairingManager extends pbg.PairingServiceBase {
       _pendingOfferToken = null;
       throw StateError('邀请已过期,请重新生成');
     }
-    // 令牌原样回显 = 对方确实持有了我们的 offer(带外往返证明)。
-    if (blob.token != pending) {
+    // 令牌原样回显 = 对方确实持有了我们的 offer(带外往返证明)。常量时间比较。
+    if (!Auth.constantTimeEquals(blob.token, pending)) {
       throw StateError('令牌回显不匹配,这不是本次邀请的应答');
     }
     _pendingOfferToken = null;
@@ -370,8 +552,10 @@ class PairingManager extends pbg.PairingServiceBase {
       deviceName: blob.deviceName,
       platform: blob.platform,
       certFingerprint: blob.fingerprint,
-      token: blob.token,
+      token: rotateSessionToken(pending, blob.certDer),
       deviceModel: blob.deviceModel,
+      certDerBase64:
+          blob.certDer.isEmpty ? '' : base64Encode(blob.certDer),
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
     store.upsertPeer(peer);
@@ -423,18 +607,29 @@ class PairingManager extends pbg.PairingServiceBase {
       return pb.TapPairResponse(
           accepted: false, message: 'tap token invalid or expired');
     }
+    // 指纹变化防护:已配对 deviceId 重新 tap 必须先解绑。
+    final existing = store.getPeer(requester.deviceId);
+    if (existing != null &&
+        existing.certFingerprint != requester.certFingerprint) {
+      return pb.TapPairResponse(
+          accepted: false, message: 'fingerprint changed; unpair first');
+    }
     // 一次性:用后立即作废。
     _tapToken = null;
     _tapTokenAt = null;
 
-    final token = Auth.newToken();
+    final offerToken = Auth.newToken();
+    // 落库令牌 = ECDH 轮换值;响应里仍回原始 offer 令牌,对方轮换后一致。
     store.upsertPeer(Peer(
       deviceId: requester.deviceId,
       deviceName: requester.deviceName,
       platform: requester.platform,
       certFingerprint: requester.certFingerprint,
-      token: token,
+      token: rotateSessionToken(offerToken, requester.certDer),
       deviceModel: requester.deviceModel,
+      certDerBase64: requester.certDer.isEmpty
+          ? ''
+          : base64Encode(requester.certDer),
       lastHost: _remoteHost(call),
       lastPort: requester.port,
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
@@ -443,13 +638,21 @@ class PairingManager extends pbg.PairingServiceBase {
     return pb.TapPairResponse(
       accepted: true,
       responder: myInfo,
-      sessionToken: token.codeUnits,
+      sessionToken: offerToken.codeUnits,
     );
   }
 
   /// (读取方)一碰/一扫配对:连接载荷中的地址,出示 tap 令牌。
-  Future<PairResult> pairViaTap(String host, int port, String tapToken) async {
-    final ch = PeerChannel.connect(host: host, port: port);
+  /// [expectedFingerprint] 来自二维码/NFC 载荷(展示方证书指纹):
+  /// 连接直接 pin 到该指纹——中间人无法在免 PIN 通道里冒充展示方。
+  Future<PairResult> pairViaTap(String host, int port, String tapToken,
+      String expectedFingerprint) async {
+    final ch = PeerChannel.connect(
+      host: host,
+      port: port,
+      pinnedFingerprint: expectedFingerprint,
+      selfCertPem: identity.certPem,
+    );
     try {
       final client = pbg.PairingServiceClient(ch.channel);
       final resp = await client.pairWithTap(
@@ -461,22 +664,25 @@ class PairingManager extends pbg.PairingServiceBase {
       if (observed == null || observed != resp.responder.certFingerprint) {
         return PairResult.rejected('fingerprint mismatch, possible MITM');
       }
-      final token = String.fromCharCodes(resp.sessionToken);
+      final offerToken = String.fromCharCodes(resp.sessionToken);
+      final rotated = rotateSessionToken(offerToken, resp.responder.certDer);
+      final r = resp.responder;
       store.upsertPeer(Peer(
-        deviceId: resp.responder.deviceId,
-        deviceName: resp.responder.deviceName,
-        platform: resp.responder.platform,
-        certFingerprint: resp.responder.certFingerprint,
-        token: token,
-        deviceModel: resp.responder.deviceModel,
+        deviceId: r.deviceId,
+        deviceName: r.deviceName,
+        platform: r.platform,
+        certFingerprint: r.certFingerprint,
+        token: rotated,
+        deviceModel: r.deviceModel,
+        certDerBase64: base64Encode(r.certDer),
         lastHost: host,
         lastPort: port,
         pairedAtMs: DateTime.now().millisecondsSinceEpoch,
       ));
       _notifyPeersChanged();
       return PairResult.accepted(
-        peerInfo: resp.responder,
-        token: token,
+        peerInfo: r,
+        token: rotated,
         observedFingerprint: observed,
       );
     } finally {
@@ -492,6 +698,9 @@ class PairingManager extends pbg.PairingServiceBase {
 
   /// 当前进行中的远程邀请令牌(供中转服务器回退解密受邀方应答)。
   String? get pendingRemoteOfferToken => _pendingOfferToken;
+
+  /// 受邀方暂存的 offer 令牌(应答回传加密用;暴露给中转客户端)。
+  String? get pendingDeliveryToken => _pendingOfferTokenForDelivery;
 
   /// 注入一份经任意通道到达的远程应答(统一走 WebRTC 应用路径)。
   void noteRemoteAnswer(String answerBlob) => _answerDeliveries.add(answerBlob);
@@ -523,8 +732,18 @@ class PairingManager extends pbg.PairingServiceBase {
   }
 
   /// (受邀方)把 answer 引导包自动回传给邀请方。
-  Future<void> deliverAnswerTo(String host, int port, String answerBlob) async {
-    final ch = PeerChannel.connect(host: host, port: port);
+  /// [inviterFingerprint] 邀请方证书指纹(来自 offer 引导包):回传连接
+  /// 必须 pin 到它——offer 令牌是共享秘密,发给任意 TLS 终结者会被截获
+  /// 并注入伪造 answer。
+  Future<void> deliverAnswerTo(String host, int port, String answerBlob,
+      String inviterFingerprint) async {
+    final ch = PeerChannel.connect(
+      host: host,
+      port: port,
+      pinnedFingerprint:
+          inviterFingerprint.isEmpty ? null : inviterFingerprint,
+      selfCertPem: identity.certPem,
+    );
     try {
       final client = pbg.PairingServiceClient(ch.channel);
       final pending = _pendingOfferTokenForDelivery ?? '';
@@ -558,6 +777,44 @@ class PairingManager extends pbg.PairingServiceBase {
     await _answerDeliveries.close();
     await _requestsController.close();
   }
+
+  // ---------------------------------------------------- 令牌轮换
+
+  /// 配对令牌轮换:sha256("ll-token-v2|" + ECDH(我方私钥, 对方证书公钥)
+  /// + "|" + 原令牌)。双方各自独立计算结果一致(对称 ECDH),
+  /// 纯截获 QR/令牌的攻击者没有身份私钥,推不出轮换值——
+  /// 带外泄露的令牌不再等于长期会话凭据。
+  String rotateSessionToken(String offerToken, List<int> peerCertDer) {
+    List<int> material = utf8.encode('|$offerToken');
+    if (peerCertDer.isNotEmpty) {
+      try {
+        final pub = Identity.ecPublicKeyOfCertDer(peerCertDer);
+        final priv = Identity.ecPrivateKeyOfPem(identity.keyPem);
+        final agreement = ECDHBasicAgreement()..init(priv);
+        final shared = agreement.calculateAgreement(pub);
+        material = [...bigToFixedBytes(shared, 32), ...material];
+      } catch (_) {
+        // 证书解析失败:退回令牌原文派生(兼容无证书的旧引导包)。
+      }
+    }
+    return sha256.convert(utf8.encode('ll-token-v2|') + material).toString();
+  }
+}
+
+/// 大整数转定长字节(高位补零)。
+Uint8List bigToFixedBytes(BigInt v, int length) {
+  var hex = v.toRadixString(16);
+  if (hex.length.isOdd) hex = '0$hex';
+  final raw = Uint8List.fromList([
+    for (var i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16)
+  ]);
+  if (raw.length > length) {
+    return Uint8List.fromList(raw.sublist(raw.length - length));
+  }
+  final out = Uint8List(length);
+  out.setRange(length - raw.length, length, raw);
+  return out;
 }
 
 /// 发现层协议常量(避免循环依赖)。

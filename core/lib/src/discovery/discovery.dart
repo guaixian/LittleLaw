@@ -74,6 +74,16 @@ class DiscoveryService {
   Timer? _expiryTimer;
   Timer? _netWatchTimer;
 
+  /// 当前宣告间隔(空闲指数退避省电:3s → 最高 15s;发现邻居即回 3s)。
+  int _curAnnounceMs = 0;
+
+  /// 组播是否加入成功(false = 当前网络组播被禁,发现依赖子网扫描)。
+  bool multicastJoined = false;
+
+  /// 组播状态变化事件(UI 提示"当前网络组播被禁"用)。
+  Stream<bool> get multicastHealth => _mcastHealth.stream;
+  final _mcastHealth = StreamController<bool>.broadcast();
+
   final _devices = <String, DiscoveredDevice>{};
   final _replyCache = <String, int>{};
   final _controller = StreamController<DiscoveredDevice>.broadcast();
@@ -113,7 +123,9 @@ class DiscoveryService {
     _started = true;
     await _bindSocket();
 
-    _announceTimer = Timer.periodic(announceInterval, (_) => unawaited(_announce()));
+    _curAnnounceMs = announceInterval.inMilliseconds;
+    _announceTimer =
+        Timer.periodic(announceInterval, (_) => unawaited(_announceTick()));
     _scanTimer = Timer.periodic(scanInterval, (_) => unawaited(_scanSubnet()));
     // 过期检测频率 = 宣告间隔,保证离线判定延迟稳定在 TTL±interval。
     _expiryTimer = Timer.periodic(announceInterval, (_) => _expireStale());
@@ -123,6 +135,22 @@ class DiscoveryService {
     });
 
     await _announce();
+  }
+
+  /// 宣告节拍:空闲(周围没有任何 LittleLaw 设备)时指数退避省电,
+  /// 邻居出现/收到报文即恢复最快频率。移动端每 3s 组播是耗电大户。
+  Future<void> _announceTick() async {
+    if (_devices.isEmpty) {
+      _curAnnounceMs = (_curAnnounceMs * 2)
+          .clamp(announceInterval.inMilliseconds, 15 * 1000);
+    } else {
+      _curAnnounceMs = announceInterval.inMilliseconds;
+    }
+    await _announce();
+    // 退避期间宣告变慢,补偿一次单播扫描,保证被发现延迟不退化。
+    if (_curAnnounceMs > announceInterval.inMilliseconds) {
+      unawaited(_scanSubnet());
+    }
   }
 
   Future<void> _checkNetworkChanged() async {
@@ -141,10 +169,17 @@ class DiscoveryService {
     );
     _socket = socket;
     socket.broadcastEnabled = true;
+    var joined = true;
     try {
       socket.joinMulticast(InternetAddress(multicastGroup));
     } catch (_) {
-      // 某些平台/网卡不支持组播,降级为广播+扫描,不致命。
+      // 某些平台/网卡不支持组播,降级为广播+扫描,不致命;
+      // 状态上报给 UI 提示("当前网络组播被禁,发现依赖子网扫描")。
+      joined = false;
+    }
+    if (joined != multicastJoined) {
+      multicastJoined = joined;
+      if (!_mcastHealth.isClosed) _mcastHealth.add(joined);
     }
     // Windows:子网扫描探测到不可达地址会触发 ICMP,让 receive() 抛
     // ConnectionReset;异常未接住会杀死监听订阅,发现从此失聪(重启才恢复)。
@@ -208,6 +243,7 @@ class DiscoveryService {
     await stop();
     if (!_expiredController.isClosed) await _expiredController.close();
     if (!_controller.isClosed) await _controller.close();
+    if (!_mcastHealth.isClosed) await _mcastHealth.close();
   }
 
   // ------------------------------------------------------------ 发送
@@ -273,43 +309,171 @@ class DiscoveryService {
     }
   }
 
-  /// 子网扫描:对本机每个 IPv4 /24 段单播探测。量小(254 包/段/15s),
-  /// 在组播与广播都被禁的网络里保证可达。
+  /// 子网扫描:按接口【真实子网掩码】计算网段单播探测
+  /// (旧版硬编码 /24,/20 等大子网跨段设备互相发现不到,
+  /// 组播再被企业 AP 禁掉就彻底失明)。掩码不可得时回退 /24。
+  /// 扫描量上限:网段主机数 > 4096 时只扫本地址所在 /22。
   Future<void> _scanSubnet() async {
     final socket = _socket;
     if (socket == null) return;
     final data = _buildPacket();
 
-    final prefixes = <String>{};
-    if (includeLoopbackScan) prefixes.add('127.0.0');
-    for (final iface in await NetworkInterface.list(
-      type: InternetAddressType.IPv4,
-      includeLinkLocal: false,
-    )) {
-      for (final addr in iface.addresses) {
-        if (addr.isLoopback) continue;
-        final parts = addr.address.split('.');
-        if (parts.length != 4) continue;
-        prefixes.add('${parts[0]}.${parts[1]}.${parts[2]}');
-      }
-    }
-
-    for (final prefix in prefixes) {
-      for (var i = 1; i < 255; i++) {
-        final target = InternetAddress('$prefix.$i');
+    final ranges = await _localScanRanges();
+    for (final (base, hostBits) in ranges) {
+      var count = 1 << hostBits;
+      const cap = 1022; // 单网段扫描上限(≈/22)
+      final start = count > cap ? (base + ((count - cap) >> 1)) : base + 1;
+      final end = count > cap ? start + cap : base + count - 1;
+      count = end - start + 1;
+      for (var i = 0; i < count; i++) {
+        final target = InternetAddress(_intToAddr(start + i));
         try {
           socket.send(data, target, discoveryPort);
         } catch (_) {}
         // 小步快走,避免瞬时突发被交换机丢弃。
-        if (i % 32 == 0) {
+        if (i % 32 == 31) {
           await Future.delayed(const Duration(milliseconds: 5));
         }
       }
     }
   }
 
+  /// 本机各 IPv4 地址所在的 (网络基址, 主机位数的较小值) 列表。
+  Future<List<(int base, int hostBits)>> _localScanRanges() async {
+    final out = <(int, int)>{};
+    if (includeLoopbackScan) {
+      out.add((_addrToInt('127.0.0.0'), 8));
+    }
+    final addrs = <String>[];
+    try {
+      for (final iface in await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLinkLocal: false,
+      )) {
+        for (final a in iface.addresses) {
+          if (!a.isLoopback) addrs.add(a.address);
+        }
+      }
+    } catch (_) {}
+    final masks = await _interfaceMasks();
+    for (final a in addrs) {
+      final mask = masks[a];
+      if (mask != null) {
+        final prefix = _maskToPrefix(mask);
+        if (prefix >= 8 && prefix <= 32) {
+          final ip = _addrToInt(a);
+          out.add((
+            ip & _maskToInt(mask),
+            (32 - prefix).clamp(2, 32)
+          ));
+          continue;
+        }
+      }
+      // 回退:/24。
+      final parts = a.split('.');
+      if (parts.length == 4) {
+        out.add((_addrToInt('${parts[0]}.${parts[1]}.${parts[2]}.0'), 8));
+      }
+    }
+    return out.toList();
+  }
+
+  /// 平台相关的 地址→掩码 表(best effort;失败返回空表走 /24 回退)。
+  Future<Map<String, String>> _interfaceMasks() async {
+    try {
+      if (Platform.isWindows) {
+        // ipconfig 输出按语言本地化,但"地址行 + 掩码行"顺序不变:
+        // 非 255 开头的点分四段行是地址,其后最近的 255 开头行是掩码。
+        final r = await Process.run('ipconfig', []);
+        final text = r.stdout as String;
+        final lines = text.split('\n');
+        final quad = RegExp(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b');
+        String? pendingAddr;
+        final out = <String, String>{};
+        for (final raw in lines) {
+          final m = quad.firstMatch(raw);
+          if (m == null) continue;
+          final v = m.group(1)!;
+          if (v.startsWith('255.')) {
+            if (pendingAddr != null) {
+              out[pendingAddr] = v;
+              pendingAddr = null;
+            }
+          } else {
+            pendingAddr = v;
+          }
+        }
+        return out;
+      }
+      if (Platform.isLinux) {
+        // /proc/net/route:Iface Destination ... Mask(hex LE)。
+        final route = await File('/proc/net/route').readAsString();
+        final ifaces = <String>{};
+        for (final line in route.split('\n').skip(1)) {
+          final c = line.trim().split(RegExp(r'\s+'));
+          if (c.length >= 8) ifaces.add(c[0]);
+        }
+        final nameToAddr = <String, String>{};
+        for (final iface in await NetworkInterface.list(
+            type: InternetAddressType.IPv4, includeLinkLocal: false)) {
+          for (final a in iface.addresses) {
+            if (!a.isLoopback) nameToAddr[iface.name] = a.address;
+          }
+        }
+        final out = <String, String>{};
+        for (final line in route.split('\n').skip(1)) {
+          final c = line.trim().split(RegExp(r'\s+'));
+          if (c.length < 8) continue;
+          final addr = nameToAddr[c[0]];
+          if (addr == null) continue;
+          final maskHex = c[7];
+          if (maskHex.length != 8) continue;
+          // 小端十六进制 → 点分掩码。
+          final b = [
+            int.parse(maskHex.substring(6, 8), radix: 16),
+            int.parse(maskHex.substring(4, 6), radix: 16),
+            int.parse(maskHex.substring(2, 4), radix: 16),
+            int.parse(maskHex.substring(0, 2), radix: 16),
+          ];
+          if (b.every((x) => x == 0)) continue;
+          out[addr] = b.join('.');
+        }
+        return out;
+      }
+    } catch (_) {}
+    return const {};
+  }
+
+  static int _addrToInt(String s) {
+    final p = s.split('.');
+    if (p.length != 4) return 0;
+    return (int.parse(p[0]) << 24) |
+        (int.parse(p[1]) << 16) |
+        (int.parse(p[2]) << 8) |
+        int.parse(p[3]);
+  }
+
+  static int _maskToInt(String mask) => _addrToInt(mask);
+
+  static int _maskToPrefix(String mask) {
+    var v = _addrToInt(mask);
+    var n = 0;
+    for (var i = 31; i >= 0; i--) {
+      if ((v & (1 << i)) != 0) {
+        n++;
+      } else if (n > 0) {
+        break; // 非连续掩码按前缀长度计
+      }
+    }
+    return n;
+  }
+
+  static String _intToAddr(int v) =>
+      '${(v >> 24) & 0xFF}.${(v >> 16) & 0xFF}.${(v >> 8) & 0xFF}.${v & 0xFF}';
+
   Future<List<InternetAddress>> _broadcastAddresses() async {
     final result = <InternetAddress>[];
+    final masks = await _interfaceMasks();
     try {
       for (final iface in await NetworkInterface.list(
         type: InternetAddressType.IPv4,
@@ -317,9 +481,16 @@ class DiscoveryService {
       )) {
         for (final addr in iface.addresses) {
           if (addr.isLoopback) continue;
+          final mask = masks[addr.address];
+          if (mask != null && _maskToPrefix(mask) >= 8) {
+            // 按真实掩码计算定向广播地址(旧版 /24 假定)。
+            final bcast = _addrToInt(addr.address) |
+                (~_maskToInt(mask) & 0xFFFFFFFF);
+            result.add(InternetAddress(_intToAddr(bcast)));
+            continue;
+          }
           final parts = addr.address.split('.');
           if (parts.length != 4) continue;
-          // /24 假定:家用/办公局域网最常见形态。
           result.add(InternetAddress('${parts[0]}.${parts[1]}.${parts[2]}.255'));
         }
       }
@@ -416,7 +587,11 @@ class DiscoveryService {
 
   void _expireStale() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    final ttl = announceInterval.inMilliseconds * 4;
+    // TTL 跟随当前宣告间隔(退避时同步放宽,不会误判)。
+    final ttl = (_curAnnounceMs <= 0
+            ? announceInterval.inMilliseconds
+            : _curAnnounceMs) *
+        4;
     final expired = <String>[];
     _devices.removeWhere((id, d) {
       final stale = now - d.lastSeenMs > ttl;

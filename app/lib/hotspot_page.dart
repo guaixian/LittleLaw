@@ -39,21 +39,26 @@ class _HotspotPageState extends State<HotspotPage> {
       // LocalOnlyHotspot 需要定位权限(Android 13+ 用附近设备权限)。
       final loc = await Permission.location.request();
       final nearby = await Permission.nearbyWifiDevices.request();
+      // 权限对话框期间用户可能已退出页面:每个 await 后判 mounted,
+      // 否则 setState() called after dispose() 崩溃。
+      if (!mounted) return;
       if (!loc.isGranted && !nearby.isGranted) {
         _setStatus('需要定位或附近设备权限才能创建热点');
         return;
       }
       final info = await HotspotManager.startHotspot();
+      if (!mounted) return;
       setState(() {
         _hotspot = info;
         _status = '热点已开启。另一台设备扫码或手动加入后,回到主页即可互相发现';
       });
       showToast('热点已开启: ${info.ssid}', type: ToastType.success);
     } catch (e) {
+      if (!mounted) return;
       _setStatus('创建热点失败: $e');
       showToast('创建热点失败: $e', type: ToastType.error);
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -65,13 +70,15 @@ class _HotspotPageState extends State<HotspotPage> {
     setState(() => _busy = true);
     try {
       await HotspotManager.joinHotspot(_ssidCtrl.text.trim(), _passCtrl.text);
+      if (!mounted) return;
       _setStatus('已加入热点,引擎流量已切换到该网络,回到主页等待发现对方');
       showToast('已加入热点', type: ToastType.success);
     } catch (e) {
+      if (!mounted) return;
       _setStatus('加入失败: $e(也可以去系统 WiFi 设置手动加入)');
       showToast('加入热点失败', type: ToastType.error);
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -126,8 +133,14 @@ class _HotspotPageState extends State<HotspotPage> {
               Center(
                 child: TextButton(
                   onPressed: () async {
-                    await HotspotManager.stopHotspot();
-                    setState(() => _hotspot = null);
+                    try {
+                      await HotspotManager.stopHotspot();
+                    } catch (e) {
+                      if (mounted) {
+                        showToast('关闭热点失败: $e', type: ToastType.error);
+                      }
+                    }
+                    if (mounted) setState(() => _hotspot = null);
                   },
                   child: const Text('关闭热点'),
                 ),

@@ -10,11 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 )
 
 // 设备身份挑战:服务端发 nonce,设备用身份证书私钥对
-// sha256(deviceId|fingerprint|nonce) 签名,服务端用证书公钥验签并核对指纹。
-// 服务器不存储任何私钥,TOFU 模型;内容层另有配对令牌加密,服务器只是管道。
+// sha256("littlelaw-hello-v1|" + 长度前缀字段) 签名,服务端用证书公钥
+// 验签并核对指纹。签名摘要做域分隔 + 长度前缀(签名协议卫生,
+// 防跨协议/拼接歧义攻击)。服务器不存储任何私钥;
+// deviceID→指纹 的首见绑定见 identity.go(Registry)。
 
 func newNonce() (string, error) {
 	b := make([]byte, 16)
@@ -25,7 +28,14 @@ func newNonce() (string, error) {
 }
 
 func authDigest(deviceID, fingerprint, nonce string) [32]byte {
-	return sha256.Sum256([]byte(deviceID + "|" + fingerprint + "|" + nonce))
+	var b []byte
+	b = append(b, "littlelaw-hello-v1|"...)
+	for _, f := range []string{deviceID, fingerprint, nonce} {
+		b = append(b, []byte(strconv.Itoa(len(f)))...)
+		b = append(b, ':')
+		b = append(b, f...)
+	}
+	return sha256.Sum256(b)
 }
 
 // 解析 PEM 证书并提取 ECDSA 公钥。

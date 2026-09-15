@@ -44,6 +44,12 @@ class PeerStatusChanged extends EngineEvent {
   final bool online;
 }
 
+/// 解绑完成(本地信任已清除;UI 刷新会话列表/设备列表)。
+class PeerRemoved extends EngineEvent {
+  PeerRemoved(this.peerId);
+  final String peerId;
+}
+
 /// 文件消息到达(供传输层决定是否自动拉取)。
 class FileMessageArrived extends EngineEvent {
   FileMessageArrived(this.peerId, this.message);
@@ -59,10 +65,11 @@ class FileCancelled extends EngineEvent {
 
 /// 对端请求拉取文件(信封式,传输层无关,WebRTC 链路等场景使用)。
 class FileFetchRequested extends EngineEvent {
-  FileFetchRequested(this.peerId, this.fileId, this.offset);
+  FileFetchRequested(this.peerId, this.fileId, this.offset, this.attempt);
   final String peerId;
   final String fileId;
   final int offset;
+  final int attempt; // 拉取会话标识(重试自增,旧会话循环被终止)
 }
 
 /// 收到信封式文件数据帧。
@@ -240,7 +247,11 @@ class SyncEngine extends pbg.SyncServiceBase {
     final msg = build(store.nextLamport(convId),
         DateTime.now().millisecondsSinceEpoch);
     store.insertMessage(msg);
-    store.setSendState(msg.msgId, Message.sendSending);
+    // 三态语义:在线 → 发送中;离线 → 已入队(存储转发必然送达,
+    // 显示时钟而不是红色失败;旧版 45s 判死与离线补发语义冲突,
+    // 造成"发一条红一条,过会儿又变绿")。
+    store.setSendState(
+        msg.msgId, isOnline(peerId) ? Message.sendSending : Message.sendQueued);
     final proto = _chatToProto(msg);
     final seq = store.appendOp(peerId, Op.typeMsg, proto.writeToBuffer());
     proto.opSeq = Int64(seq);
@@ -255,39 +266,32 @@ class SyncEngine extends pbg.SyncServiceBase {
   /// peerId → {opSeq → msgId}:等对端游标 ACK 的发出消息。
   final _pendingAcks = <String, Map<int, String>>{};
 
-  /// peerId → {opSeq → 发送时刻 ms}:ACK 超时扫描用。
-  final _pendingSentAt = <String, Map<int, int>>{};
-
-  /// 无活链路时未 ACK 消息判"发送失败"的时限(此后重发按钮可用;
-  /// 对端稍后上线补 ACK 仍会自动转"已送达")。
-  static const _ackFailAfter = Duration(seconds: 45);
-
-  Timer? _ackSweepTimer;
-
   void _trackPending(String peerId, int seq, String msgId) {
     _pendingAcks.putIfAbsent(peerId, () => {})[seq] = msgId;
-    _pendingSentAt.putIfAbsent(peerId, () => {})[seq] =
-        DateTime.now().millisecondsSinceEpoch;
-    // 懒启动 ACK 超时扫描。
-    _ackSweepTimer ??= Timer.periodic(const Duration(seconds: 15), (_) {
-      _sweepPendingAcks();
-    });
   }
 
-  /// 发送状态兜底:长时间无活链路且无 ACK 的消息 → 发送失败(可重发)。
-  void _sweepPendingAcks() {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    for (final entry in _pendingSentAt.entries) {
-      final peerId = entry.key;
-      if (_sinks[peerId] != null && _sinks[peerId]!.isNotEmpty) continue;
-      for (final seqEntry in entry.value.entries) {
-        if (now - seqEntry.value < _ackFailAfter.inMilliseconds) continue;
-        final msgId = _pendingAcks[peerId]?[seqEntry.key];
-        if (msgId == null) continue;
-        final m = store.getMessage(msgId);
-        if (m != null && m.sendState == Message.sendSending) {
-          markFailed(msgId);
-        }
+  /// 链路断开:在途消息 sending → queued(待投递,非失败)。
+  void _markPendingQueued(String peerId) {
+    final pend = _pendingAcks[peerId];
+    if (pend == null) return;
+    for (final msgId in pend.values) {
+      final m = store.getMessage(msgId);
+      if (m != null && m.sendState == Message.sendSending) {
+        store.setSendState(msgId, Message.sendQueued);
+        _events.add(MessageStateChanged(msgId));
+      }
+    }
+  }
+
+  /// 链路恢复:queued → sending(重连重放会按游标补发)。
+  void _markPendingSending(String peerId) {
+    final pend = _pendingAcks[peerId];
+    if (pend == null) return;
+    for (final msgId in pend.values) {
+      final m = store.getMessage(msgId);
+      if (m != null && m.sendState == Message.sendQueued) {
+        store.setSendState(msgId, Message.sendSending);
+        _events.add(MessageStateChanged(msgId));
       }
     }
   }
@@ -304,14 +308,14 @@ class SyncEngine extends pbg.SyncServiceBase {
       }
       return false;
     });
-    _pendingSentAt[peerId]?.removeWhere((seq, _) => seq <= cursor);
     for (final id in done) {
       store.setSendState(id, Message.sendOk);
       _events.add(MessageStateChanged(id));
     }
   }
 
-  /// 标记发送失败(传输异常等)。
+  /// 标记发送失败(仅真正的终态失败:发送方取消、落库失败等;
+  /// 离线补发永不判死)。
   void markFailed(String msgId) {
     store.setSendState(msgId, Message.sendFailed);
     _events.add(MessageStateChanged(msgId));
@@ -416,9 +420,15 @@ class SyncEngine extends pbg.SyncServiceBase {
   }
 
   /// 对端上线(被发现在线/已知地址变化)时调用,确保连出会话存在。
+  /// 已放弃重试的会话(连续失败超限)在发现层刷新地址时复活——
+  /// 对方不在局域网时宣告本来就停,重试纯属浪费且造成状态闪跳。
   void ensureSession(Peer peer, {String? host, int? port}) {
     final existing = _sessions[peer.deviceId];
     if (existing != null && existing.isOpen) return;
+    if (existing != null && existing.gaveUp) {
+      existing.dispose();
+      _sessions.remove(peer.deviceId);
+    }
     final targetHost = host ?? peer.lastHost;
     final targetPort = port ?? peer.lastPort;
     if (targetHost == null || targetHost.isEmpty || targetPort == null) return;
@@ -461,14 +471,14 @@ class SyncEngine extends pbg.SyncServiceBase {
     _sessions.remove(peerId);
     // 2) 对端连入的服务端 sink:关闭即触发 handler 的 yield* 收尾与注销。
     final set = _sinks[peerId];
-    final wasOnline = set != null && set.isNotEmpty;
     if (set != null) {
       for (final sink in Set.of(set)) {
         unawaited(sink.close());
       }
       _sinks.remove(peerId);
     }
-    if (wasOnline) {
+    _markPendingQueued(peerId);
+    if (_announcedOnline.remove(peerId)) {
       _events.add(PeerStatusChanged(peerId, false));
     }
   }
@@ -521,8 +531,11 @@ class SyncEngine extends pbg.SyncServiceBase {
     if (gs.memberIds.isEmpty) return;
     if (!gs.memberIds.contains(identity.deviceId)) {
       // 被移出群:删除本地群与群消息(保留 ops 供幂等)。
+      // 例外:同步来自"我的设备"= 我在其他端主动退群的镜像,
+      // 按退群语义保留历史(旧版走"被移出"路径全删,违反镜像承诺)。
+      final fromMyDevice = store.isSelfDevice(peerId);
       if (store.getGroup(gs.groupId) != null) {
-        store.deleteGroup(gs.groupId);
+        store.deleteGroup(gs.groupId, keepMessages: fromMyDevice);
         _events.add(GroupSynced(gs.groupId));
       }
       return;
@@ -594,22 +607,24 @@ class SyncEngine extends pbg.SyncServiceBase {
       ..sender = identity.deviceId
       ..groupId = groupId;
     final recipients = store.groupRecipients(groupId);
-    var firstSeq = -1;
+    // 发送状态三态(与 1:1 同语义):无收件人(全员解配)视为完成。
+    if (recipients.isNotEmpty) {
+      final anyOnline = recipients.any((m) => isOnline(m));
+      store.setSendState(proto.msgId,
+          anyOnline ? Message.sendSending : Message.sendQueued);
+    }
     for (final memberId in recipients) {
       final seq = store.appendOp(
           memberId, Op.typeMsg, (proto..opSeq = Int64.ZERO).writeToBuffer());
-      if (firstSeq < 0) firstSeq = seq;
+      // 全员追踪【各自序号空间】的 seq(旧版只追踪第一个成员:第一个
+      // 成员离线时即使其他人都收到了也显示失败;且 firstSeq 是第一个
+      // 成员的序号空间,其他成员的 ACK 永远匹配不到)。
+      // 语义 = 任一成员游标覆盖即送达(_markDelivered 按 peerId 匹配)。
+      _trackPending(memberId, seq, proto.msgId);
       // deepCopy:见 _mirrorChat 注释(序号空间串号问题)。
       _push(memberId, pb.Envelope(
           id: const Uuid().v4(),
           chat: proto.deepCopy()..opSeq = Int64(seq)));
-    }
-    // 发送状态:任一成员 ACK 即视为送达。
-    if (firstSeq >= 0) {
-      for (final memberId in recipients) {
-        _trackPending(memberId, firstSeq, proto.msgId);
-        break;
-      }
     }
     // 镜像到我的设备(group_id 已带,接收端按群会话落地)。
     for (final self in store.selfPeers()) {
@@ -780,7 +795,14 @@ class SyncEngine extends pbg.SyncServiceBase {
     // 新链路:活性计时从现在起算(40s 内没有任何来信即判半开)。
     _peerLastRecv.putIfAbsent(peerId, () => DateTime.now().millisecondsSinceEpoch);
     _startIdleSweep();
-    if (wasOffline) _events.add(PeerStatusChanged(peerId, true));
+    // "在线"上报时机:不再在 sink 注册时报在线(gRPC 惰性建连,
+    // 发起调用 ≠ 连上了;对端已消失时每次重连尝试都会先假报在线
+    // ~10s 再转离线,造成状态闪跳)。真正的在线判定移到
+    // _handleIncoming 收到该对端第一个信封之时。
+    if (wasOffline) {
+      _markPendingSending(peerId);
+      onSessionUp?.call(peerId);
+    }
     // 会话建立即互推个人资料(名称/头像),对端 UI 立即可用。
     final profile = profileProvider?.call();
     if (profile != null) {
@@ -791,6 +813,12 @@ class SyncEngine extends pbg.SyncServiceBase {
           profileUpdate: profile.deepCopy()..opSeq = Int64(seq)));
     }
   }
+
+  /// 链路建立回调(门面注入:补发挂起的解绑通知等)。
+  void Function(String peerId)? onSessionUp;
+
+  /// 已向 UI 上报"在线"的 peer(收到第一个信封才置位)。
+  final _announcedOnline = <String>{};
 
   /// 个人资料提供器(门面注入:名称 + 头像 PNG)。
   pb.ProfileUpdate? Function()? profileProvider;
@@ -814,13 +842,28 @@ class SyncEngine extends pbg.SyncServiceBase {
     }
   }
 
+  /// 收到对端经信封送达的解绑通知(门面接 pairing 清库+墓碑)。
+  void Function(String peerId)? onUnpairNotice;
+
+  /// 发送解绑通知(仅活链路;由门面在链路建立时触发)。
+  void sendUnpairNotice(String peerId) {
+    _push(peerId, pb.Envelope(
+      id: const Uuid().v4(),
+      unpairNotice: pb.UnpairNotice(deviceId: identity.deviceId),
+    ));
+  }
+
   void _unregisterSink(String peerId, StreamController<pb.Envelope> sink) {
     final set = _sinks[peerId];
     if (set == null) return;
     set.remove(sink);
     if (set.isEmpty) {
       _sinks.remove(peerId);
-      _events.add(PeerStatusChanged(peerId, false));
+      // 在途消息转"待投递"(不是失败;存储转发语义下必然送达)。
+      _markPendingQueued(peerId);
+      if (_announcedOnline.remove(peerId)) {
+        _events.add(PeerStatusChanged(peerId, false));
+      }
     }
   }
 
@@ -901,6 +944,12 @@ class SyncEngine extends pbg.SyncServiceBase {
   void _handleIncoming(Peer peer, pb.Envelope env) {
     final peerId = peer.deviceId;
     _peerLastRecv[peerId] = DateTime.now().millisecondsSinceEpoch;
+    // 在线判定的权威时刻:收到该对端第一个信封(Hello/心跳/任何数据)
+    // 才上报在线——此刻 TCP+TLS+鉴权确已完成。
+    if (_sinks[peerId]?.isNotEmpty == true && !_announcedOnline.contains(peerId)) {
+      _announcedOnline.add(peerId);
+      _events.add(PeerStatusChanged(peerId, true));
+    }
     switch (env.whichPayload()) {
       case pb.Envelope_Payload.hello:
         // 对端告知"我已应用到你的 op 第 N 条":补发 (N, +∞) 并压缩。
@@ -923,8 +972,8 @@ class SyncEngine extends pbg.SyncServiceBase {
         store.compactOps(peerId, cursor);
         _markDelivered(peerId, cursor);
       case pb.Envelope_Payload.fileFetch:
-        _events.add(FileFetchRequested(
-            peerId, env.fileFetch.fileId, env.fileFetch.offset.toInt()));
+        _events.add(FileFetchRequested(peerId, env.fileFetch.fileId,
+            env.fileFetch.offset.toInt(), env.fileFetch.attempt));
       case pb.Envelope_Payload.fileData:
         _events.add(FileDataReceived(peerId, env.fileData));
       case pb.Envelope_Payload.fileDataAck:
@@ -952,6 +1001,14 @@ class SyncEngine extends pbg.SyncServiceBase {
         }
       case pb.Envelope_Payload.linkAuth:
         break; // 外部链路鉴权在 attach 前由调用方完成,此处忽略
+      case pb.Envelope_Payload.noop:
+        // 序号占位(发送方的墓碑已过期):只推进游标,无业务动作。
+        _advanceCursor(peerId, env.noop.opSeq);
+      case pb.Envelope_Payload.unpairNotice:
+        // 对端解绑通知:清本地信任/会话并落墓碑(幂等)。
+        if (peerId == env.unpairNotice.deviceId) {
+          onUnpairNotice?.call(peerId);
+        }
       case pb.Envelope_Payload.heartbeat:
         // 心跳回执:让单向会话(仅一侧拨出)的两端都能看到活性,
         // 空闲清扫不会误杀健康链路。回执不再回,无循环。
@@ -1117,6 +1174,10 @@ class SyncEngine extends pbg.SyncServiceBase {
         final rr = pb.ReadReceipt.fromBuffer(op.payload);
         env = pb.Envelope(
             id: const Uuid().v4(), readReceipt: rr..opSeq = Int64(op.seq));
+      } else if (op.type == Op.typeNoop) {
+        // 过期墓碑占位:只推进对端游标。
+        env = pb.Envelope(
+            id: const Uuid().v4(), noop: pb.Noop(opSeq: Int64(op.seq)));
       } else {
         final del = pb.ChatDeleted.fromBuffer(op.payload);
         env = pb.Envelope(
@@ -1334,11 +1395,10 @@ class SyncEngine extends pbg.SyncServiceBase {
       _unregisterSink(peerId, sink);
 
   Future<void> dispose() async {
-    _ackSweepTimer?.cancel();
-    _ackSweepTimer = null;
     _idleSweepTimer?.cancel();
     _idleSweepTimer = null;
     _peerLastRecv.clear();
+    _announcedOnline.clear();
     // 1) 关闭所有连出会话(客户端侧)。
     for (final s in _sessions.values) {
       s.dispose();
@@ -1390,6 +1450,15 @@ class _OutgoingSession {
   bool _disposed = false;
   bool _open = false;
 
+  /// 连续建连失败次数(成功一次即清零)。
+  int _consecutiveFails = 0;
+
+  /// 连续失败超限后放弃自动重连(等发现层刷新地址复活)。
+  /// 无限重试会在发现超时窗口内制造 4-5 次"在线→离线"闪跳。
+  static const _maxConsecutiveFails = 3;
+
+  bool get gaveUp => _consecutiveFails >= _maxConsecutiveFails;
+
   bool get isOpen => _open;
 
   void start() => unawaited(_connect());
@@ -1400,6 +1469,7 @@ class _OutgoingSession {
       host: host,
       port: port,
       pinnedFingerprint: peer.certFingerprint,
+      selfCertPem: engine.identity.certPem,
     );
     final out = StreamController<pb.Envelope>();
     _out = out;
@@ -1444,6 +1514,11 @@ class _OutgoingSession {
     if (fatal) _disposed = true;
     final wasOpen = _open;
     _open = false;
+    if (wasOpen) {
+      _consecutiveFails = 0; // 曾真正连上过:重新计数
+    } else {
+      _consecutiveFails++;
+    }
     _heartbeat?.cancel();
     _heartbeat = null;
     final out = _out;
@@ -1456,6 +1531,7 @@ class _OutgoingSession {
     _inSub = null;
     unawaited(_channel?.shutdown() ?? Future.value());
     _channel = null;
+    if (gaveUp) return; // 放弃:等发现层刷新地址再复活
     if (wasOpen || !fatal) {
       _scheduleReconnect();
     }

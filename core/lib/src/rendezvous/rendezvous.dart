@@ -90,6 +90,7 @@ class RendezvousClient {
   final _mail = StreamController<RendezvousMail>.broadcast();
   final _connected = StreamController<bool>.broadcast();
   final _pairAnswers = StreamController<String>.broadcast();
+  final _errors = StreamController<String>.broadcast();
 
   Stream<String> get peerOnline => _peerOnline.stream;
 
@@ -103,22 +104,47 @@ class RendezvousClient {
   /// 经服务器到达的"配对应答"引导包(受邀方一扫即成的推回)。
   Stream<String> get pairAnswers => _pairAnswers.stream;
 
+  /// 服务器 error 帧(认证失败/邮箱满等)。旧版全部静默吞掉:
+  /// 认证失败 → 无限静默重连;邮箱满 → 发送方毫不知情,活链路僵死时
+  /// 消息静默丢。UI 可订阅提示。
+  Stream<String> get errors => _errors.stream;
+
   /// 发送配对应答(受邀方把 answer 引导包推回给邀请方,密文)。
-  Future<void> sendPairAnswer(String toPeerId, String answerBlob) =>
-      sendSignal(toPeerId, {'kind': 'pair_answer', 'blob': answerBlob});
+  ///
+  /// 加密用【offer 原始令牌】而非入账后的轮换令牌:邀请方此时还没把
+  /// 受邀方入账,只能靠邀请令牌解密(fallback 路径)。
+  Future<void> sendPairAnswer(String toPeerId, String answerBlob) async {
+    if (!_up) throw StateError('rendezvous not connected');
+    final offerToken = fallbackTokenProvider?.call();
+    final codec = offerToken != null
+        ? SecureCodec(offerToken)
+        : _codecFor(toPeerId);
+    if (codec == null) throw StateError('unknown peer $toPeerId');
+    final aad = _aad(identity.deviceId, toPeerId);
+    final packed = await codec.encrypt(
+        utf8.encode(jsonEncode({'kind': 'pair_answer', 'blob': answerBlob})),
+        aad: aad);
+    _send({'type': 'signal', 'to': toPeerId, 'data': base64Encode(packed)});
+  }
 
   /// 一次性连接回传配对应答(受邀方未配置服务器时,
   /// 临时连到邀请方所用的服务器完成推回)。
+  /// [offerToken] 扫码得到的邀请令牌:邀请方尚未入账受邀方,
+  /// 只能用它加密(轮换令牌解不开)。
   static Future<void> deliverPairAnswerOnce({
     required Identity identity,
     required Store store,
     required String rendezvousUrl,
     required String toPeerId,
     required String answerBlob,
+    String? offerToken,
     Duration timeout = const Duration(seconds: 12),
   }) async {
     final rc =
         RendezvousClient(identity: identity, store: store, url: rendezvousUrl);
+    if (offerToken != null) {
+      rc.fallbackTokenProvider = () => offerToken;
+    }
     try {
       rc.start();
       await rc.connectionState.firstWhere((up) => up).timeout(timeout);
@@ -137,6 +163,7 @@ class RendezvousClient {
 
   void start() {
     _stopping = false;
+    _backoff = const Duration(seconds: 1); // 重启复位退避
     unawaited(_connect());
   }
 
@@ -185,7 +212,11 @@ class RendezvousClient {
 
   void _scheduleReconnect() {
     if (_stopping || (_reconnectTimer?.isActive ?? false)) return;
-    _reconnectTimer = Timer(_backoff, () {
+    // ±50% 抖动:公共服务器重启时全体客户端不会齐连(thundering herd)。
+    final jitterMs = _backoff.inMilliseconds +
+        (Random().nextInt(_backoff.inMilliseconds + 1) -
+                _backoff.inMilliseconds ~/ 2);
+    _reconnectTimer = Timer(Duration(milliseconds: jitterMs), () {
       _backoff = _backoff * 2 > const Duration(seconds: 30)
           ? const Duration(seconds: 30)
           : _backoff * 2;
@@ -254,15 +285,23 @@ class RendezvousClient {
       case 'mailbox':
         await _handleMailbox(f);
       case 'error':
-        break; // 服务器提示(如对端不在线),静默
+        final msg = f['message'] as String? ?? '';
+        if (msg.isNotEmpty) _errors.add(msg);
+        break;
     }
   }
 
   /// 用身份证书私钥对挑战签名,完成认证。
+  /// 摘要做域分隔 + 长度前缀(与服务器 authDigest 一致,签名协议卫生)。
   Future<void> _answerChallenge(String nonce) async {
     final deviceId = identity.deviceId;
     final fingerprint = identity.fingerprint;
-    final digest = sha256.convert(utf8.encode('$deviceId|$fingerprint|$nonce')).bytes;
+    String lenPrefixed(String s) => '${s.length}:$s';
+    final material = 'littlelaw-hello-v1|'
+        '${lenPrefixed(deviceId)}'
+        '${lenPrefixed(fingerprint)}'
+        '${lenPrefixed(nonce)}';
+    final digest = sha256.convert(utf8.encode(material)).bytes;
     final sig = _ecSign(digest);
     _send({
       'type': 'hello',
@@ -312,6 +351,8 @@ class RendezvousClient {
     final from = f['from'] as String? ?? '';
     final data = f['data'] as String? ?? '';
     if (from.isEmpty || data.isEmpty) return;
+    // 反射防护:声称来自自己的信令直接丢弃。
+    if (from == identity.deviceId) return;
 
     // 候选密钥:已配对令牌 + 进行中的邀请令牌(应对令牌轮换/未入账来源)。
     final codecs = <SecureCodec>[
@@ -322,9 +363,10 @@ class RendezvousClient {
     if (codecs.isEmpty) return;
 
     final packed = base64Decode(data);
+    final aad = _aad(from, identity.deviceId);
     for (final codec in codecs) {
       try {
-        final plain = await codec.decrypt(packed);
+        final plain = await codec.decrypt(packed, aad: aad);
         final payload = jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
         if (payload['kind'] == 'pair_answer') {
           final blob = payload['blob'] as String? ?? '';
@@ -348,25 +390,53 @@ class RendezvousClient {
       final from = item['from'] as String? ?? '';
       final data = item['data'] as String? ?? '';
       final id = (item['id'] as num?)?.toInt() ?? 0;
-      final codec = _codecFor(from);
-      if (codec == null) {
-        ackIds.add(id); // 未配对来源:直接丢弃并删除
+      if (from == identity.deviceId) {
+        ackIds.add(id); // 反射/伪造
         continue;
       }
-      try {
-        final plain = await codec.decrypt(base64Decode(data));
-        _mail.add(RendezvousMail(
-          id: id,
-          fromPeerId: from,
-          envelopeBytes: plain,
-        ));
+      final aad = _aad(from, identity.deviceId);
+      var handled = false;
+      // 候选密钥:已配对令牌 + fallback 邀请令牌(旧版邮箱没有 fallback,
+      // 令牌轮换/恢复场景下的合法信封会被永久删除——服务器已删无重试)。
+      final codecs = <SecureCodec>[
+        if (_codecFor(from) != null) _codecFor(from)!,
+        if (fallbackTokenProvider?.call() != null)
+          SecureCodec(fallbackTokenProvider!()!),
+      ];
+      for (final codec in codecs) {
+        try {
+          final plain = await codec.decrypt(base64Decode(data), aad: aad);
+          _mail.add(RendezvousMail(
+            id: id,
+            fromPeerId: from,
+            envelopeBytes: plain,
+          ));
+          handled = true;
+          break;
+        } catch (_) {
+          continue;
+        }
+      }
+      if (handled) {
         ackIds.add(id);
-      } catch (_) {
-        ackIds.add(id); // 解密失败也丢弃(防止毒消息反复投递)
+      } else if (codecs.isEmpty) {
+        // 未配对来源且无 fallback:丢弃并删除。
+        ackIds.add(id);
+      } else {
+        // 有密钥但解密失败:疑似毒消息/密钥不匹配。延迟 ack 重试一次
+        //(等 fallback 令牌就位);仍然失败下次轮询会再见到——为防
+        // 毒消息无限循环,直接 ack 并报错。
+        _errors.add('邮箱消息解密失败(来自 ${from.substring(0, 8)}…)');
+        ackIds.add(id);
       }
     }
     if (ackIds.isNotEmpty) ackMailbox(ackIds);
   }
+
+  /// E2E 上下文绑定:sender|recipient 进 AAD,密文被反射/重定向到
+  /// 其他上下文时认证失败。
+  List<int> _aad(String from, String to) =>
+      utf8.encode('ll-rc-v1|$from|$to');
 
   SecureCodec? _codecFor(String peerId) {
     final peer = store.getPeer(peerId);
@@ -385,26 +455,37 @@ class RendezvousClient {
     });
   }
 
-  /// 发送信令(内部加密)。
+  /// 发送信令(内部加密,AAD 绑定收发双方)。
   Future<void> sendSignal(String toPeerId, Map<String, dynamic> payload) async {
     if (!_up) throw StateError('rendezvous not connected');
     final codec = _codecFor(toPeerId);
     if (codec == null) throw StateError('unknown peer $toPeerId');
-    final packed = await codec.encrypt(utf8.encode(jsonEncode(payload)));
+    final packed = await codec.encrypt(utf8.encode(jsonEncode(payload)),
+        aad: _aad(identity.deviceId, toPeerId));
     _send({'type': 'signal', 'to': toPeerId, 'data': base64Encode(packed)});
   }
 
-  /// 投递离线信封(内部加密)。
+  /// 投递离线信封(内部加密,AAD 绑定收发双方)。
+  /// 失败(未连接/未知对端)重试一次:旧版直接丢弃,邮箱满 + 链路僵死
+  /// 叠加时消息会静默丢失。
   Future<void> pushMailbox(String toPeerId, List<int> envelopeBytes) async {
-    if (!_up) return;
-    final codec = _codecFor(toPeerId);
-    if (codec == null) return;
-    final packed = await codec.encrypt(envelopeBytes);
-    _send({
-      'type': 'mailbox_push',
-      'to': toPeerId,
-      'data': base64Encode(packed),
-    });
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (!_up) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        continue;
+      }
+      final codec = _codecFor(toPeerId);
+      if (codec == null) return;
+      final packed = await codec.encrypt(envelopeBytes,
+          aad: _aad(identity.deviceId, toPeerId));
+      _send({
+        'type': 'mailbox_push',
+        'to': toPeerId,
+        'data': base64Encode(packed),
+      });
+      return;
+    }
+    _errors.add('离线邮箱投递失败(目标 $toPeerId)');
   }
 
   /// 拉取离线信封(mail 事件逐封到达,处理后自动 ack)。
@@ -433,5 +514,6 @@ class RendezvousClient {
     await _mail.close();
     await _connected.close();
     await _pairAnswers.close();
+    await _errors.close();
   }
 }

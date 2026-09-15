@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
@@ -19,6 +20,7 @@ class Peer {
     this.lastSeenMs,
     this.myAppliedSeq = 0,
     this.peerAppliedSeq = 0,
+    this.certDerBase64 = '',
   });
 
   final String deviceId;
@@ -32,6 +34,10 @@ class Peer {
   int? lastPort;
   int pairedAtMs;
   int? lastSeenMs;
+
+  /// 对端证书 DER(base64)。E2E 密钥派生(ECDH)与配对确认验签用;
+  /// 老数据可能为空。
+  String certDerBase64;
 
   /// 是否是"我的设备"(同一用户的其他设备,消息全量镜像)。
   bool isSelfDevice;
@@ -70,6 +76,7 @@ class Message {
   static const kindFile = 2;
   static const kindVideo = 3;
   static const kindVoice = 4;
+  static const kindSystem = 5; // 本地系统提示(解绑墓碑等,不同步)
 
   /// 该类型是否携带文件本体(图片/文件/视频/语音)。
   static bool hasFilePayload(int kind) =>
@@ -82,10 +89,12 @@ class Message {
   static const fileStateDone = 3;
   static const fileStateFailed = 4;
 
-  /// 本端发送状态(仅自己发的消息,不同步):0=已送达 1=发送中 2=失败。
+  /// 本端发送状态(仅自己发的消息,不同步):
+  /// 0=已送达 1=发送中 2=失败(终态) 3=已入队待投递(离线存储转发)。
   static const sendOk = 0;
   static const sendSending = 1;
   static const sendFailed = 2;
+  static const sendQueued = 3;
 
   final String msgId;
   final String convId;
@@ -125,6 +134,7 @@ class Op {
   static const typeReaction = 'reaction';
   static const typeReceipt = 'receipt';
   static const typeProfile = 'profile';
+  static const typeNoop = 'noop'; // 过期墓碑占位:让对端游标可推进
 
   final int seq;
   final String peerId;
@@ -183,6 +193,19 @@ class Store {
   }
 
   void dispose() => _db.close();
+
+  /// 显式事务包裹(包内抛错自动回滚)。
+  T _tx<T>(T Function() body) {
+    _db.execute('BEGIN');
+    try {
+      final r = body();
+      _db.execute('COMMIT');
+      return r;
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
 
   /// WAL 落盘压缩(备份前调用,保证 littlelaw.db 单文件完整)。
   void checkpoint() => _db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
@@ -248,65 +271,110 @@ class Store {
         device_id TEXT NOT NULL,
         PRIMARY KEY (group_id, device_id)
       );
+      CREATE TABLE IF NOT EXISTS unpair_outbox (
+        device_id TEXT PRIMARY KEY,
+        cert_fingerprint TEXT NOT NULL,
+        token TEXT NOT NULL,
+        created_ms INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS lamport_watermarks (
+        conv_id TEXT PRIMARY KEY,
+        next INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS deleted_msgs (
+        msg_id TEXT PRIMARY KEY,
+        at_ms INTEGER NOT NULL
+      );
     ''');
     // 轻量迁移:老库补列(已存在则忽略报错)。
+    // 整个回填包在一个事务里:崩溃时整体回滚,不会留下 pseq=0 的 op
+    // 导致永不重放(丢数据)。
+    _db.execute('BEGIN');
     try {
-      _db.execute('ALTER TABLE messages ADD COLUMN file_sha256 TEXT');
-    } catch (_) {}
-    try {
-      _db.execute(
-          "ALTER TABLE peers ADD COLUMN device_model TEXT NOT NULL DEFAULT ''");
-    } catch (_) {}
-    try {
-      _db.execute("ALTER TABLE peers ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0");
-    } catch (_) {}
-    try {
-      _db.execute(
-          'ALTER TABLE messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');
-    } catch (_) {}
-    try {
-      _db.execute('ALTER TABLE messages ADD COLUMN read INTEGER NOT NULL DEFAULT 0');
-    } catch (_) {}
-    try {
-      _db.execute(
-          "ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '{}'");
-    } catch (_) {}
-    try {
-      _db.execute('ALTER TABLE messages ADD COLUMN send_state INTEGER NOT NULL DEFAULT 0');
-    } catch (_) {}
-    try {
-      _db.execute('ALTER TABLE ops ADD COLUMN created_ms INTEGER NOT NULL DEFAULT 0');
-    } catch (_) {}
-    // per-peer 序号列:连续游标协议要求每个对端的 op 序号独立连续,
-    // 全局 rowid 会让对端只看到全局序号的子集(天然空洞)。
-    var needPseqBackfill = false;
-    try {
-      _db.execute('ALTER TABLE ops ADD COLUMN pseq INTEGER NOT NULL DEFAULT 0');
-      needPseqBackfill = true;
-    } catch (_) {}
-    if (needPseqBackfill) {
-      final rows = _db.select('SELECT seq, peer_id FROM ops ORDER BY seq ASC');
-      final counters = <String, int>{};
-      for (final r in rows) {
-        final pid = r['peer_id'] as String;
-        final n = (counters[pid] ?? 0) + 1;
-        counters[pid] = n;
-        _db.execute('UPDATE ops SET pseq=? WHERE seq=?', [n, r['seq']]);
+      final cols = <String, Set<String>>{};
+      Set<String> colsOf(String table) => cols.putIfAbsent(
+          table,
+          () => _db
+              .select('PRAGMA table_info($table)')
+              .map((r) => r['name'] as String)
+              .toSet());
+      void addCol(String table, String ddl, String col) {
+        if (!colsOf(table).contains(col)) {
+          _db.execute(ddl);
+          cols[table] = {...colsOf(table), col};
+        }
       }
+
+      addCol('messages', 'ALTER TABLE messages ADD COLUMN file_sha256 TEXT',
+          'file_sha256');
+      addCol('peers',
+          "ALTER TABLE peers ADD COLUMN device_model TEXT NOT NULL DEFAULT ''",
+          'device_model');
+      addCol('peers',
+          'ALTER TABLE peers ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0',
+          'is_self');
+      addCol('messages',
+          'ALTER TABLE messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0',
+          'duration_ms');
+      addCol('messages',
+          'ALTER TABLE messages ADD COLUMN read INTEGER NOT NULL DEFAULT 0',
+          'read');
+      addCol('messages',
+          "ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '{}'",
+          'reactions');
+      addCol('messages',
+          'ALTER TABLE messages ADD COLUMN send_state INTEGER NOT NULL DEFAULT 0',
+          'send_state');
+      addCol('ops',
+          'ALTER TABLE ops ADD COLUMN created_ms INTEGER NOT NULL DEFAULT 0',
+          'created_ms');
+      // per-peer 序号列:连续游标协议要求每个对端的 op 序号独立连续,
+      // 全局 rowid 会让对端只看到全局序号的子集(天然空洞)。
+      if (!colsOf('ops').contains('pseq')) {
+        _db.execute('ALTER TABLE ops ADD COLUMN pseq INTEGER NOT NULL DEFAULT 0');
+        final rows = _db.select('SELECT seq, peer_id FROM ops ORDER BY seq ASC');
+        final counters = <String, int>{};
+        final stmt = _db.prepare('UPDATE ops SET pseq=? WHERE seq=?');
+        for (final r in rows) {
+          final pid = r['peer_id'] as String;
+          final n = (counters[pid] ?? 0) + 1;
+          counters[pid] = n;
+          stmt.execute([n, r['seq']]);
+        }
+        stmt.close();
+      }
+      // per-peer 单调序号计数器:压缩删除旧行后 MAX(pseq)+1 会复用已确认
+      // 序号(离线消息拿到小号,对端游标已越过 → 永不重放),必须持久单调。
+      if (!colsOf('peers').contains('next_op_seq')) {
+        _db.execute(
+            'ALTER TABLE peers ADD COLUMN next_op_seq INTEGER NOT NULL DEFAULT 0');
+        // 初始化为各 peer 当前最大 pseq(老库回填)。
+        final rows = _db.select(
+            'SELECT peer_id, MAX(pseq) AS m FROM ops GROUP BY peer_id');
+        for (final r in rows) {
+          _db.execute('UPDATE peers SET next_op_seq=? WHERE device_id=?',
+              [r['m'] as int, r['peer_id']]);
+        }
+      }
+      addCol('peers', "ALTER TABLE peers ADD COLUMN cert_der TEXT NOT NULL DEFAULT ''",
+          'cert_der');
+      addCol('peers',
+          'ALTER TABLE peers ADD COLUMN pending_unpair INTEGER NOT NULL DEFAULT 0',
+          'pending_unpair');
+      // ops (peer_id, pseq) 唯一:先清掉历史重复行再建唯一索引。
+      _db.execute(
+          'DELETE FROM ops WHERE seq NOT IN (SELECT MAX(seq) FROM ops GROUP BY peer_id, pseq)');
+      _db.execute(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_ops_peer_pseq ON ops(peer_id, pseq)');
+      // 墓碑过期清理(与 deleteOpTtlMs 同生命周期:超过该窗口的对端
+      // 反正收不到删除通知了,迟到的重复投递不会再发生)。
+      _db.execute('DELETE FROM deleted_msgs WHERE at_ms < ?',
+          [DateTime.now().millisecondsSinceEpoch - deleteOpTtlMs]);
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
     }
-    // per-peer 单调序号计数器:压缩删除旧行后 MAX(pseq)+1 会复用已确认
-    // 序号(离线消息拿到小号,对端游标已越过 → 永不重放),必须持久单调。
-    try {
-      _db.execute(
-          'ALTER TABLE peers ADD COLUMN next_op_seq INTEGER NOT NULL DEFAULT 0');
-      // 初始化为各 peer 当前最大 pseq(老库回填)。
-      final rows = _db.select(
-          'SELECT peer_id, MAX(pseq) AS m FROM ops GROUP BY peer_id');
-      for (final r in rows) {
-        _db.execute('UPDATE peers SET next_op_seq=? WHERE device_id=?',
-            [r['m'] as int, r['peer_id']]);
-      }
-    } catch (_) {}
   }
 
   /// 1:1 会话 ID:两个设备 ID 排序拼接,两端计算结果一致。
@@ -321,19 +389,21 @@ class Store {
     _db.execute(
       '''INSERT INTO peers (device_id, device_name, platform, cert_fingerprint,
            token, device_model, is_self, last_host, last_port, paired_at_ms, last_seen_ms,
-           my_applied_seq, peer_applied_seq)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+           my_applied_seq, peer_applied_seq, cert_der)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(device_id) DO UPDATE SET
            device_name=excluded.device_name,
            platform=excluded.platform,
            cert_fingerprint=excluded.cert_fingerprint,
            token=excluded.token,
            device_model=excluded.device_model,
-           is_self=excluded.is_self''',
+           is_self=CASE WHEN excluded.is_self=1 THEN 1 ELSE peers.is_self END,
+           cert_der=CASE WHEN excluded.cert_der='' THEN peers.cert_der ELSE excluded.cert_der END''',
       [
         p.deviceId, p.deviceName, p.platform, p.certFingerprint, p.token,
         p.deviceModel, p.isSelfDevice ? 1 : 0, p.lastHost, p.lastPort,
         p.pairedAtMs, p.lastSeenMs, p.myAppliedSeq, p.peerAppliedSeq,
+        p.certDerBase64,
       ],
     );
   }
@@ -399,11 +469,12 @@ class Store {
         deviceModel: (r['device_model'] as String?) ?? '',
         isSelfDevice: (r['is_self'] as int? ?? 0) == 1,
         lastHost: r['last_host'] as String?,
-        lastPort: r['last_port'] as int?,
+        lastPort: (r['last_port'] as int?),
         pairedAtMs: r['paired_at_ms'] as int,
         lastSeenMs: r['last_seen_ms'] as int?,
         myAppliedSeq: r['my_applied_seq'] as int,
         peerAppliedSeq: r['peer_applied_seq'] as int,
+        certDerBase64: (r['cert_der'] as String?) ?? '',
       );
 
   // ---------------------------------------------------------- conversations
@@ -417,8 +488,14 @@ class Store {
 
   // -------------------------------------------------------------- messages
 
-  /// 幂等写入(INSERT OR IGNORE)。返回 true 表示是新消息。
+  /// 幂等写入(INSERT OR IGNORE;墓碑优先)。返回 true 表示是新消息。
+  /// 已被删除过的消息(墓碑在案)不再复活:双链路场景下,一条链路
+  /// 拥塞中的迟到投递会晚于另一条链路上的删除到达,没有墓碑时
+  /// INSERT OR IGNORE 会把已删除的消息重新插回来。
   bool insertMessage(Message m) {
+    final tomb = _db.select(
+        'SELECT 1 FROM deleted_msgs WHERE msg_id=? LIMIT 1', [m.msgId]);
+    if (tomb.isNotEmpty) return false;
     _db.execute(
       '''INSERT OR IGNORE INTO messages
            (msg_id, conv_id, sender_id, lamport, created_at_ms, kind, text,
@@ -454,15 +531,52 @@ class Store {
 
   void deleteMessages(String convId, List<String> msgIds) {
     if (msgIds.isEmpty) return;
-    final marks = List.filled(msgIds.length, '?').join(',');
-    _db.execute(
-      'DELETE FROM messages WHERE conv_id=? AND msg_id IN ($marks)',
-      [convId, ...msgIds],
-    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final batch in _chunks(msgIds, 500)) {
+      final marks = List.filled(batch.length, '?').join(',');
+      _tx(() {
+        _db.execute(
+          'DELETE FROM messages WHERE conv_id=? AND msg_id IN ($marks)',
+          [convId, ...batch],
+        );
+        final stmt = _db.prepare(
+            'INSERT OR REPLACE INTO deleted_msgs (msg_id, at_ms) VALUES (?,?)');
+        for (final id in batch) {
+          stmt.execute([id, now]);
+        }
+        stmt.close();
+      });
+    }
   }
 
-  void clearConversation(String convId) {
+  /// 清空会话消息。[removeConversation] 同时删除会话行(解绑/删会话场景);
+  /// 默认保留会话行(普通"清空消息"场景),避免孤儿/墓碑误删。
+  /// 全部消息进墓碑表,防迟到重投复活。
+  void clearConversation(String convId, {bool removeConversation = false}) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _tx(() {
+      final ids = _db
+          .select('SELECT msg_id FROM messages WHERE conv_id=?', [convId])
+          .map((r) => r['msg_id'] as String)
+          .toList();
+      _db.execute('DELETE FROM messages WHERE conv_id=?', [convId]);
+      final stmt = _db.prepare(
+          'INSERT OR REPLACE INTO deleted_msgs (msg_id, at_ms) VALUES (?,?)');
+      for (final id in ids) {
+        stmt.execute([id, now]);
+      }
+      stmt.close();
+      if (removeConversation) {
+        _db.execute('DELETE FROM conversations WHERE conv_id=?', [convId]);
+      }
+    });
+  }
+
+  /// 彻底删除会话(消息 + 会话行 + 该会话墓碑;墓碑"清除"按钮用)。
+  void deleteConversation(String convId) {
     _db.execute('DELETE FROM messages WHERE conv_id=?', [convId]);
+    _db.execute('DELETE FROM conversations WHERE conv_id=?', [convId]);
+    _db.execute('DELETE FROM lamport_watermarks WHERE conv_id=?', [convId]);
   }
 
   void updateFileState(String msgId, int state, {String? filePath}) {
@@ -481,11 +595,31 @@ class Store {
   }
 
   /// 会话内下一条消息的 Lamport 时钟值。
+  ///
+  /// 使用持久水位(lamport_watermarks)而不是 MAX(messages.lamport)+1:
+  /// 删除最高位消息后取 MAX 会回退复用旧值;清空会话后归零会让
+  /// 离线对端的新消息排在旧消息之下,聊天记录次序错乱。
   int nextLamport(String convId) {
-    final rows = _db.select(
-        'SELECT COALESCE(MAX(lamport), 0) AS m FROM messages WHERE conv_id=?',
-        [convId]);
-    return (rows.first['m'] as int) + 1;
+    return _tx(() {
+      final rows = _db.select(
+          'SELECT next FROM lamport_watermarks WHERE conv_id=?', [convId]);
+      int next;
+      if (rows.isEmpty) {
+        final maxRows = _db.select(
+            'SELECT COALESCE(MAX(lamport), 0) AS m FROM messages WHERE conv_id=?',
+            [convId]);
+        next = (maxRows.first['m'] as int) + 1;
+        _db.execute(
+            'INSERT INTO lamport_watermarks (conv_id, next) VALUES (?,?)',
+            [convId, next + 1]);
+      } else {
+        next = rows.first['next'] as int;
+        _db.execute(
+            'UPDATE lamport_watermarks SET next=? WHERE conv_id=?',
+            [next + 1, convId]);
+      }
+      return next;
+    });
   }
 
   Message _messageFromRow(Row r) => Message(
@@ -532,22 +666,32 @@ class Store {
   /// 置已读标记(仅命中 [authors] 里的设备发的消息;镜像副本按原作者命中)。
   int markRead(List<String> msgIds, List<String> authors) {
     if (msgIds.isEmpty || authors.isEmpty) return 0;
-    final idMarks = List.filled(msgIds.length, '?').join(',');
-    final authorMarks = List.filled(authors.length, '?').join(',');
-    _db.execute(
-      'UPDATE messages SET read=1 WHERE msg_id IN ($idMarks) AND sender_id IN ($authorMarks)',
-      [...msgIds, ...authors],
-    );
-    return _db.updatedRows;
+    var updated = 0;
+    for (final idBatch in _chunks(msgIds, 500)) {
+      for (final authorBatch in _chunks(authors, 500)) {
+        final idMarks = List.filled(idBatch.length, '?').join(',');
+        final authorMarks = List.filled(authorBatch.length, '?').join(',');
+        _db.execute(
+          'UPDATE messages SET read=1 WHERE msg_id IN ($idMarks) AND sender_id IN ($authorMarks)',
+          [...idBatch, ...authorBatch],
+        );
+        updated += _db.updatedRows;
+      }
+    }
+    return updated;
   }
 
   /// 按 msg_id 无条件置已读(本地"我已读"语义:入向消息,防重复回执)。
   int markReadByIds(List<String> msgIds) {
     if (msgIds.isEmpty) return 0;
-    final marks = List.filled(msgIds.length, '?').join(',');
-    _db.execute(
-        'UPDATE messages SET read=1 WHERE msg_id IN ($marks)', msgIds);
-    return _db.updatedRows;
+    var updated = 0;
+    for (final batch in _chunks(msgIds, 500)) {
+      final marks = List.filled(batch.length, '?').join(',');
+      _db.execute(
+          'UPDATE messages SET read=1 WHERE msg_id IN ($marks)', batch);
+      updated += _db.updatedRows;
+    }
+    return updated;
   }
 
   /// 增量更新表情回复(JSON 合并,单设备单 emoji)。
@@ -593,13 +737,13 @@ class Store {
   }
 
   /// 会话摘要(桌面/最近会话列表):每会话最后一条 + 未读数。
+  /// 用 GROUP BY + MAX(lamport)(SQLite 的 max 裸列语义:取 max 所在行),
+  /// lamport 并列时也只返回每会话一行,不会出现重复条目。
   List<ConvSummary> conversationSummaries(String myDeviceId) {
     final rows = _db.select('''
-      SELECT m.conv_id, m.kind, m.text, m.file_name, m.created_at_ms, m.sender_id
-      FROM messages m
-      WHERE m.lamport = (
-        SELECT MAX(l2.lamport) FROM messages l2 WHERE l2.conv_id = m.conv_id
-      )
+      SELECT m.conv_id, m.kind, m.text, m.file_name, m.created_at_ms, m.sender_id,
+             MAX(m.lamport)
+      FROM messages m GROUP BY m.conv_id
     ''');
     final unread = <String, int>{};
     for (final r in _db.select(
@@ -625,21 +769,31 @@ class Store {
 
   /// 追加 op,返回分配的【per-peer 单调】seq。调用方需在同一逻辑单元内先写业务表。
   /// 序号来自 peers.next_op_seq(持久自增),与 ops 行是否已被压缩无关。
+  ///
+  /// 三条语句包在同一事务内:崩溃不会"烧掉"序号留下永久空洞
+  /// (空洞会让对端连续游标卡死)。peer 行不存在时抛错——调用方必须
+  /// 保证目标仍在 peers 表(群扇出前过滤已解配成员)。
   int appendOp(String peerId, String type, Uint8List payload) {
-    _db.execute(
-        'UPDATE peers SET next_op_seq = next_op_seq + 1 WHERE device_id=?',
-        [peerId]);
-    final seq = (_db.select(
-            'SELECT next_op_seq AS n FROM peers WHERE device_id=?', [peerId])
-        .first['n']) as int;
-    _db.execute(
-        'INSERT INTO ops (peer_id, pseq, type, payload, created_ms) VALUES (?,?,?,?,?)',
-        [peerId, seq, type, payload, DateTime.now().millisecondsSinceEpoch]);
-    return seq;
+    return _tx(() {
+      _db.execute(
+          'UPDATE peers SET next_op_seq = next_op_seq + 1 WHERE device_id=?',
+          [peerId]);
+      final rows = _db
+          .select('SELECT next_op_seq AS n FROM peers WHERE device_id=?', [peerId]);
+      if (rows.isEmpty) {
+        throw StateError('appendOp: peer $peerId not in peers table');
+      }
+      final seq = rows.first['n'] as int;
+      _db.execute(
+          'INSERT INTO ops (peer_id, pseq, type, payload, created_ms) VALUES (?,?,?,?,?)',
+          [peerId, seq, type, payload, DateTime.now().millisecondsSinceEpoch]);
+      return seq;
+    });
   }
 
-  /// 对端游标之后的全部 op(重连补发)。删除类 op 超过 [deleteOpTtl] 未送达即跳过
-  /// (墓碑过期:对端长期不上线就不再追删,保持数据自然存在)。
+  /// 对端游标之后的全部 op(重连补发)。删除类 op 超过 [deleteOpTtl] 未送达时
+  /// 以 **noop 占位**返回:接收方游标按前缀连续推进,直接跳过会把这个
+  /// 序号变成永久空洞,ACK 卡死 + 每次重连全量重放。
   static const deleteOpTtlMs = 48 * 3600 * 1000; // 2 天
 
   List<Op> opsSince(String peerId, int seq) {
@@ -654,7 +808,14 @@ class Store {
       if ((type == Op.typeDelete || type == Op.typeClear) &&
           created > 0 &&
           now - created > deleteOpTtlMs) {
-        continue; // 过期墓碑:不再补发
+        // 过期墓碑:不再补发内容,但保留序号占位推进对端游标。
+        out.add(Op(
+          seq: r['pseq'] as int,
+          peerId: peerId,
+          type: Op.typeNoop,
+          payload: Uint8List(0),
+        ));
+        continue;
       }
       out.add(Op(
         seq: r['pseq'] as int,
@@ -675,13 +836,18 @@ class Store {
   // ---------------------------------------------------------------- groups
 
   void insertGroup(Group g) {
-    _db.execute('INSERT OR REPLACE INTO groups (group_id, name, created_at_ms) VALUES (?,?,?)',
-        [g.id, g.name, g.createdAtMs]);
-    _db.execute('DELETE FROM group_members WHERE group_id=?', [g.id]);
-    for (final m in g.memberIds) {
-      _db.execute('INSERT OR IGNORE INTO group_members (group_id, device_id) VALUES (?,?)',
-          [g.id, m]);
-    }
+    // 三步写在同一事务:崩溃窗口"群存在但成员为空"会让群消息静默不扇出。
+    _tx(() {
+      _db.execute(
+          'INSERT OR REPLACE INTO groups (group_id, name, created_at_ms) VALUES (?,?,?)',
+          [g.id, g.name, g.createdAtMs]);
+      _db.execute('DELETE FROM group_members WHERE group_id=?', [g.id]);
+      for (final m in g.memberIds) {
+        _db.execute(
+            'INSERT OR IGNORE INTO group_members (group_id, device_id) VALUES (?,?)',
+            [g.id, m]);
+      }
+    });
   }
 
   List<Group> allGroups() {
@@ -719,30 +885,73 @@ class Store {
 
   /// 删除群定义 + 群成员表 + 群会话与消息(被移出/解散/自解散)。
   /// [keepMessages] 退群自删时保留历史。
+  ///
+  /// ⚠ 不再按 peer_id 删除 ops:ops 表按成员 deviceId 入账、不区分 1:1 与群,
+  /// 按成员删会把发给该成员的所有未 ACK 1:1 消息一并摧毁(且把刚广播的
+  /// 解散 op 自己删掉,离线成员永远收不到解散通知)。群 op 留待对端 ACK
+  /// 后自然压缩;接收端收到解散通知时自行清理本地群数据。
   void deleteGroup(String groupId, {bool keepMessages = false}) {
     final convId = Group.convIdOf(groupId);
-    // 群 op 按【成员 deviceId】入账(不是 groupId),先取成员再删表。
-    final members = groupRecipients(groupId);
-    _db.execute('DELETE FROM groups WHERE group_id=?', [groupId]);
-    _db.execute('DELETE FROM group_members WHERE group_id=?', [groupId]);
-    if (!keepMessages) {
-      _db.execute('DELETE FROM messages WHERE conv_id=?', [convId]);
-      _db.execute('DELETE FROM conversations WHERE conv_id=?', [convId]);
-      for (final m in members) {
-        _db.execute('DELETE FROM ops WHERE peer_id=?', [m]);
+    _tx(() {
+      _db.execute('DELETE FROM groups WHERE group_id=?', [groupId]);
+      _db.execute('DELETE FROM group_members WHERE group_id=?', [groupId]);
+      if (!keepMessages) {
+        _db.execute('DELETE FROM messages WHERE conv_id=?', [convId]);
+        _db.execute('DELETE FROM conversations WHERE conv_id=?', [convId]);
       }
-    }
+    });
   }
 
-  /// 群成员(不含本机)。
+  /// 群成员(不含本机;且必须仍是已配对 peer——解配的成员留在群定义里
+  /// 只是历史信息,向其扇出会在 appendOp 处抛错)。
   List<String> groupRecipients(String groupId) {
     final g = getGroup(groupId);
     if (g == null) return const [];
-    return g.memberIds.where((id) => id != _dbSelfId).toList();
+    return g.memberIds
+        .where((id) => id != _dbSelfId && getPeer(id) != null)
+        .toList();
   }
 
-  late String _dbSelfId;
+  /// 从所有群定义里移除某设备(解绑时调用,防止后续扇出命中已删 peer)。
+  void removeFromAllGroups(String deviceId) {
+    _db.execute('DELETE FROM group_members WHERE device_id=?', [deviceId]);
+  }
 
-  /// 引擎启动时注入本机设备 ID(群收件人过滤用)。
+  /// 引擎启动时注入本机设备 ID(群收件人过滤用)。空 = 未注入(全保留)。
   set selfDeviceId(String id) => _dbSelfId = id;
+
+  String _dbSelfId = '';
+
+  /// 把列表切成 ≤[size] 的批(IN 子句参数上限防护)。
+  static Iterable<List<T>> _chunks<T>(List<T> list, int size) sync* {
+    for (var i = 0; i < list.length; i += size) {
+      yield list.sublist(i, math.min(i + size, list.length));
+    }
+  }
+
+  // -------------------------------------------------------- unpair outbox
+
+  /// 排一条"待送达的解绑通知"(对端离线时入箱,链路恢复时补发)。
+  void queueUnpairNotice(Peer peer) {
+    _db.execute(
+        'INSERT OR REPLACE INTO unpair_outbox (device_id, cert_fingerprint, token, created_ms) VALUES (?,?,?,?)',
+        [peer.deviceId, peer.certFingerprint, peer.token,
+            DateTime.now().millisecondsSinceEpoch]);
+  }
+
+  List<Peer> unpairOutbox() => _db
+      .select('SELECT * FROM unpair_outbox ORDER BY created_ms ASC')
+      .map((r) => Peer(
+            deviceId: r['device_id'] as String,
+            deviceName: '',
+            platform: '',
+            certFingerprint: r['cert_fingerprint'] as String,
+            token: r['token'] as String,
+            pairedAtMs: r['created_ms'] as int,
+          ))
+      .toList();
+
+  void clearUnpairNotice(String deviceId) {
+    _db.execute('DELETE FROM unpair_outbox WHERE device_id=?', [deviceId]);
+  }
 }

@@ -29,17 +29,25 @@ class ShareOut {
   static Future<void> shareFile(String path) async {
     if (path.isEmpty) return;
     if (Platform.isAndroid) {
-      await _channel.invokeMethod('shareFile', {'path': path});
+      try {
+        await _channel.invokeMethod('shareFile', {'path': path});
+      } on PlatformException catch (e) {
+        showToast('分享失败: ${e.message ?? e.code}', type: ToastType.error);
+      }
       return;
     }
     if (Platform.isWindows) {
-      final mode = await _channel
-          .invokeMethod<String>('shareFile', {'path': path});
-      if (mode == 'clipboard') {
-        showToast('文件已复制,可粘贴到微信/QQ/飞书或文件夹',
-            type: ToastType.success);
-      } else {
-        showToast('分享失败', type: ToastType.error);
+      try {
+        final mode = await _channel
+            .invokeMethod<String>('shareFile', {'path': path});
+        if (mode == 'clipboard') {
+          showToast('文件已复制,可粘贴到微信/QQ/飞书或文件夹',
+              type: ToastType.success);
+        } else {
+          showToast('分享失败', type: ToastType.error);
+        }
+      } on PlatformException catch (e) {
+        showToast('分享失败: ${e.message ?? e.code}', type: ToastType.error);
       }
       return;
     }
@@ -111,7 +119,11 @@ class ShareOut {
   /// 手机:用其他应用打开(系统"打开方式"选择器)。
   static Future<void> openWithOther(String path) async {
     if (Platform.isAndroid) {
-      await _channel.invokeMethod('openFile', {'path': path});
+      try {
+        await _channel.invokeMethod('openFile', {'path': path});
+      } on PlatformException catch (e) {
+        showToast('打开失败: ${e.message ?? e.code}', type: ToastType.error);
+      }
       return;
     }
     // 桌面兜底:定位文件。

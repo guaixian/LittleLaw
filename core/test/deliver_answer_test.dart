@@ -40,14 +40,16 @@ void main() {
 
       String? delivered;
       final sub = a.answerDeliveries.listen((s) => delivered = s);
-      await b.deliverAnswerTo('127.0.0.1', a.grpcPort, answer);
+      await b.deliverAnswerTo('127.0.0.1', a.grpcPort, answer,
+          a.identity.fingerprint);
 
       // RPC 只转发不消费:A 的 WebRTC 层(此处模拟)经事件完成入账。
       await Future.delayed(const Duration(milliseconds: 300));
       expect(delivered, answer);
       final peerBinA = a.acceptRemoteAnswer(OobBlob.decode(delivered!));
-      expect(peerBinA.token, token);
-      expect(a.peerById(b.identity.deviceId)!.token, token);
+      // 令牌已轮换:入账的是 ECDH/令牌派生值,不再是 QR 明文 offer 令牌。
+      expect(peerBinA.token, isNot(token));
+      expect(a.peerById(b.identity.deviceId)!.token, peerBinA.token);
       await sub.cancel();
 
       // 伪造 offer_token 的投递必须被拒且不入账。
@@ -66,7 +68,8 @@ void main() {
       var rejected = false;
       try {
         // 伪造场景:offer_token 不是当前 pending 的。
-        await a.pairing.deliverAnswerTo('127.0.0.1', a.grpcPort, evil);
+        await a.pairing.deliverAnswerTo(
+            '127.0.0.1', a.grpcPort, evil, a.identity.fingerprint);
       } catch (_) {
         rejected = true;
       }

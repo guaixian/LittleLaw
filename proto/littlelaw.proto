@@ -24,6 +24,7 @@ message DeviceInfo {
   int32  port = 5;              // 对端 gRPC 服务端口(固定,但携带便于校验)
   string protocol_version = 6;  // 协议版本,不兼容即丢弃
   string device_model = 7;      // 机型,如 "Xiaomi 13" / "iPhone 17 Pro Max" / "Windows 10 Pro"
+  bytes  cert_der = 8;          // 证书 DER(配对请求携带,供对方验签/ECDH 派生密钥)
 }
 
 // ---------------------------------------------------------------------------
@@ -51,8 +52,12 @@ message DiscoveryPacket {
 
 service PairingService {
   // 请求配对。双方各自用对方证书指纹计算相同 PIN 并肉眼核对,
-  // 被请求方用户点击同意后返回一次性会话令牌,双方写入 trusted_peers。
+  // 被请求方用户点击同意后返回一次性会话令牌(此时**未入账**)。
+  // 发起方核验 TLS 观测指纹与响应宣称一致后,调 ConfirmPair 提交——
+  // 两阶段提交:响应方只在收到发起方身份密钥签名确认后才落库,
+  // 防止"发起方已发现中间人放弃,响应方却已入账"的单边提交劫持。
   rpc RequestPair(PairRequest) returns (PairResponse);
+  rpc ConfirmPair(PairConfirmRequest) returns (PairConfirmResponse);
 
   // 一碰/一扫配对(免 PIN):请求方携带通过物理通道(NFC 触碰 /
   // 当面扫码)获得的一次性令牌,证明物理在场;服务端比对有效窗口内的
@@ -114,6 +119,22 @@ message PairResponse {
   DeviceInfo responder = 2;
   bytes session_token = 3;  // 32 字节随机令牌,之后所有 RPC 的元数据凭证
   string message = 4;       // 拒绝原因等
+  string confirm_nonce = 5; // 两阶段提交:ConfirmPair 签名的挑战值
+}
+
+// 两阶段提交第二阶段:发起方用身份私钥对
+// "pair-confirm-v1|request_id|nonce|responder_fingerprint" 签名,
+// 响应方用请求里的 cert_der 验签——纯转发者(无发起方私钥)无法伪造,
+// 响应方据此安全落库。
+message PairConfirmRequest {
+  string request_id = 1;
+  string requester_id = 2;
+  bytes signature = 3;       // ECDSA-P256(SHA-256) r||s 各 32 字节
+}
+
+message PairConfirmResponse {
+  bool ok = 1;
+  string message = 2;
 }
 
 message UnpairRequest {
@@ -158,7 +179,20 @@ message Envelope {
     ReadReceipt read_receipt = 20;        // 已读回执
     ReactionUpdate reaction = 21;         // 表情回应(增量,可交换)
     ProfileUpdate profile_update = 22;    // 个人资料(名称/头像)同步
+    Noop noop = 23;                       // 序号占位(过期墓碑):仅推进游标
+    UnpairNotice unpair_notice = 24;      // 解绑通知(链路恢复后补发)
   }
+}
+
+/// 游标占位:发送方某序号上的墓碑已过期不再补发,用此空操作
+/// 让接收方游标能连续推进(直接跳过会造成永久空洞,ACK 卡死)。
+message Noop {
+  int64 op_seq = 1;
+}
+
+/// 解绑通知:收到方删除本地信任关系与会话,并落墓碑系统消息。
+message UnpairNotice {
+  string device_id = 1;  // 发起解绑的设备
 }
 
 /// 个人资料:名称 + 头像 PNG(≤96KB),会话建立时互推,变更时广播。
@@ -205,6 +239,7 @@ message GroupSync {
 message FileDataAck {
   string file_id = 1;
   int64 acked_offset = 2;
+  uint32 attempt = 3; // 属于哪次拉取会话
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +282,7 @@ message LinkAuth {
 message FileFetchRequest {
   string file_id = 1;
   int64 offset = 2;  // 断点续传起始字节
+  uint32 attempt = 3; // 拉取会话标识:重试自增,旧会话的数据帧直接丢弃
 }
 
 // 信封式文件数据帧。单帧 ≤ 64 KiB(WebRTC DataChannel 安全消息尺寸)。
@@ -255,6 +291,7 @@ message FileData {
   int64 offset = 2;
   bytes data = 3;
   bool last = 4;  // 最后一帧
+  uint32 attempt = 5; // 属于哪次拉取会话(与 FileFetchRequest.attempt 对应)
 }
 
 // 连接建立后的第一个信封:告知对方"我已经应用到你的第 N 条 op",
@@ -362,6 +399,7 @@ message FileHead {
 message FetchRequest {
   string file_id = 1;
   int64 offset = 2;
+  uint32 attempt = 3;  // 拉取会话标识(重试自增,服务端据此终止旧流)
 }
 
 message FileResult {

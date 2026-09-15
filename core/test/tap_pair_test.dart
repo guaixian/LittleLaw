@@ -33,7 +33,9 @@ void main() {
       final replay = await b.pairViaLanOob(payloadText);
       expect(replay.accepted, isFalse, reason: '一次性令牌不可重放');
 
-      // 伪造令牌必须被拒。
+      // 伪造令牌必须被拒。载荷指纹伪造时,连接直接 pin 到假指纹,
+      // TLS 握手即失败(抛"所有地址候选均不可达")——这正是 pinning
+      // 的防护语义:中间人/伪造载荷连 RPC 都发不出去。
       final forged = await a.enableTapPairing(); // 开新窗口
       final forgedPayload = LanOobPayload.decode(forged);
       final evil = LanOobPayload(
@@ -43,8 +45,14 @@ void main() {
         deviceName: 'evil',
         fingerprint: 'ff' * 32,
       ).encode();
-      final evilResult = await b.pairViaLanOob(evil);
-      expect(evilResult.accepted, isFalse, reason: '伪造 tap 令牌必须拒绝');
+      var evilThrew = false;
+      try {
+        final evilResult = await b.pairViaLanOob(evil);
+        evilThrew = !evilResult.accepted;
+      } catch (_) {
+        evilThrew = true; // TLS pinning 拒绝
+      }
+      expect(evilThrew, isTrue, reason: '伪造指纹/令牌必须被拒绝');
 
       // 配对后能正常通讯。
       final pa = a.peerById(b.identity.deviceId)!;

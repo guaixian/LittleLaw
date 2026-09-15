@@ -45,8 +45,12 @@ class WebRtcLinkManager {
     _answerSub?.cancel();
     _answerSub = engine.answerDeliveries.listen((blobText) async {
       try {
-        final peer = await acceptAnswer(blobText);
-        _linkEvents.add(WebRtcLinkEvent(peer.deviceId, true));
+        // 仅入账/应用,不广播"链路已建立"——acceptAnswer 只做了
+        // setRemoteDescription + 注册回调,ICE/DTLS/LinkAuth 均未发生。
+        // "已建立"的唯一权威时刻是 _armChannel 里 LinkAuth 通过之时
+        //(旧版这里假触发一次,数秒后真触发再来一次:toast 迟到 +
+        // 聊天页被重复 push 重建)。
+        await acceptAnswer(blobText);
       } catch (e) {
         // 入账/应用失败(如重复回传):上报断开,UI 提示。
         _linkEvents.add(WebRtcLinkEvent('', false, error: '$e'));
@@ -86,7 +90,10 @@ class WebRtcLinkManager {
       _rcStateSub?.cancel();
       _rcStateSub = rc.connectionState.listen((up) {
         if (up) {
-          // 重连成功:快照里的在线设备由 presence 帧驱动,无需额外动作。
+          // 重连成功:presence 订阅会带回快照,但快照可能丢帧
+          // (服务器重启窗口内的事件)。兜底:对已配对且未连接的设备
+          // 主动触发一轮 offer 尝试,链路才能自动恢复。
+          unawaited(_retryOffersAfterReconnect());
         }
       });
     }
@@ -97,6 +104,19 @@ class WebRtcLinkManager {
   StreamSubscription<RendezvousPeerOnline>? _presenceSub;
   StreamSubscription<RendezvousSignal>? _signalSub;
   StreamSubscription<bool>? _rcStateSub;
+
+  /// 服务器重连兜底:等 presence 快照落地后,对可 offer 的已配对设备
+  /// 补一轮连接尝试。
+  Future<void> _retryOffersAfterReconnect() async {
+    await Future<void>.delayed(const Duration(seconds: 2));
+    final myId = engine.identity.deviceId;
+    for (final peer in engine.peers) {
+      if (engine.isOnline(peer.deviceId) || isLinked(peer.deviceId)) continue;
+      if (myId.compareTo(peer.deviceId) < 0) {
+        unawaited(_offerViaRendezvous(peer.deviceId));
+      }
+    }
+  }
 
   /// 我方作为 offerer 发出的待应答连接(peerId → 连接状态)。
   final _pendingRtc = <String, _PendingOffer>{};
@@ -181,18 +201,25 @@ class WebRtcLinkManager {
       }
       await _answerViaRendezvous(peer, sdp, candidates);
     } else if (kind == 'answer') {
-      final pending = _pendingRtc.remove(peerId);
+      // 不 remove:LinkAuth 通过/链路拆除之前,后续到达的 answerer
+      // trickle ICE 帧还需要在 _pendingRtc 里找到这条 pc
+      //(旧版 answer 即 remove,之后所有 'ice' 帧两处路由表都查不到,
+      // 候选被静默丢弃 → 远程模式链路 100% 无法建立)。
+      final pending = _pendingRtc[peerId];
       if (pending == null) return;
-      pending.trickleTimer?.cancel();
+      // 不 cancel trickleTimer:收到 answer ≠ 己方候选收集完成
+      //(公网 STUN 慢是常态),取消会让后续收集到的候选永远不再发送。
+      // 定时器由 onIceGatheringState=complete 与 teardown 清理。
       await pending.pc.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
       for (final c in candidates) {
         await pending.pc.addCandidate(_candidateFromCompact(c));
       }
       _armChannel(pending.dc, pending.pc, peer);
     } else if (kind == 'ice') {
-      // Trickle 补充候选:落到对应的在途连接上。
-      final target =
-          _pendingRtc[peerId]?.pc ?? _rendezvousAnswerers[peerId];
+      // Trickle 补充候选:在途连接 / answerer 侧 / 已建链路的 pc 均可落。
+      final target = _pendingRtc[peerId]?.pc ??
+          _rendezvousAnswerers[peerId] ??
+          _links[peerId]?.pc;
       if (target != null) {
         for (final c in candidates) {
           await target.addCandidate(_candidateFromCompact(c));
@@ -498,7 +525,7 @@ class WebRtcLinkManager {
         if (idx <= 0) continue;
         try {
           await engine.deliverAnswerTo(addr.substring(0, idx),
-              int.parse(addr.substring(idx + 1)), answer);
+              int.parse(addr.substring(idx + 1)), answer, blob.fingerprint);
           return ''; // 已自动回传,无需展示 answer
         } catch (_) {
           // 尝试下一个地址;全部失败则走人工回传
@@ -568,6 +595,10 @@ class WebRtcLinkManager {
         engine.detachExternalTransport(peer.deviceId, sink!);
         sink = null;
       }
+      // 同一条 pc 的在途 offer 记录一并退役(trickle 定时器停)。
+      final pending = _pendingRtc.remove(peer.deviceId);
+      pending?.trickleTimer?.cancel();
+      _rendezvousAnswerers.remove(peer.deviceId);
       unawaited(incoming.close());
       unawaited(pc.close());
       _links.remove(peer.deviceId);
@@ -591,6 +622,10 @@ class WebRtcLinkManager {
           return;
         }
         authed = true;
+        // LinkAuth 通过 = 链路权威建立时刻:在途 offer 记录退役。
+        final pending = _pendingRtc.remove(peer.deviceId);
+        pending?.trickleTimer?.cancel();
+        _rendezvousAnswerers.remove(peer.deviceId);
         sink = engine.attachExternalTransport(peer.deviceId, incoming.stream);
         sink!.stream.listen((e) {
           dc.send(RTCDataChannelMessage.fromBinary(e.writeToBuffer()));
@@ -623,6 +658,22 @@ class WebRtcLinkManager {
         teardown();
       }
     };
+
+    // 快速路径:注册回调前通道可能已经 Open(状态回调只在【变化】时
+    // 触发),不检查会导致我方 LinkAuth 永不发 → 双方 10s 鉴权超时拆除。
+    if (dc.state == RTCDataChannelState.RTCDataChannelOpen && !opened) {
+      opened = true;
+      dc.send(RTCDataChannelMessage.fromBinary(Envelope(
+        id: 'auth-${DateTime.now().microsecondsSinceEpoch}',
+        linkAuth: LinkAuth(
+          deviceId: engine.identity.deviceId,
+          token: peer.token,
+        ),
+      ).writeToBuffer()));
+      Timer(_authTimeout, () {
+        if (!authed) unawaited(dc.close());
+      });
+    }
 
     pc.onConnectionState = (state) {
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||

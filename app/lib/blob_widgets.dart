@@ -41,7 +41,9 @@ class _BlobDisplayState extends State<BlobDisplay> {
   void initState() {
     super.initState();
     _frames = QrChunker.split(widget.blob);
-    _fitsSingle = widget.blob.length <= BlobDisplay.singleQrCapacity;
+    // 单码容量按【字节数】判定——UTF-16 length 对非 ASCII 载荷会
+    // 低估实际编码体积,永远进不了单码模式。
+    _fitsSingle = utf8.encode(widget.blob).length <= BlobDisplay.singleQrCapacity;
     _singleMode = _fitsSingle;
     _startAutoPlay();
   }
@@ -235,16 +237,17 @@ class _BlobScanPageState extends State<BlobScanPage> {
                 if (raw == null) continue;
                 if (QrChunker.isChunk(raw)) {
                   if (_reassembler.add(raw)) {
-                    setState(() {});
+                    if (mounted) setState(() {});
                   }
                   if (_reassembler.complete) {
                     _done = true;
-                    Navigator.of(context).pop(_reassembler.payload);
+                    // 相机异步停止窗口:pop 前检查 mounted。
+                    if (mounted) Navigator.of(context).pop(_reassembler.payload);
                     return;
                   }
                 } else if (raw.startsWith('LLB') || raw.startsWith('LLT')) {
                   _done = true;
-                  Navigator.of(context).pop(raw);
+                  if (mounted) Navigator.of(context).pop(raw);
                   return;
                 }
               }

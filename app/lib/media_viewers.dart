@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -84,23 +85,32 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   late final _player = Player();
   late final _controller = VideoController(_player);
   String? _error;
+  StreamSubscription? _errorSub;
 
   @override
   void initState() {
     super.initState();
     _init();
+    // 视频打开失败经 error 流上报(open() 对损坏文件可能不抛异常),
+    // 旧版只显示黑屏;同时 setState 前判 mounted。
+    _errorSub = _player.stream.error.listen((e) {
+      if (mounted && _error == null) {
+        setState(() => _error = e);
+      }
+    });
   }
 
   Future<void> _init() async {
     try {
       await _player.open(Media(widget.path));
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     }
   }
 
   @override
   void dispose() {
+    unawaited(_errorSub?.cancel() ?? Future.value());
     _player.dispose();
     super.dispose();
   }

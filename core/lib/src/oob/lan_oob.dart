@@ -49,17 +49,23 @@ class LanOobPayload {
     if (json['v'] != currentVersion) {
       throw FormatException('载荷版本不兼容: ${json['v']}');
     }
-    final tap = json['tap'] as String?;
+    final tap = json['tap'];
     final addrs = (json['addr'] as List?)?.cast<String>();
-    if (tap == null || tap.isEmpty || addrs == null || addrs.isEmpty) {
+    if (tap is! String || tap.isEmpty || addrs == null || addrs.isEmpty) {
       throw const FormatException('载荷缺少令牌或地址');
+    }
+    // 指纹必须存在且为 64-hex:一碰配对连接 pin 到它(MITM 防护),
+    // 缺失时静默降级为空串会让免 PIN 通道裸奔。
+    final fpr = json['fpr'];
+    if (fpr is! String || !RegExp(r'^[0-9a-f]{64}$').hasMatch(fpr)) {
+      throw const FormatException('载荷缺少有效证书指纹');
     }
     return LanOobPayload(
       tapToken: tap,
       addresses: addrs,
       deviceId: json['id'] as String? ?? '',
       deviceName: json['name'] as String? ?? '未知设备',
-      fingerprint: json['fpr'] as String? ?? '',
+      fingerprint: fpr,
       createdAtMs: json['ts'] as int? ?? 0,
     );
   }

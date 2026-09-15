@@ -121,8 +121,7 @@ class TransferManager extends pbg.TransferServiceBase {
         final cur = _lastAck[e.fileId] ?? 0;
         if (e.ackedOffset > cur) _lastAck[e.fileId] = e.ackedOffset;
         _ackNotifiers.remove(e.fileId)?.complete();
-      }
-    });
+      }    });
   }
 
   // ------------------------------------------------------------ 发送侧
@@ -326,17 +325,23 @@ class TransferManager extends pbg.TransferServiceBase {
       host: host,
       port: port,
       pinnedFingerprint: peer.certFingerprint,
+      selfCertPem: identity.certPem,
     );
     IOSink? sink;
     try {
       final client = pbg.TransferServiceClient(ch.channel);
-      final stream = client.fetchFile(
-        pb.FetchRequest(fileId: fileId, offset: Int64(offset)),
+      // 不设整体超时:大文件 + 慢链路会整体失败(30min 上限对 4GB@慢速
+      // 不够);停滞检测由逐帧 30s timeout 承担。
+      final attempt = _nextAttempt(fileId);
+      final stream = client
+          .fetchFile(
+        pb.FetchRequest(fileId: fileId, offset: Int64(offset), attempt: attempt),
         options: CallOptions(
           metadata: Auth.metadata(identity.deviceId, peer.token),
-          timeout: const Duration(minutes: 30),
         ),
-      );
+      )
+          .timeout(const Duration(seconds: 30),
+              onTimeout: (sink) => sink.addError(TimeoutException('stalled')));
 
       sink = partFile.openWrite(mode: FileMode.append);
       var received = offset;
@@ -362,6 +367,7 @@ class TransferManager extends pbg.TransferServiceBase {
       await sink.flush();
       await sink.close();
       sink = null;
+      _attempts.remove(fileId);
 
       // 整包校验(发送方在消息里宣告的 SHA-256)。
       final digest = await _sha256OfFile(partFile);
@@ -386,13 +392,59 @@ class TransferManager extends pbg.TransferServiceBase {
         direction: TransferProgress.directionReceive,
         state: TransferProgress.stateCancelled,
       ));
+    } on TimeoutException catch (e) {
+      await sink?.close();
+      // gRPC 路径停滞:自动回退信封式(见下)。
+      await _fallbackToEnvelope(peerId, msg, e);
     } catch (e) {
       await sink?.close();
+      if (_isTransportError(e)) {
+        // 陈旧地址不可达(远程设备曾同网段配对,DHCP 地址已易主)/
+        // 指纹不匹配/连接失败:自动回退信封式拉取,不再永久失败。
+        await _fallbackToEnvelope(peerId, msg, e);
+        return;
+      }
       _fail(msg, peerId, e.toString());
     } finally {
       _cancelled.remove(fileId);
       await ch.shutdown();
     }
+  }
+
+  /// gRPC 拉取失败后的信封式回退(活链路存在才有意义)。
+  Future<void> _fallbackToEnvelope(
+      String peerId, Message msg, Object cause) async {
+    if (!sync.isOnline(peerId)) {
+      _fail(msg, peerId, 'gRPC 不可达($cause),且无活链路可回退');
+      return;
+    }
+    await _doReceiveViaEnvelope(peerId, msg);
+  }
+
+  /// 是否传输层可达性错误(回退信封式的依据)。
+  bool _isTransportError(Object e) {
+    if (e is _TransferCancelled) return false;
+    if (e is SocketException) return true;
+    if (e is GrpcError) {
+      return e.code == StatusCode.unavailable ||
+          e.code == StatusCode.deadlineExceeded ||
+          e.code == StatusCode.internal ||
+          e.code == StatusCode.unknown;
+    }
+    if (e is TimeoutException) return true;
+    if (e is HandshakeException) return true;
+    if (e is SecurityException) return true;
+    return false;
+  }
+
+  /// 拉取会话标识:重试自增,旧会话的数据帧直接丢弃(修"帧偏移错乱"——
+  /// 重试时旧发送循环还在发,两个循环并发向同一接收方交错发帧)。
+  final _attempts = <String, int>{};
+
+  int _nextAttempt(String fileId) {
+    final n = (_attempts[fileId] ?? 0) + 1;
+    _attempts[fileId] = n;
+    return n;
   }
 
   // ---------------------------------------------------- 信封式数据面
@@ -408,14 +460,16 @@ class TransferManager extends pbg.TransferServiceBase {
     store.updateFileState(msg.msgId, Message.fileStateTransferring);
     final dataStream = StreamController<pb.FileData>();
     _envelopeData[fileId] = dataStream;
+    final myAttempt = _nextAttempt(fileId);
 
     IOSink? sink;
     try {
       sink = partFile.openWrite(mode: FileMode.append);
-      // 发送拉取请求。
+      // 发送拉取请求(attempt 让发送侧终止旧循环,接收侧丢弃旧帧)。
       sync.sendEnvelope(peerId, pb.Envelope(
         id: const Uuid().v4(),
-        fileFetch: pb.FileFetchRequest(fileId: fileId, offset: Int64(offset)),
+        fileFetch: pb.FileFetchRequest(
+            fileId: fileId, offset: Int64(offset), attempt: myAttempt),
       ));
 
       var received = offset;
@@ -424,6 +478,8 @@ class TransferManager extends pbg.TransferServiceBase {
       await for (final frame in dataStream.stream.timeout(
           const Duration(seconds: 30))) {
         if (_cancelled.contains(fileId)) throw _TransferCancelled();
+        // 旧 attempt 的迟到帧直接丢弃(重试竞态下交错必偏移错乱)。
+        if (frame.attempt != 0 && frame.attempt != myAttempt) continue;
         if (frame.offset.toInt() != received) {
           throw StateError('帧偏移错乱: 期望 $received, 收到 ${frame.offset}');
         }
@@ -434,7 +490,9 @@ class TransferManager extends pbg.TransferServiceBase {
         sync.sendEnvelope(peerId, pb.Envelope(
           id: const Uuid().v4(),
           fileDataAck: pb.FileDataAck(
-              fileId: fileId, ackedOffset: Int64(received)),
+              fileId: fileId,
+              ackedOffset: Int64(received),
+              attempt: myAttempt),
         ));
         _emit(TransferProgress(
           fileId: fileId,
@@ -452,6 +510,7 @@ class TransferManager extends pbg.TransferServiceBase {
       await sink.flush();
       await sink.close();
       sink = null;
+      _attempts.remove(fileId);
 
       final digest = await _sha256OfFile(partFile);
       final expected = msg.fileSha256;
@@ -476,7 +535,19 @@ class TransferManager extends pbg.TransferServiceBase {
 
   /// 响应对端的信封式拉取请求(发送侧):按窗口(8 帧)节奏分帧发送,
   /// 带背压——慢链路不会撑爆缓冲;ACK 超时即中止(接收方可断点重试)。
+  ///
+  /// 互斥:同一 fileId 新请求到达即终止旧循环(版本号自增,旧循环在
+  /// 下一个 await 点退出)——旧版两个循环并发向同一接收方发帧,
+  /// 接收侧帧偏移必然错乱。_ackNotifiers 不再覆盖:新请求先唤醒旧等待者。
+  final _serveGen = <String, int>{};
+
   Future<void> _serveEnvelopeFetch(FileFetchRequested req) async {
+    final gen = (_serveGen[req.fileId] ?? 0) + 1;
+    _serveGen[req.fileId] = gen;
+    // 唤醒旧循环的背压等待(它会在下个循环检查发现代次落后而退出)。
+    _ackNotifiers.remove(req.fileId)?.complete();
+    _lastAck[req.fileId] = req.offset;
+
     final rawPath = _sendSources[req.fileId] ?? _findSentFile(req.fileId);
     if (rawPath == null) return;
     final path = await _plaintextFor(rawPath);
@@ -485,13 +556,14 @@ class TransferManager extends pbg.TransferServiceBase {
 
     var offset = req.offset;
     final total = await file.length();
-    _lastAck[req.fileId] = offset;
     final raf = await file.open();
     try {
       while (offset < total) {
         // 背压:在途未确认字节达到窗口上限时等待 ACK。
         while (offset - (_lastAck[req.fileId] ?? offset) >=
             _ackWindowFrames * envelopeChunkSize) {
+          if ((_serveGen[req.fileId] ?? gen) != gen) return; // 已被新请求取代
+          if (_cancelled.contains(req.fileId)) return;
           final notifier = Completer<void>();
           _ackNotifiers[req.fileId] = notifier;
           var timedOut = false;
@@ -499,6 +571,7 @@ class TransferManager extends pbg.TransferServiceBase {
               onTimeout: () => timedOut = true);
           if (timedOut) return; // 对端停滞:中止(.part 保留,可续传)
         }
+        if ((_serveGen[req.fileId] ?? gen) != gen) return; // 已被新请求取代
         if (_cancelled.contains(req.fileId)) return;
         final end = (offset + envelopeChunkSize > total)
             ? total
@@ -511,6 +584,7 @@ class TransferManager extends pbg.TransferServiceBase {
             offset: Int64(offset),
             data: chunk,
             last: end >= total,
+            attempt: req.attempt,
           ),
         ));
         offset = end;
@@ -523,13 +597,17 @@ class TransferManager extends pbg.TransferServiceBase {
               fileId: req.fileId,
               offset: Int64(offset),
               data: const [],
-              last: true),
+              last: true,
+              attempt: req.attempt),
         ));
       }
     } finally {
+      if ((_serveGen[req.fileId] ?? gen) == gen) {
+        _serveGen.remove(req.fileId);
+        _lastAck.remove(req.fileId);
+        _ackNotifiers.remove(req.fileId);
+      }
       await raf.close();
-      _lastAck.remove(req.fileId);
-      _ackNotifiers.remove(req.fileId);
     }
   }
 
@@ -551,7 +629,7 @@ class TransferManager extends pbg.TransferServiceBase {
     return Message.kindFile;
   }
 
-  void _fail(Message msg, String peerId, String error) {
+  void _fail(Message msg, String peerId, String error, {int doneBytes = 0}) {
     store.updateFileState(msg.msgId, Message.fileStateFailed);
     _emit(TransferProgress(
       fileId: msg.fileId ?? '',
@@ -559,7 +637,8 @@ class TransferManager extends pbg.TransferServiceBase {
       peerId: peerId,
       fileName: msg.fileName ?? '',
       totalBytes: msg.fileSize ?? 0,
-      doneBytes: 0,
+      // 回报当前已收字节(旧版恒 0,进度条会瞬间跳回起点)。
+      doneBytes: doneBytes,
       direction: TransferProgress.directionReceive,
       state: TransferProgress.stateFailed,
       error: error,

@@ -25,12 +25,16 @@ class NfcPairManager {
   /// 开启"一碰配对"窗口(本机当被碰方):
   /// 生成配对载荷并写入 HCE 服务,2 分钟内对方触碰即可配对。
   /// 返回载荷文本(同内容也可用于二维码展示)。
+  static Timer? _nfcWindowTimer;
+
   static Future<String> enableTapToPair(LittleLawEngine engine) async {
     final payload = await engine.enableTapPairing();
     if (Platform.isAndroid) {
       await _channel.invokeMethod('setNfcPayload', {'payload': payload});
-      // 窗口到期自动清除 HCE 载荷。
-      Timer(const Duration(minutes: 2), () {
+      // 窗口到期自动清除 HCE 载荷。Timer 存字段:重开窗口时先取消
+      //(旧版不可取消,重开后旧 Timer 到期会把【新】载荷清掉)。
+      _nfcWindowTimer?.cancel();
+      _nfcWindowTimer = Timer(const Duration(minutes: 2), () {
         _channel.invokeMethod('clearNfcPayload');
       });
     }

@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net"
+	"regexp"
 	"sync"
 	"time"
 
@@ -14,6 +16,7 @@ type Client struct {
 	hub      *Hub
 	mailbox  *Mailbox
 	push     *PushService
+	registry *Registry
 	conn     *websocket.Conn
 	send     chan []byte
 	done     chan struct{} // 关闭 = 本连接已被踢/废弃,禁止再发送
@@ -34,17 +37,25 @@ const (
 	maxMessageSize = 1 << 20 // 1 MiB
 	authTimeout    = 15 * time.Second
 	maxSubscribe   = 512     // 单连接订阅设备数上限
+	fetchPageSize  = 50      // 邮箱单次拉取上限(防一次返回整箱的内存放大)
 )
 
-func newClient(h *Hub, mb *Mailbox, push *PushService, conn *websocket.Conn, limiter *Limiter) *Client {
+var deviceIDRe = regexp.MustCompile(`^[0-9a-zA-Z-]{1,64}$`)
+var fingerprintRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// FCM 令牌:可见 ASCII,排除控制字符。
+var tokenRe = regexp.MustCompile(`^[\x21-\x7e]+$`)
+
+func newClient(h *Hub, mb *Mailbox, push *PushService, reg *Registry, conn *websocket.Conn, limiter *Limiter) *Client {
 	return &Client{
-		hub:     h,
-		mailbox: mb,
-		push:    push,
-		conn:    conn,
-		send:    make(chan []byte, 64),
-		done:    make(chan struct{}),
-		limiter: limiter,
+		hub:      h,
+		mailbox:  mb,
+		push:     push,
+		registry: reg,
+		conn:     conn,
+		send:     make(chan []byte, 64),
+		done:     make(chan struct{}),
+		limiter:  limiter,
 	}
 }
 
@@ -110,6 +121,10 @@ func (c *Client) readPump() {
 			if !c.handleHello(message) {
 				return
 			}
+			// hello 成功后立即续期读 deadline:旧版停在 now+15s,
+			// 空闲已认证连接 ~15s 必被误杀(首个 ping 要 45s 后才发),
+			// 造成周期性"断开→重连"与 presence 抖动。
+			_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 			continue
 		}
 		c.handleFrame(message)
@@ -122,9 +137,36 @@ func (c *Client) handleHello(message []byte) bool {
 		c.sendJSON(ErrorFrame{Type: "error", Message: "expect hello"})
 		return false
 	}
+	// 输入校验:deviceID/指纹格式与长度(endpoint 原样进入 presence
+	// 广播,恶意超大值会被复制给所有关注者形成带宽放大)。
+	if !deviceIDRe.MatchString(hello.DeviceID) {
+		c.sendJSON(ErrorFrame{Type: "error", Message: "invalid deviceId"})
+		return false
+	}
+	if !fingerprintRe.MatchString(hello.Fingerprint) {
+		c.sendJSON(ErrorFrame{Type: "error", Message: "invalid fingerprint"})
+		return false
+	}
+	if hello.Endpoint != "" {
+		if len(hello.Endpoint) > 260 {
+			c.sendJSON(ErrorFrame{Type: "error", Message: "endpoint too long"})
+			return false
+		}
+		if _, _, err := net.SplitHostPort(hello.Endpoint); err != nil {
+			c.sendJSON(ErrorFrame{Type: "error", Message: "invalid endpoint"})
+			return false
+		}
+	}
 	if err := verifyHello(hello.DeviceID, hello.Fingerprint, hello.CertPEM, hello.Sig, c.nonce); err != nil {
 		c.sendJSON(ErrorFrame{Type: "error", Message: "auth failed: " + err.Error()})
 		return false
+	}
+	// TOFU 登记:同一 deviceID 只能绑定首见指纹(防冒充/踢线/信箱窃取)。
+	if c.registry != nil {
+		if err := c.registry.Register(hello.DeviceID, hello.Fingerprint); err != nil {
+			c.sendJSON(ErrorFrame{Type: "error", Message: "identity conflict: " + err.Error()})
+			return false
+		}
 	}
 	c.deviceID = hello.DeviceID
 	c.endpoint = hello.Endpoint
@@ -135,8 +177,10 @@ func (c *Client) handleHello(message []byte) bool {
 }
 
 func (c *Client) handleFrame(message []byte) {
-	// 每客户端滑动窗口:10 秒 200 帧,超限断连(刷屏攻击者直接踢)。
-	if !c.msgs.allow(c.limiter.msgWindow, c.limiter.msgBurst) {
+	// 双层窗口:连接级 + 设备级(换连接重置连接级额度的重连风暴
+	// 仍受设备级窗口约束)。
+	if !c.msgs.allow(c.limiter.msgWindow, c.limiter.msgBurst) ||
+		!c.limiter.msgAllowDevice(c.deviceID) {
 		c.sendJSON(ErrorFrame{Type: "error", Message: "rate limit exceeded"})
 		c.kick()
 		return
@@ -191,12 +235,21 @@ func (c *Client) handleFrame(message []byte) {
 	case "push_register":
 		var reg PushRegisterFrame
 		if json.Unmarshal(message, &reg) == nil && reg.Token != "" {
+			// FCM 令牌校验:长度与字符集(可被任意连接覆盖任意设备的
+			// 面,至少不让垃圾值进库)。
+			if len(reg.Token) > 4096 || !tokenRe.MatchString(reg.Token) {
+				c.sendJSON(ErrorFrame{Type: "error", Message: "invalid push token"})
+				return
+			}
 			if err := c.push.saveToken(c.deviceID, reg.Token, reg.Platform); err != nil {
 				log.Printf("push register: %v", err)
 			}
 		}
 	case "mailbox_fetch":
-		items, err := c.mailbox.Fetch(c.deviceID, 500)
+		// 分页:每次最多 fetchPageSize 封(旧版一次整箱 ≤500 封/16MiB,
+		// 限频窗口内可达数百 MB/s 的序列化+GC 放大)。客户端 ACK 后
+		// 下一次轮询自然拿到下一页。
+		items, err := c.mailbox.Fetch(c.deviceID, fetchPageSize)
 		if err != nil {
 			log.Printf("mailbox fetch: %v", err)
 			return

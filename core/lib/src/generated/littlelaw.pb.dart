@@ -27,6 +27,7 @@ class DeviceInfo extends $pb.GeneratedMessage {
     $core.int? port,
     $core.String? protocolVersion,
     $core.String? deviceModel,
+    $core.List<$core.int>? certDer,
   }) {
     final result = DeviceInfo._();
     if (deviceId != null) result.deviceId = deviceId;
@@ -36,6 +37,7 @@ class DeviceInfo extends $pb.GeneratedMessage {
     if (port != null) result.port = port;
     if (protocolVersion != null) result.protocolVersion = protocolVersion;
     if (deviceModel != null) result.deviceModel = deviceModel;
+    if (certDer != null) result.certDer = certDer;
     return result;
   }
 
@@ -59,6 +61,8 @@ class DeviceInfo extends $pb.GeneratedMessage {
     ..aI(5, _omitFieldNames ? '' : 'port')
     ..aOS(6, _omitFieldNames ? '' : 'protocolVersion')
     ..aOS(7, _omitFieldNames ? '' : 'deviceModel')
+    ..a<$core.List<$core.int>>(
+        8, _omitFieldNames ? '' : 'certDer', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -143,6 +147,15 @@ class DeviceInfo extends $pb.GeneratedMessage {
   $core.bool hasDeviceModel() => $_has(6);
   @$pb.TagNumber(7)
   void clearDeviceModel() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.List<$core.int> get certDer => $_getN(7);
+  @$pb.TagNumber(8)
+  set certDer($core.List<$core.int> value) => $_setBytes(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasCertDer() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearCertDer() => $_clearField(8);
 }
 
 /// UDP 发现报文。序列化后作为 UDP payload 直接发送。
@@ -785,12 +798,14 @@ class PairResponse extends $pb.GeneratedMessage {
     DeviceInfo? responder,
     $core.List<$core.int>? sessionToken,
     $core.String? message,
+    $core.String? confirmNonce,
   }) {
     final result = PairResponse._();
     if (accepted != null) result.accepted = accepted;
     if (responder != null) result.responder = responder;
     if (sessionToken != null) result.sessionToken = sessionToken;
     if (message != null) result.message = message;
+    if (confirmNonce != null) result.confirmNonce = confirmNonce;
     return result;
   }
 
@@ -813,6 +828,7 @@ class PairResponse extends $pb.GeneratedMessage {
     ..a<$core.List<$core.int>>(
         3, _omitFieldNames ? '' : 'sessionToken', $pb.PbFieldType.OY)
     ..aOS(4, _omitFieldNames ? '' : 'message')
+    ..aOS(5, _omitFieldNames ? '' : 'confirmNonce')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -874,6 +890,171 @@ class PairResponse extends $pb.GeneratedMessage {
   $core.bool hasMessage() => $_has(3);
   @$pb.TagNumber(4)
   void clearMessage() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get confirmNonce => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set confirmNonce($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasConfirmNonce() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearConfirmNonce() => $_clearField(5);
+}
+
+/// 两阶段提交第二阶段:发起方用身份私钥对
+/// "pair-confirm-v1|request_id|nonce|responder_fingerprint" 签名,
+/// 响应方用请求里的 cert_der 验签——纯转发者(无发起方私钥)无法伪造,
+/// 响应方据此安全落库。
+class PairConfirmRequest extends $pb.GeneratedMessage {
+  factory PairConfirmRequest({
+    $core.String? requestId,
+    $core.String? requesterId,
+    $core.List<$core.int>? signature,
+  }) {
+    final result = PairConfirmRequest._();
+    if (requestId != null) result.requestId = requestId;
+    if (requesterId != null) result.requesterId = requesterId;
+    if (signature != null) result.signature = signature;
+    return result;
+  }
+
+  PairConfirmRequest._();
+
+  factory PairConfirmRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairConfirmRequest()..mergeFromBuffer(data, registry);
+  factory PairConfirmRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairConfirmRequest()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'PairConfirmRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: PairConfirmRequest.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'requestId')
+    ..aOS(2, _omitFieldNames ? '' : 'requesterId')
+    ..a<$core.List<$core.int>>(
+        3, _omitFieldNames ? '' : 'signature', $pb.PbFieldType.OY)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairConfirmRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairConfirmRequest copyWith(void Function(PairConfirmRequest) updates) =>
+      super.copyWith((message) => updates(message as PairConfirmRequest))
+          as PairConfirmRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use PairConfirmRequest() / PairConfirmRequest.new instead')
+  static PairConfirmRequest create() => PairConfirmRequest._();
+  static $pb.GeneratedMessage $_createMessage() => PairConfirmRequest._();
+  @$core.override
+  PairConfirmRequest createEmptyInstance() => PairConfirmRequest._();
+  @$core.pragma('dart2js:noInline')
+  static PairConfirmRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PairConfirmRequest>(
+          PairConfirmRequest.$_createMessage);
+  static PairConfirmRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get requestId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set requestId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequestId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequestId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get requesterId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set requesterId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRequesterId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRequesterId() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get signature => $_getN(2);
+  @$pb.TagNumber(3)
+  set signature($core.List<$core.int> value) => $_setBytes(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasSignature() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSignature() => $_clearField(3);
+}
+
+class PairConfirmResponse extends $pb.GeneratedMessage {
+  factory PairConfirmResponse({
+    $core.bool? ok,
+    $core.String? message,
+  }) {
+    final result = PairConfirmResponse._();
+    if (ok != null) result.ok = ok;
+    if (message != null) result.message = message;
+    return result;
+  }
+
+  PairConfirmResponse._();
+
+  factory PairConfirmResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairConfirmResponse()..mergeFromBuffer(data, registry);
+  factory PairConfirmResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      PairConfirmResponse()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'PairConfirmResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: PairConfirmResponse.$_createMessage)
+    ..aOB(1, _omitFieldNames ? '' : 'ok')
+    ..aOS(2, _omitFieldNames ? '' : 'message')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairConfirmResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PairConfirmResponse copyWith(void Function(PairConfirmResponse) updates) =>
+      super.copyWith((message) => updates(message as PairConfirmResponse))
+          as PairConfirmResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core
+      .Deprecated('Use PairConfirmResponse() / PairConfirmResponse.new instead')
+  static PairConfirmResponse create() => PairConfirmResponse._();
+  static $pb.GeneratedMessage $_createMessage() => PairConfirmResponse._();
+  @$core.override
+  PairConfirmResponse createEmptyInstance() => PairConfirmResponse._();
+  @$core.pragma('dart2js:noInline')
+  static PairConfirmResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PairConfirmResponse>(
+          PairConfirmResponse.$_createMessage);
+  static PairConfirmResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get ok => $_getBF(0);
+  @$pb.TagNumber(1)
+  set ok($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasOk() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearOk() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get message => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set message($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasMessage() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearMessage() => $_clearField(2);
 }
 
 class UnpairRequest extends $pb.GeneratedMessage {
@@ -1012,6 +1193,8 @@ enum Envelope_Payload {
   readReceipt,
   reaction,
   profileUpdate,
+  noop,
+  unpairNotice,
   notSet
 }
 
@@ -1039,6 +1222,8 @@ class Envelope extends $pb.GeneratedMessage {
     ReadReceipt? readReceipt,
     ReactionUpdate? reaction,
     ProfileUpdate? profileUpdate,
+    Noop? noop,
+    UnpairNotice? unpairNotice,
   }) {
     final result = Envelope._();
     if (id != null) result.id = id;
@@ -1063,6 +1248,8 @@ class Envelope extends $pb.GeneratedMessage {
     if (readReceipt != null) result.readReceipt = readReceipt;
     if (reaction != null) result.reaction = reaction;
     if (profileUpdate != null) result.profileUpdate = profileUpdate;
+    if (noop != null) result.noop = noop;
+    if (unpairNotice != null) result.unpairNotice = unpairNotice;
     return result;
   }
 
@@ -1097,6 +1284,8 @@ class Envelope extends $pb.GeneratedMessage {
     20: Envelope_Payload.readReceipt,
     21: Envelope_Payload.reaction,
     22: Envelope_Payload.profileUpdate,
+    23: Envelope_Payload.noop,
+    24: Envelope_Payload.unpairNotice,
     0: Envelope_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -1124,7 +1313,9 @@ class Envelope extends $pb.GeneratedMessage {
       19,
       20,
       21,
-      22
+      22,
+      23,
+      24
     ])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<Hello>(2, _omitFieldNames ? '' : 'hello',
@@ -1169,6 +1360,10 @@ class Envelope extends $pb.GeneratedMessage {
         subBuilder: ReactionUpdate.$_createMessage)
     ..aOM<ProfileUpdate>(22, _omitFieldNames ? '' : 'profileUpdate',
         subBuilder: ProfileUpdate.$_createMessage)
+    ..aOM<Noop>(23, _omitFieldNames ? '' : 'noop',
+        subBuilder: Noop.$_createMessage)
+    ..aOM<UnpairNotice>(24, _omitFieldNames ? '' : 'unpairNotice',
+        subBuilder: UnpairNotice.$_createMessage)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1212,6 +1407,8 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(20)
   @$pb.TagNumber(21)
   @$pb.TagNumber(22)
+  @$pb.TagNumber(23)
+  @$pb.TagNumber(24)
   Envelope_Payload whichPayload() => _Envelope_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -1234,6 +1431,8 @@ class Envelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(20)
   @$pb.TagNumber(21)
   @$pb.TagNumber(22)
+  @$pb.TagNumber(23)
+  @$pb.TagNumber(24)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1475,6 +1674,143 @@ class Envelope extends $pb.GeneratedMessage {
   void clearProfileUpdate() => $_clearField(22);
   @$pb.TagNumber(22)
   ProfileUpdate ensureProfileUpdate() => $_ensure(21);
+
+  @$pb.TagNumber(23)
+  Noop get noop => $_getN(22);
+  @$pb.TagNumber(23)
+  set noop(Noop value) => $_setField(23, value);
+  @$pb.TagNumber(23)
+  $core.bool hasNoop() => $_has(22);
+  @$pb.TagNumber(23)
+  void clearNoop() => $_clearField(23);
+  @$pb.TagNumber(23)
+  Noop ensureNoop() => $_ensure(22);
+
+  @$pb.TagNumber(24)
+  UnpairNotice get unpairNotice => $_getN(23);
+  @$pb.TagNumber(24)
+  set unpairNotice(UnpairNotice value) => $_setField(24, value);
+  @$pb.TagNumber(24)
+  $core.bool hasUnpairNotice() => $_has(23);
+  @$pb.TagNumber(24)
+  void clearUnpairNotice() => $_clearField(24);
+  @$pb.TagNumber(24)
+  UnpairNotice ensureUnpairNotice() => $_ensure(23);
+}
+
+/// / 游标占位:发送方某序号上的墓碑已过期不再补发,用此空操作
+/// / 让接收方游标能连续推进(直接跳过会造成永久空洞,ACK 卡死)。
+class Noop extends $pb.GeneratedMessage {
+  factory Noop({
+    $fixnum.Int64? opSeq,
+  }) {
+    final result = Noop._();
+    if (opSeq != null) result.opSeq = opSeq;
+    return result;
+  }
+
+  Noop._();
+
+  factory Noop.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      Noop()..mergeFromBuffer(data, registry);
+  factory Noop.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      Noop()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'Noop',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: Noop.$_createMessage)
+    ..aInt64(1, _omitFieldNames ? '' : 'opSeq')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Noop clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Noop copyWith(void Function(Noop) updates) =>
+      super.copyWith((message) => updates(message as Noop)) as Noop;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use Noop() / Noop.new instead')
+  static Noop create() => Noop._();
+  static $pb.GeneratedMessage $_createMessage() => Noop._();
+  @$core.override
+  Noop createEmptyInstance() => Noop._();
+  @$core.pragma('dart2js:noInline')
+  static Noop getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<Noop>(Noop.$_createMessage);
+  static Noop? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get opSeq => $_getI64(0);
+  @$pb.TagNumber(1)
+  set opSeq($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasOpSeq() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearOpSeq() => $_clearField(1);
+}
+
+/// / 解绑通知:收到方删除本地信任关系与会话,并落墓碑系统消息。
+class UnpairNotice extends $pb.GeneratedMessage {
+  factory UnpairNotice({
+    $core.String? deviceId,
+  }) {
+    final result = UnpairNotice._();
+    if (deviceId != null) result.deviceId = deviceId;
+    return result;
+  }
+
+  UnpairNotice._();
+
+  factory UnpairNotice.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      UnpairNotice()..mergeFromBuffer(data, registry);
+  factory UnpairNotice.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      UnpairNotice()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'UnpairNotice',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'littlelaw.v1'),
+      createEmptyInstance: UnpairNotice.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'deviceId')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UnpairNotice clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UnpairNotice copyWith(void Function(UnpairNotice) updates) =>
+      super.copyWith((message) => updates(message as UnpairNotice))
+          as UnpairNotice;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use UnpairNotice() / UnpairNotice.new instead')
+  static UnpairNotice create() => UnpairNotice._();
+  static $pb.GeneratedMessage $_createMessage() => UnpairNotice._();
+  @$core.override
+  UnpairNotice createEmptyInstance() => UnpairNotice._();
+  @$core.pragma('dart2js:noInline')
+  static UnpairNotice getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<UnpairNotice>(
+          UnpairNotice.$_createMessage);
+  static UnpairNotice? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get deviceId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set deviceId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasDeviceId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearDeviceId() => $_clearField(1);
 }
 
 /// / 个人资料:名称 + 头像 PNG(≤96KB),会话建立时互推,变更时广播。
@@ -1909,10 +2245,12 @@ class FileDataAck extends $pb.GeneratedMessage {
   factory FileDataAck({
     $core.String? fileId,
     $fixnum.Int64? ackedOffset,
+    $core.int? attempt,
   }) {
     final result = FileDataAck._();
     if (fileId != null) result.fileId = fileId;
     if (ackedOffset != null) result.ackedOffset = ackedOffset;
+    if (attempt != null) result.attempt = attempt;
     return result;
   }
 
@@ -1931,6 +2269,7 @@ class FileDataAck extends $pb.GeneratedMessage {
       createEmptyInstance: FileDataAck.$_createMessage)
     ..aOS(1, _omitFieldNames ? '' : 'fileId')
     ..aInt64(2, _omitFieldNames ? '' : 'ackedOffset')
+    ..aI(3, _omitFieldNames ? '' : 'attempt', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1972,6 +2311,15 @@ class FileDataAck extends $pb.GeneratedMessage {
   $core.bool hasAckedOffset() => $_has(1);
   @$pb.TagNumber(2)
   void clearAckedOffset() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get attempt => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set attempt($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAttempt() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAttempt() => $_clearField(3);
 }
 
 class CallOffer extends $pb.GeneratedMessage {
@@ -2366,10 +2714,12 @@ class FileFetchRequest extends $pb.GeneratedMessage {
   factory FileFetchRequest({
     $core.String? fileId,
     $fixnum.Int64? offset,
+    $core.int? attempt,
   }) {
     final result = FileFetchRequest._();
     if (fileId != null) result.fileId = fileId;
     if (offset != null) result.offset = offset;
+    if (attempt != null) result.attempt = attempt;
     return result;
   }
 
@@ -2388,6 +2738,7 @@ class FileFetchRequest extends $pb.GeneratedMessage {
       createEmptyInstance: FileFetchRequest.$_createMessage)
     ..aOS(1, _omitFieldNames ? '' : 'fileId')
     ..aInt64(2, _omitFieldNames ? '' : 'offset')
+    ..aI(3, _omitFieldNames ? '' : 'attempt', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2429,6 +2780,15 @@ class FileFetchRequest extends $pb.GeneratedMessage {
   $core.bool hasOffset() => $_has(1);
   @$pb.TagNumber(2)
   void clearOffset() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get attempt => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set attempt($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAttempt() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAttempt() => $_clearField(3);
 }
 
 /// 信封式文件数据帧。单帧 ≤ 64 KiB(WebRTC DataChannel 安全消息尺寸)。
@@ -2438,12 +2798,14 @@ class FileData extends $pb.GeneratedMessage {
     $fixnum.Int64? offset,
     $core.List<$core.int>? data,
     $core.bool? last,
+    $core.int? attempt,
   }) {
     final result = FileData._();
     if (fileId != null) result.fileId = fileId;
     if (offset != null) result.offset = offset;
     if (data != null) result.data = data;
     if (last != null) result.last = last;
+    if (attempt != null) result.attempt = attempt;
     return result;
   }
 
@@ -2465,6 +2827,7 @@ class FileData extends $pb.GeneratedMessage {
     ..a<$core.List<$core.int>>(
         3, _omitFieldNames ? '' : 'data', $pb.PbFieldType.OY)
     ..aOB(4, _omitFieldNames ? '' : 'last')
+    ..aI(5, _omitFieldNames ? '' : 'attempt', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2522,6 +2885,15 @@ class FileData extends $pb.GeneratedMessage {
   $core.bool hasLast() => $_has(3);
   @$pb.TagNumber(4)
   void clearLast() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get attempt => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set attempt($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasAttempt() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearAttempt() => $_clearField(5);
 }
 
 /// 连接建立后的第一个信封:告知对方"我已经应用到你的第 N 条 op",
@@ -3552,10 +3924,12 @@ class FetchRequest extends $pb.GeneratedMessage {
   factory FetchRequest({
     $core.String? fileId,
     $fixnum.Int64? offset,
+    $core.int? attempt,
   }) {
     final result = FetchRequest._();
     if (fileId != null) result.fileId = fileId;
     if (offset != null) result.offset = offset;
+    if (attempt != null) result.attempt = attempt;
     return result;
   }
 
@@ -3574,6 +3948,7 @@ class FetchRequest extends $pb.GeneratedMessage {
       createEmptyInstance: FetchRequest.$_createMessage)
     ..aOS(1, _omitFieldNames ? '' : 'fileId')
     ..aInt64(2, _omitFieldNames ? '' : 'offset')
+    ..aI(3, _omitFieldNames ? '' : 'attempt', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3615,6 +3990,15 @@ class FetchRequest extends $pb.GeneratedMessage {
   $core.bool hasOffset() => $_has(1);
   @$pb.TagNumber(2)
   void clearOffset() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get attempt => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set attempt($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAttempt() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAttempt() => $_clearField(3);
 }
 
 class FileResult extends $pb.GeneratedMessage {

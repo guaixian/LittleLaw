@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
@@ -16,14 +18,27 @@ class GroupInfoPage extends StatefulWidget {
 }
 
 class _GroupInfoPageState extends State<GroupInfoPage> {
+  StreamSubscription? _eventSub;
+
   @override
   void initState() {
     super.initState();
-    widget.engine.events.listen((e) {
-      if (e is GroupSynced && e.groupId == widget.groupId) {
-        if (mounted) setState(() {});
+    // 订阅存字段,dispose 时取消(旧版直接丢弃返回值,每开一次
+    // 群资料页就永久泄漏一个订阅 + 整个 State 闭包链)。
+    _eventSub = widget.engine.events.listen((e) {
+      if (!mounted) return;
+      if ((e is GroupSynced || e is PeerStatusChanged || e is ProfileUpdated) &&
+          (e is! GroupSynced || e.groupId == widget.groupId)) {
+        if (e is ProfileUpdated) Avatars.invalidate();
+        setState(() {});
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _eventSub?.cancel();
+    super.dispose();
   }
 
   LittleLawEngine get engine => widget.engine;
@@ -51,6 +66,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
         ],
       ),
     );
+    ctrl.dispose(); // 对话框控制器释放(旧版泄漏)
     if (name != null && name.isNotEmpty) {
       engine.renameGroup(widget.groupId, name);
       setState(() {});

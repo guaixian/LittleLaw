@@ -60,27 +60,42 @@ class Identity {
     final keyFile = File('${dir.path}/$_keyFile');
     final metaFile = File('${dir.path}/$_metaFile');
 
-    if (await certFile.exists() &&
-        await keyFile.exists() &&
-        await metaFile.exists()) {
-      final meta =
-          jsonDecode(await metaFile.readAsString()) as Map<String, dynamic>;
+    if (await certFile.exists() && await keyFile.exists()) {
       final certPem = await certFile.readAsString();
       final keyPem = await keyFile.readAsString();
-      var model = (meta['deviceModel'] as String?) ?? '';
+      // meta 丢失/损坏恢复:证书 CN 里就有 deviceId(生成时写入),
+      // 不会因 meta 半写而静默重新生成身份(那会让全部配对失联)。
+      Map<String, dynamic> meta;
+      if (await metaFile.exists()) {
+        try {
+          final parsed = jsonDecode(await metaFile.readAsString());
+          if (parsed is! Map<String, dynamic> ||
+              (parsed['deviceId'] as String?)?.isEmpty != false) {
+            throw const FormatException('bad meta');
+          }
+          meta = parsed;
+        } catch (_) {
+          meta = _recoverMetaFromCert(certPem);
+          await _atomicWrite(metaFile, jsonEncode(meta));
+        }
+      } else {
+        meta = _recoverMetaFromCert(certPem);
+        await _atomicWrite(metaFile, jsonEncode(meta));
+      }
+      final model = (meta['deviceModel'] as String?) ?? '';
       // 老身份补机型:应用层传入了就更新并落盘。
       if (model.isEmpty && deviceModel != null && deviceModel.isNotEmpty) {
-        model = deviceModel;
-        await metaFile.writeAsString(jsonEncode({
+        final updated = {
           'deviceId': meta['deviceId'] as String,
           'deviceName': meta['deviceName'] as String,
-          'deviceModel': model,
-        }));
+          'deviceModel': deviceModel,
+        };
+        await _atomicWrite(metaFile, jsonEncode(updated));
       }
       return Identity._(
         deviceId: meta['deviceId'] as String,
         deviceName: meta['deviceName'] as String,
-        deviceModel: model,
+        deviceModel: (meta['deviceModel'] as String?) ?? '',
         certPem: certPem,
         keyPem: keyPem,
         fingerprint: fingerprintOfCertPem(certPem),
@@ -115,9 +130,12 @@ class Identity {
     );
     final keyPem = CryptoUtils.encodeEcPrivateKeyToPem(priv);
 
-    await certFile.writeAsString(certPem);
-    await keyFile.writeAsString(keyPem);
-    await metaFile.writeAsString(jsonEncode(
+    // 三文件全部 temp+rename 原子写:直接覆写时崩溃在写之间会留下
+    // 混合残缺状态,下次启动静默重新生成身份 = 全部配对失联。
+    // 顺序:证书 → 私钥 → meta(meta 是完整性标记,最后落位)。
+    await _atomicWrite(certFile, certPem);
+    await _atomicWrite(keyFile, keyPem);
+    await _atomicWrite(metaFile, jsonEncode(
         {'deviceId': id, 'deviceName': name, 'deviceModel': model}));
 
     return Identity._(
@@ -130,10 +148,38 @@ class Identity {
     );
   }
 
+  /// 临时文件 + rename 原子替换。
+  static Future<void> _atomicWrite(File target, String content) async {
+    final tmp = File('${target.path}.tmp');
+    await tmp.writeAsString(content, flush: true);
+    await tmp.rename(target.path);
+  }
+
+  /// 从证书 CN 恢复 meta(deviceId 生成时写进 CN,是最后的真实来源)。
+  static Map<String, dynamic> _recoverMetaFromCert(String certPem) {
+    var deviceId = '';
+    try {
+      final parsed = X509Utils.x509CertificateFromPem(certPem);
+      final subject = (parsed.tbsCertificate?.subject ?? '') as String;
+      final m = RegExp(r'CN=([0-9a-fA-F-]{36})').firstMatch(subject);
+      if (m != null) deviceId = m.group(1)!;
+    } catch (_) {}
+    if (deviceId.isEmpty) {
+      throw const FileSystemException(
+          'identity meta lost and cert CN unreadable; '
+          'explicit recovery required');
+    }
+    return {
+      'deviceId': deviceId,
+      'deviceName': '已恢复设备',
+      'deviceModel': '',
+    };
+  }
+
   /// 持久化改名(只覆盖名称,型号不变)。
   Future<void> rename(String dataDir, String newName) async {
     deviceName = newName;
-    await File('$dataDir/$_metaFile').writeAsString(jsonEncode({
+    await _atomicWrite(File('$dataDir/$_metaFile'), jsonEncode({
       'deviceId': deviceId,
       'deviceName': newName,
       'deviceModel': deviceModel,
@@ -153,6 +199,27 @@ class Identity {
         .replaceAll(RegExp(r'\s+'), '');
     return base64Decode(body);
   }
+
+  /// 从证书 DER 提取 EC 公钥(ECDH 密钥派生用)。失败抛异常。
+  static ECPublicKey ecPublicKeyOfCertDer(List<int> certDer) {
+    final b64 = base64Encode(certDer);
+    final pem = '-----BEGIN CERTIFICATE-----\n$b64\n'
+        '-----END CERTIFICATE-----\n';
+    final parsed = X509Utils.x509CertificateFromPem(pem);
+    final spkiHex = parsed.tbsCertificate?.subjectPublicKeyInfo.bytes;
+    if (spkiHex == null || spkiHex.isEmpty) {
+      throw const FormatException('cert has no SPKI');
+    }
+    final spki = Uint8List.fromList([
+      for (var i = 0; i + 1 < spkiHex.length; i += 2)
+        int.parse(spkiHex.substring(i, i + 2), radix: 16)
+    ]);
+    return CryptoUtils.ecPublicKeyFromDerBytes(spki);
+  }
+
+  /// 私钥 PEM → ECPrivateKey。
+  static ECPrivateKey ecPrivateKeyOfPem(String keyPem) =>
+      CryptoUtils.ecPrivateKeyFromPem(keyPem);
 
   // ------------------------------------------------------------ 签名/验签
 

@@ -10,7 +10,14 @@ class HotspotInfo {
   final String password;
 
   /// 标准 WiFi 二维码内容(手机相机可直接扫)。
-  String get wifiQr => 'WIFI:T:WPA;S:$ssid;P:$password;;';
+  /// SSID/密码按 WIFI QR 规范反斜杠转义(含 `; \ , : "` 的凭据
+  /// 不转义会被扫码端截断解析)。
+  String get wifiQr =>
+      'WIFI:T:WPA;S:${_escapeWifi(ssid)};P:${_escapeWifi(password)};;';
+
+  static String _escapeWifi(String v) =>
+      v.replaceAll(r'\', r'\\').replaceAll(';', r'\;')
+          .replaceAll(',', r'\,').replaceAll(':', r'\:').replaceAll('"', r'\"');
 }
 
 class HotspotManager {

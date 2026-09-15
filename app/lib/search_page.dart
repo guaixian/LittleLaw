@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:littlelaw_core/littlelaw_core.dart';
 
 import 'chat_page.dart';
 import 'i18n.dart';
+import 'toast.dart';
 
 /// 全库消息搜索:文本 + 文件名,跨全部会话,点击跳转会话。
 class SearchPage extends StatefulWidget {
@@ -17,13 +20,23 @@ class _SearchPageState extends State<SearchPage> {
   final _controller = TextEditingController();
   List<Message> _results = const [];
 
+  /// 击键防抖(300ms):旧版每击键同步全库 LIKE 查询,大库上 UI 线程卡顿。
+  Timer? _debounce;
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
+  void _onChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), _run);
+  }
+
   void _run() {
+    if (!mounted) return;
     setState(() {
       _results = widget.engine.searchMessages(_controller.text);
     });
@@ -60,6 +73,8 @@ class _SearchPageState extends State<SearchPage> {
           builder: (_) => ChatPage(
               peer: engine.peers.first, engine: engine, group: group),
         ));
+      } else {
+        showToast('该群已解散,无法打开', type: ToastType.info);
       }
       return;
     }
@@ -72,6 +87,8 @@ class _SearchPageState extends State<SearchPage> {
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => ChatPage(peer: peer, engine: engine),
       ));
+    } else {
+      showToast('对方已解除配对,无法打开', type: ToastType.info);
     }
   }
 
@@ -87,8 +104,11 @@ class _SearchPageState extends State<SearchPage> {
             hintText: L10n.t('search.hint'),
             border: InputBorder.none,
           ),
-          onSubmitted: (_) => _run(),
-          onChanged: (_) => _run(),
+          onSubmitted: (_) {
+            _debounce?.cancel();
+            _run();
+          },
+          onChanged: (_) => _onChanged(),
         ),
         actions: [
           IconButton(icon: const Icon(Icons.search), onPressed: _run),

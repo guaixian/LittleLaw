@@ -26,6 +26,7 @@ const DeviceInfo$json = {
     {'1': 'port', '3': 5, '4': 1, '5': 5, '10': 'port'},
     {'1': 'protocol_version', '3': 6, '4': 1, '5': 9, '10': 'protocolVersion'},
     {'1': 'device_model', '3': 7, '4': 1, '5': 9, '10': 'deviceModel'},
+    {'1': 'cert_der', '3': 8, '4': 1, '5': 12, '10': 'certDer'},
   ],
 };
 
@@ -35,7 +36,7 @@ final $typed_data.Uint8List deviceInfoDescriptor = $convert.base64Decode(
     'UYAiABKAlSCmRldmljZU5hbWUSGgoIcGxhdGZvcm0YAyABKAlSCHBsYXRmb3JtEikKEGNlcnRf'
     'ZmluZ2VycHJpbnQYBCABKAlSD2NlcnRGaW5nZXJwcmludBISCgRwb3J0GAUgASgFUgRwb3J0Ei'
     'kKEHByb3RvY29sX3ZlcnNpb24YBiABKAlSD3Byb3RvY29sVmVyc2lvbhIhCgxkZXZpY2VfbW9k'
-    'ZWwYByABKAlSC2RldmljZU1vZGVs');
+    'ZWwYByABKAlSC2RldmljZU1vZGVsEhkKCGNlcnRfZGVyGAggASgMUgdjZXJ0RGVy');
 
 @$core.Deprecated('Use discoveryPacketDescriptor instead')
 const DiscoveryPacket$json = {
@@ -207,6 +208,7 @@ const PairResponse$json = {
     },
     {'1': 'session_token', '3': 3, '4': 1, '5': 12, '10': 'sessionToken'},
     {'1': 'message', '3': 4, '4': 1, '5': 9, '10': 'message'},
+    {'1': 'confirm_nonce', '3': 5, '4': 1, '5': 9, '10': 'confirmNonce'},
   ],
 };
 
@@ -214,7 +216,38 @@ const PairResponse$json = {
 final $typed_data.Uint8List pairResponseDescriptor = $convert.base64Decode(
     'CgxQYWlyUmVzcG9uc2USGgoIYWNjZXB0ZWQYASABKAhSCGFjY2VwdGVkEjYKCXJlc3BvbmRlch'
     'gCIAEoCzIYLmxpdHRsZWxhdy52MS5EZXZpY2VJbmZvUglyZXNwb25kZXISIwoNc2Vzc2lvbl90'
-    'b2tlbhgDIAEoDFIMc2Vzc2lvblRva2VuEhgKB21lc3NhZ2UYBCABKAlSB21lc3NhZ2U=');
+    'b2tlbhgDIAEoDFIMc2Vzc2lvblRva2VuEhgKB21lc3NhZ2UYBCABKAlSB21lc3NhZ2USIwoNY2'
+    '9uZmlybV9ub25jZRgFIAEoCVIMY29uZmlybU5vbmNl');
+
+@$core.Deprecated('Use pairConfirmRequestDescriptor instead')
+const PairConfirmRequest$json = {
+  '1': 'PairConfirmRequest',
+  '2': [
+    {'1': 'request_id', '3': 1, '4': 1, '5': 9, '10': 'requestId'},
+    {'1': 'requester_id', '3': 2, '4': 1, '5': 9, '10': 'requesterId'},
+    {'1': 'signature', '3': 3, '4': 1, '5': 12, '10': 'signature'},
+  ],
+};
+
+/// Descriptor for `PairConfirmRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pairConfirmRequestDescriptor = $convert.base64Decode(
+    'ChJQYWlyQ29uZmlybVJlcXVlc3QSHQoKcmVxdWVzdF9pZBgBIAEoCVIJcmVxdWVzdElkEiEKDH'
+    'JlcXVlc3Rlcl9pZBgCIAEoCVILcmVxdWVzdGVySWQSHAoJc2lnbmF0dXJlGAMgASgMUglzaWdu'
+    'YXR1cmU=');
+
+@$core.Deprecated('Use pairConfirmResponseDescriptor instead')
+const PairConfirmResponse$json = {
+  '1': 'PairConfirmResponse',
+  '2': [
+    {'1': 'ok', '3': 1, '4': 1, '5': 8, '10': 'ok'},
+    {'1': 'message', '3': 2, '4': 1, '5': 9, '10': 'message'},
+  ],
+};
+
+/// Descriptor for `PairConfirmResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pairConfirmResponseDescriptor = $convert.base64Decode(
+    'ChNQYWlyQ29uZmlybVJlc3BvbnNlEg4KAm9rGAEgASgIUgJvaxIYCgdtZXNzYWdlGAIgASgJUg'
+    'dtZXNzYWdl');
 
 @$core.Deprecated('Use unpairRequestDescriptor instead')
 const UnpairRequest$json = {
@@ -434,6 +467,24 @@ const Envelope$json = {
       '9': 0,
       '10': 'profileUpdate'
     },
+    {
+      '1': 'noop',
+      '3': 23,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.Noop',
+      '9': 0,
+      '10': 'noop'
+    },
+    {
+      '1': 'unpair_notice',
+      '3': 24,
+      '4': 1,
+      '5': 11,
+      '6': '.littlelaw.v1.UnpairNotice',
+      '9': 0,
+      '10': 'unpairNotice'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -464,8 +515,34 @@ final $typed_data.Uint8List envelopeDescriptor = $convert.base64Decode(
     'VwU3luY0gAUglncm91cFN5bmMSPgoMcmVhZF9yZWNlaXB0GBQgASgLMhkubGl0dGxlbGF3LnYx'
     'LlJlYWRSZWNlaXB0SABSC3JlYWRSZWNlaXB0EjoKCHJlYWN0aW9uGBUgASgLMhwubGl0dGxlbG'
     'F3LnYxLlJlYWN0aW9uVXBkYXRlSABSCHJlYWN0aW9uEkQKDnByb2ZpbGVfdXBkYXRlGBYgASgL'
-    'MhsubGl0dGxlbGF3LnYxLlByb2ZpbGVVcGRhdGVIAFINcHJvZmlsZVVwZGF0ZUIJCgdwYXlsb2'
-    'Fk');
+    'MhsubGl0dGxlbGF3LnYxLlByb2ZpbGVVcGRhdGVIAFINcHJvZmlsZVVwZGF0ZRIoCgRub29wGB'
+    'cgASgLMhIubGl0dGxlbGF3LnYxLk5vb3BIAFIEbm9vcBJBCg11bnBhaXJfbm90aWNlGBggASgL'
+    'MhoubGl0dGxlbGF3LnYxLlVucGFpck5vdGljZUgAUgx1bnBhaXJOb3RpY2VCCQoHcGF5bG9hZA'
+    '==');
+
+@$core.Deprecated('Use noopDescriptor instead')
+const Noop$json = {
+  '1': 'Noop',
+  '2': [
+    {'1': 'op_seq', '3': 1, '4': 1, '5': 3, '10': 'opSeq'},
+  ],
+};
+
+/// Descriptor for `Noop`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List noopDescriptor =
+    $convert.base64Decode('CgROb29wEhUKBm9wX3NlcRgBIAEoA1IFb3BTZXE=');
+
+@$core.Deprecated('Use unpairNoticeDescriptor instead')
+const UnpairNotice$json = {
+  '1': 'UnpairNotice',
+  '2': [
+    {'1': 'device_id', '3': 1, '4': 1, '5': 9, '10': 'deviceId'},
+  ],
+};
+
+/// Descriptor for `UnpairNotice`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List unpairNoticeDescriptor = $convert.base64Decode(
+    'CgxVbnBhaXJOb3RpY2USGwoJZGV2aWNlX2lkGAEgASgJUghkZXZpY2VJZA==');
 
 @$core.Deprecated('Use profileUpdateDescriptor instead')
 const ProfileUpdate$json = {
@@ -547,13 +624,14 @@ const FileDataAck$json = {
   '2': [
     {'1': 'file_id', '3': 1, '4': 1, '5': 9, '10': 'fileId'},
     {'1': 'acked_offset', '3': 2, '4': 1, '5': 3, '10': 'ackedOffset'},
+    {'1': 'attempt', '3': 3, '4': 1, '5': 13, '10': 'attempt'},
   ],
 };
 
 /// Descriptor for `FileDataAck`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List fileDataAckDescriptor = $convert.base64Decode(
     'CgtGaWxlRGF0YUFjaxIXCgdmaWxlX2lkGAEgASgJUgZmaWxlSWQSIQoMYWNrZWRfb2Zmc2V0GA'
-    'IgASgDUgthY2tlZE9mZnNldA==');
+    'IgASgDUgthY2tlZE9mZnNldBIYCgdhdHRlbXB0GAMgASgNUgdhdHRlbXB0');
 
 @$core.Deprecated('Use callOfferDescriptor instead')
 const CallOffer$json = {
@@ -636,13 +714,14 @@ const FileFetchRequest$json = {
   '2': [
     {'1': 'file_id', '3': 1, '4': 1, '5': 9, '10': 'fileId'},
     {'1': 'offset', '3': 2, '4': 1, '5': 3, '10': 'offset'},
+    {'1': 'attempt', '3': 3, '4': 1, '5': 13, '10': 'attempt'},
   ],
 };
 
 /// Descriptor for `FileFetchRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List fileFetchRequestDescriptor = $convert.base64Decode(
     'ChBGaWxlRmV0Y2hSZXF1ZXN0EhcKB2ZpbGVfaWQYASABKAlSBmZpbGVJZBIWCgZvZmZzZXQYAi'
-    'ABKANSBm9mZnNldA==');
+    'ABKANSBm9mZnNldBIYCgdhdHRlbXB0GAMgASgNUgdhdHRlbXB0');
 
 @$core.Deprecated('Use fileDataDescriptor instead')
 const FileData$json = {
@@ -652,13 +731,15 @@ const FileData$json = {
     {'1': 'offset', '3': 2, '4': 1, '5': 3, '10': 'offset'},
     {'1': 'data', '3': 3, '4': 1, '5': 12, '10': 'data'},
     {'1': 'last', '3': 4, '4': 1, '5': 8, '10': 'last'},
+    {'1': 'attempt', '3': 5, '4': 1, '5': 13, '10': 'attempt'},
   ],
 };
 
 /// Descriptor for `FileData`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List fileDataDescriptor = $convert.base64Decode(
     'CghGaWxlRGF0YRIXCgdmaWxlX2lkGAEgASgJUgZmaWxlSWQSFgoGb2Zmc2V0GAIgASgDUgZvZm'
-    'ZzZXQSEgoEZGF0YRgDIAEoDFIEZGF0YRISCgRsYXN0GAQgASgIUgRsYXN0');
+    'ZzZXQSEgoEZGF0YRgDIAEoDFIEZGF0YRISCgRsYXN0GAQgASgIUgRsYXN0EhgKB2F0dGVtcHQY'
+    'BSABKA1SB2F0dGVtcHQ=');
 
 @$core.Deprecated('Use helloDescriptor instead')
 const Hello$json = {
@@ -860,13 +941,14 @@ const FetchRequest$json = {
   '2': [
     {'1': 'file_id', '3': 1, '4': 1, '5': 9, '10': 'fileId'},
     {'1': 'offset', '3': 2, '4': 1, '5': 3, '10': 'offset'},
+    {'1': 'attempt', '3': 3, '4': 1, '5': 13, '10': 'attempt'},
   ],
 };
 
 /// Descriptor for `FetchRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List fetchRequestDescriptor = $convert.base64Decode(
     'CgxGZXRjaFJlcXVlc3QSFwoHZmlsZV9pZBgBIAEoCVIGZmlsZUlkEhYKBm9mZnNldBgCIAEoA1'
-    'IGb2Zmc2V0');
+    'IGb2Zmc2V0EhgKB2F0dGVtcHQYAyABKA1SB2F0dGVtcHQ=');
 
 @$core.Deprecated('Use fileResultDescriptor instead')
 const FileResult$json = {

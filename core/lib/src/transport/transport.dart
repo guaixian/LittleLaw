@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -13,10 +14,17 @@ import '../identity/identity.dart';
 ///  - pinned: 已知对端指纹(已配对),只接受该指纹,其余一律拒绝。
 ///  - tofu:   配对前的首次连接,接受任意证书并记录实际指纹,
 ///            由配对流程用 PIN(SAS)人工绑定真伪。
+///
+/// 安全说明:dart:io 的 onBadCertificate 只在**内置校验失败**时才被调用——
+/// 若攻击者出示一张能通过系统根校验的证书(企业预装 CA、IP 公网证书),
+/// 回调不会执行,pinning 会被静默绕过。因此这里不用系统根:
+/// 信任上下文仅锚定本机自己的证书([selfCertPem]),对端证书**必然**校验失败,
+/// 回调必然执行,指纹比较成为唯一放行标准——系统根永远不参与判定。
 class PeerChannel {
-  PeerChannel._(this.channel);
+  PeerChannel._(this.channel, this._pinnedFingerprint);
 
   final ClientChannel channel;
+  final String? _pinnedFingerprint;
 
   String? _observedFingerprint;
 
@@ -27,10 +35,12 @@ class PeerChannel {
   /// 建立到对端的通道。
   ///
   /// [pinnedFingerprint] 非空时启用 pinning;为空时 TOFU(仅允许配对服务)。
+  /// [selfCertPem] 本机证书,用作唯一信任锚(见类注释),必传。
   static PeerChannel connect({
     required String host,
     required int port,
     String? pinnedFingerprint,
+    required String selfCertPem,
   }) {
     late PeerChannel self;
 
@@ -41,30 +51,50 @@ class PeerChannel {
       return constantTimeHexEquals(fpr, pinnedFingerprint);
     }
 
+    // 锚定自己的证书:任何对端证书(含系统根可验证的)都会走到
+    // onBadCertificate 回调,由指纹判定唯一放行。
     final channel = ClientChannel(
       host,
       port: port,
       options: ChannelOptions(
         credentials: ChannelCredentials.secure(
-          // 跳过系统根校验,全部交给指纹判定(自签证书无公共 CA)。
+          certificates: utf8.encode(selfCertPem),
           onBadCertificate: onBadCertificate,
         ),
         connectionTimeout: const Duration(seconds: 10),
         idleTimeout: const Duration(minutes: 5),
       ),
     );
-    self = PeerChannel._(channel);
+    self = PeerChannel._(channel, pinnedFingerprint);
     return self;
   }
 
   /// 等待底层 TCP+TLS 建立,确保 observedFingerprint 可用。
+  /// pinned 模式下还强制复核:回调若从未执行(理论上不可能,见类注释)
+  /// 或指纹不符即断开——任何 RPC 之前先过这一关。
   Future<void> ensureReady() async {
     await channel.onConnectionStateChanged
         .firstWhere((s) => s == ConnectionState.ready)
         .timeout(const Duration(seconds: 10));
+    if (_pinnedFingerprint != null) {
+      final ok = _observedFingerprint != null &&
+          constantTimeHexEquals(_observedFingerprint!, _pinnedFingerprint);
+      if (!ok) {
+        await channel.shutdown();
+        throw SecurityException('peer certificate pinning failed');
+      }
+    }
   }
 
   Future<void> shutdown() => channel.shutdown();
+}
+
+class SecurityException implements Exception {
+  SecurityException(this.message);
+  final String message;
+
+  @override
+  String toString() => 'SecurityException: $message';
 }
 
 bool constantTimeHexEquals(String a, String b) {
