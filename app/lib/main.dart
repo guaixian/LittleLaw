@@ -870,6 +870,12 @@ class _DevicesPageState extends State<DevicesPage> {
   Widget _discoveredCard(DiscoveredDevice d) {
     final skin = themeController.skin;
     final isPhone = d.info.platform == 'android' || d.info.platform == 'ios';
+    // v2 宣告不再携带 platform/deviceModel(分级披露):陌生设备显示 IP。
+    final sub = d.info.deviceModel.isNotEmpty
+        ? '${platformLabel(d.info.platform)} · ${d.info.deviceModel}'
+        : (d.info.platform.isNotEmpty
+            ? '${platformLabel(d.info.platform)} · ${d.host}'
+            : d.host);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: Card(
@@ -893,11 +899,8 @@ class _DevicesPageState extends State<DevicesPage> {
           ),
           title: Text(d.info.deviceName,
               style: const TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: Text(
-            d.info.deviceModel.isNotEmpty
-                ? '${platformLabel(d.info.platform)} · ${d.info.deviceModel}'
-                : '${platformLabel(d.info.platform)} · ${d.host}',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          subtitle: Text(sub,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           trailing: FilledButton.tonal(
             onPressed: () => _startPair(d),
             child: const Text('配对'),

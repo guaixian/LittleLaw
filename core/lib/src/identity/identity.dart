@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:basic_utils/basic_utils.dart';
 import 'package:crypto/crypto.dart';
+import 'package:pointycastle/export.dart';
 import 'package:uuid/uuid.dart';
 
 /// 设备身份:首次启动生成,终身不变。
@@ -149,6 +152,76 @@ class Identity {
         .replaceAll('-----END CERTIFICATE-----', '')
         .replaceAll(RegExp(r'\s+'), '');
     return base64Decode(body);
+  }
+
+  // ------------------------------------------------------------ 签名/验签
+
+  /// 用身份私钥对消息做 ECDSA-P256(SHA-256) 签名,返回 r||s 各 32 字节。
+  /// 用于发现层宣告报文签名(防伪造/防重放)。
+  Uint8List signMessage(List<int> message) {
+    final priv = CryptoUtils.ecPrivateKeyFromPem(keyPem);
+    // pointycastle 无默认随机源,必须显式注入。
+    final rng = math.Random.secure();
+    final seed =
+        Uint8List.fromList(List<int>.generate(32, (_) => rng.nextInt(256)));
+    final signer = ECDSASigner(SHA256Digest(), HMac(SHA256Digest(), 64))
+      ..init(
+          true, ParametersWithRandom(PrivateKeyParameter<ECPrivateKey>(priv),
+              FortunaRandom()..seed(KeyParameter(seed))));
+    final sig = signer.generateSignature(Uint8List.fromList(message))
+        as ECSignature;
+    final out = Uint8List(64);
+    out.setRange(0, 32, _fixed32(sig.r));
+    out.setRange(32, 64, _fixed32(sig.s));
+    return out;
+  }
+
+  static Uint8List _fixed32(BigInt v) {
+    var hex = v.toRadixString(16);
+    if (hex.length.isOdd) hex = '0$hex';
+    final raw = Uint8List.fromList(
+        List<int>.generate(hex.length ~/ 2,
+            (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16)));
+    final out = Uint8List(32);
+    out.setRange(32 - raw.length, 32, raw);
+    return out;
+  }
+
+  /// 用证书公钥验证 ECDSA 签名(r||s 64B)。
+  static bool verifyWithCertDer(
+      List<int> certDer, List<int> message, List<int> sig64) {
+    if (sig64.length != 64 || certDer.isEmpty) return false;
+    try {
+      final b64 = base64Encode(certDer);
+      final pem = '-----BEGIN CERTIFICATE-----\n$b64\n'
+          '-----END CERTIFICATE-----\n';
+      final parsed = X509Utils.x509CertificateFromPem(pem);
+      // subjectPublicKeyInfo.bytes 是 SPKI 的 hex 字符串(basic_utils 的
+      // 内部约定),转回 DER 再取公钥。
+      final spkiHex = parsed.tbsCertificate?.subjectPublicKeyInfo.bytes;
+      if (spkiHex == null || spkiHex.isEmpty) return false;
+      final spki = Uint8List.fromList([
+        for (var i = 0; i + 1 < spkiHex.length; i += 2)
+          int.parse(spkiHex.substring(i, i + 2), radix: 16)
+      ]);
+      final pub = CryptoUtils.ecPublicKeyFromDerBytes(spki);
+      final r = _bigFromBytes(sig64.sublist(0, 32));
+      final s = _bigFromBytes(sig64.sublist(32));
+      final signer = ECDSASigner(SHA256Digest(), HMac(SHA256Digest(), 64))
+        ..init(false, PublicKeyParameter<ECPublicKey>(pub));
+      return signer.verifySignature(
+          Uint8List.fromList(message), ECSignature(r, s));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static BigInt _bigFromBytes(List<int> bytes) {
+    var v = BigInt.zero;
+    for (final b in bytes) {
+      v = (v << 8) | BigInt.from(b);
+    }
+    return v;
   }
 
   /// 短认证串(SAS):双方各自对两个指纹排序后哈希取 6 位数字。

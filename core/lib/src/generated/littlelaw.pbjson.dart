@@ -51,6 +51,8 @@ const DiscoveryPacket$json = {
       '10': 'device'
     },
     {'1': 'timestamp_ms', '3': 3, '4': 1, '5': 3, '10': 'timestampMs'},
+    {'1': 'cert_der', '3': 4, '4': 1, '5': 12, '10': 'certDer'},
+    {'1': 'signature', '3': 5, '4': 1, '5': 12, '10': 'signature'},
   ],
 };
 
@@ -58,7 +60,8 @@ const DiscoveryPacket$json = {
 final $typed_data.Uint8List discoveryPacketDescriptor = $convert.base64Decode(
     'Cg9EaXNjb3ZlcnlQYWNrZXQSFAoFbWFnaWMYASABKAdSBW1hZ2ljEjAKBmRldmljZRgCIAEoCz'
     'IYLmxpdHRsZWxhdy52MS5EZXZpY2VJbmZvUgZkZXZpY2USIQoMdGltZXN0YW1wX21zGAMgASgD'
-    'Ugt0aW1lc3RhbXBNcw==');
+    'Ugt0aW1lc3RhbXBNcxIZCghjZXJ0X2RlchgEIAEoDFIHY2VydERlchIcCglzaWduYXR1cmUYBS'
+    'ABKAxSCXNpZ25hdHVyZQ==');
 
 @$core.Deprecated('Use deliverAnswerRequestDescriptor instead')
 const DeliverAnswerRequest$json = {

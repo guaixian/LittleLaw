@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:fixnum/fixnum.dart';
 
 import '../generated/littlelaw.pb.dart' as pb;
@@ -46,7 +47,12 @@ class DiscoveryService {
   static const defaultDiscoveryPort = 47521;
   static const defaultMulticastGroup = '239.255.42.99';
   static const magic = 0x4C4C4157; // "LLAW"
-  static const protocolVersion = '1';
+  /// v2:宣告报文必须携带证书 DER + ECDSA 签名,且时间戳新鲜(±30s)。
+  /// v1(明文无签名)已弃用:可伪造、可重放。
+  static const protocolVersion = '2';
+
+  /// 宣告报文时间窗:超出即视为重放,丢弃。
+  static const _freshnessMs = 30 * 1000;
 
   final Identity identity;
   final int grpcPort;
@@ -207,20 +213,35 @@ class DiscoveryService {
   // ------------------------------------------------------------ 发送
 
   Uint8List _buildPacket() {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    // 精简披露:宣告只带配对必需字段。platform/deviceModel 属于隐私元数据,
+    // 仅在配对(经 TLS 的 requestPair)或已成为可信设备后交换。
+    final device = pb.DeviceInfo(
+      deviceId: identity.deviceId,
+      deviceName: identity.deviceName,
+      platform: '',
+      certFingerprint: identity.fingerprint,
+      port: grpcPort,
+      protocolVersion: protocolVersion,
+      deviceModel: '',
+    );
     final packet = pb.DiscoveryPacket(
       magic: magic,
-      timestampMs: Int64(DateTime.now().millisecondsSinceEpoch),
-      device: pb.DeviceInfo(
-        deviceId: identity.deviceId,
-        deviceName: identity.deviceName,
-        platform: Identity.platformName(),
-        certFingerprint: identity.fingerprint,
-        port: grpcPort,
-        protocolVersion: protocolVersion,
-        deviceModel: identity.deviceModel,
-      ),
+      timestampMs: Int64(ts),
+      device: device,
+      certDer: Uint8List.fromList(Identity.derOfCertPem(identity.certPem)),
+      // 签名覆盖 timestamp + 全部 DeviceInfo:改任何字段即失效。
+      signature: identity
+          .signMessage(_announceMessage(ts, device.writeToBuffer())),
     );
     return packet.writeToBuffer();
+  }
+
+  /// 验签摘要输入:8 字节大端时间戳 + DeviceInfo 序列化。
+  static List<int> _announceMessage(int tsMs, List<int> deviceBytes) {
+    final ts8 = Uint8List(8);
+    ByteData.view(ts8.buffer).setInt64(0, tsMs, Endian.big);
+    return [...ts8, ...deviceBytes];
   }
 
   Future<void> _announce() async {
@@ -339,13 +360,33 @@ class DiscoveryService {
     } catch (_) {
       return; // 无法解析,丢弃
     }
-    // 协议指纹三重校验:magic、版本、非自身。
+    // 协议指纹校验:magic、版本(v2 起)、非自身、端口合法。
     if (packet.magic != magic) return;
     if (packet.device.protocolVersion != protocolVersion) return;
     if (packet.device.deviceId == identity.deviceId) return;
     if (packet.device.port <= 0 || packet.device.port > 65535) return;
 
+    // ---- v2 安全校验 ----
+    // 1) 新鲜度:时间戳超出 ±30s 视为重放,直接丢弃
+    //    (防止重放旧宣告让已离线设备在别人 UI 里"永远在线")。
     final now = DateTime.now().millisecondsSinceEpoch;
+    final ts = packet.timestampMs.toInt();
+    if (ts <= 0 || (now - ts).abs() > _freshnessMs) return;
+    // 2) 签名:证书 DER + ECDSA 覆盖 timestamp+DeviceInfo,改任何字段即失效。
+    //    未携带签名/验签失败一律丢弃(伪造报文无法通过)。
+    final certDer = packet.certDer;
+    if (certDer.isEmpty || packet.signature.isEmpty) return;
+    final msg =
+        _announceMessage(ts, packet.device.writeToBuffer());
+    if (!Identity.verifyWithCertDer(certDer, msg, packet.signature)) return;
+    // 3) 指纹一致:证书 DER 哈希必须等于宣告里声称的指纹
+    //    (防"拿别人证书 + 自己的 deviceId"拼凑)。
+    final certFpr = sha256.convert(certDer).toString();
+    if (packet.device.certFingerprint.isNotEmpty &&
+        packet.device.certFingerprint != certFpr) {
+      return;
+    }
+
     final id = packet.device.deviceId;
     final existing = _devices[id];
     if (existing != null) {
@@ -363,6 +404,7 @@ class DiscoveryService {
     }
 
     // 对陌生来源回执一次,保证扫描方/被扫方互相可见(限频防回环风暴)。
+    // v2 回执同样是签名+新鲜度报文,重放无意义。
     final lastReply = _replyCache[host] ?? 0;
     if (now - lastReply > announceInterval.inMilliseconds) {
       _replyCache[host] = now;

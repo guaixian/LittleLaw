@@ -1,0 +1,1979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the Envelope class from the littlelaw_core library, for the Dart programming language.">
+  <title>Envelope class - littlelaw_core library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../index.html">littlelaw_core</a></li>
+    <li><a href="../littlelaw_core/">littlelaw_core.dart</a></li>
+    <li class="self-crumb">Envelope class</li>
+  </ol>
+  <div class="self-name">Envelope</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content"
+    class="main-content"
+    data-above-sidebar="littlelaw_core&#47;littlelaw_core-library-sidebar.html"
+    data-below-sidebar="littlelaw_core&#47;Envelope-class-sidebar.html">
+    <div>
+<h1><span class="kind-class">Envelope</span> class 
+ 
+</h1></div>
+
+    
+
+
+    <section>
+      <dl class="dl-horizontal">
+        
+  <dt>Inheritance</dt>
+  <dd>
+    <ul class="gt-separated dark clazz-relationships">
+      <li><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object-class.html">Object</a></li>
+        <li><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage-class.html">GeneratedMessage</a></li>
+      <li>Envelope</li>
+    </ul>
+  </dd>
+
+        
+        
+
+
+        
+  <dt>Available extensions</dt>
+  <dd><ul class="comma-separated clazz-relationships">
+      <li><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessageGenericExtensions.html">GeneratedMessageGenericExtensions</a></li>
+      <li><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/TextFormatExtension.html">TextFormatExtension</a></li>
+  </ul></dd>
+        
+
+
+      </dl>
+    </section>
+
+    
+  <section class="summary offset-anchor" id="constructors">
+    <h2>Constructors</h2>
+    <dl class="constructor-summary-list">
+        <dt id="Envelope.new" class="callable">
+          <span class="name"><a href="../littlelaw_core/Envelope/Envelope.html">Envelope</a></span><span class="signature">({<span class="parameter" id="param-id"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a>?</span> <span class="parameter-name">id</span>, </span><span class="parameter" id="param-hello"><span class="type-annotation">Hello?</span> <span class="parameter-name">hello</span>, </span><span class="parameter" id="param-chat"><span class="type-annotation">ChatMessage?</span> <span class="parameter-name">chat</span>, </span><span class="parameter" id="param-chatDeleted"><span class="type-annotation">ChatDeleted?</span> <span class="parameter-name">chatDeleted</span>, </span><span class="parameter" id="param-clipboard"><span class="type-annotation">ClipboardSync?</span> <span class="parameter-name">clipboard</span>, </span><span class="parameter" id="param-fileOffer"><span class="type-annotation">FileOffer?</span> <span class="parameter-name">fileOffer</span>, </span><span class="parameter" id="param-fileAnswer"><span class="type-annotation">FileAnswer?</span> <span class="parameter-name">fileAnswer</span>, </span><span class="parameter" id="param-fileCancel"><span class="type-annotation">FileCancel?</span> <span class="parameter-name">fileCancel</span>, </span><span class="parameter" id="param-syncAck"><span class="type-annotation">SyncAck?</span> <span class="parameter-name">syncAck</span>, </span><span class="parameter" id="param-heartbeat"><span class="type-annotation">Heartbeat?</span> <span class="parameter-name">heartbeat</span>, </span><span class="parameter" id="param-linkAuth"><span class="type-annotation"><a href="../littlelaw_core/LinkAuth-class.html">LinkAuth</a>?</span> <span class="parameter-name">linkAuth</span>, </span><span class="parameter" id="param-fileFetch"><span class="type-annotation">FileFetchRequest?</span> <span class="parameter-name">fileFetch</span>, </span><span class="parameter" id="param-fileData"><span class="type-annotation">FileData?</span> <span class="parameter-name">fileData</span>, </span><span class="parameter" id="param-fileDataAck"><span class="type-annotation">FileDataAck?</span> <span class="parameter-name">fileDataAck</span>, </span><span class="parameter" id="param-callOffer"><span class="type-annotation"><a href="../littlelaw_core/CallOffer-class.html">CallOffer</a>?</span> <span class="parameter-name">callOffer</span>, </span><span class="parameter" id="param-callAnswer"><span class="type-annotation"><a href="../littlelaw_core/CallAnswer-class.html">CallAnswer</a>?</span> <span class="parameter-name">callAnswer</span>, </span><span class="parameter" id="param-callCandidate"><span class="type-annotation"><a href="../littlelaw_core/CallCandidate-class.html">CallCandidate</a>?</span> <span class="parameter-name">callCandidate</span>, </span><span class="parameter" id="param-callEnd"><span class="type-annotation"><a href="../littlelaw_core/CallEnd-class.html">CallEnd</a>?</span> <span class="parameter-name">callEnd</span>, </span><span class="parameter" id="param-groupSync"><span class="type-annotation"><a href="../littlelaw_core/GroupSync-class.html">GroupSync</a>?</span> <span class="parameter-name">groupSync</span>, </span><span class="parameter" id="param-readReceipt"><span class="type-annotation"><a href="../littlelaw_core/ReadReceipt-class.html">ReadReceipt</a>?</span> <span class="parameter-name">readReceipt</span>, </span><span class="parameter" id="param-reaction"><span class="type-annotation"><a href="../littlelaw_core/ReactionUpdate-class.html">ReactionUpdate</a>?</span> <span class="parameter-name">reaction</span>, </span><span class="parameter" id="param-profileUpdate"><span class="type-annotation">ProfileUpdate?</span> <span class="parameter-name">profileUpdate</span></span>})</span>
+        </dt>
+        <dd>
+          
+            <div class="constructor-modifier features">factory</div>
+        </dd>
+        <dt id="Envelope.fromBuffer" class="callable">
+          <span class="name"><a href="../littlelaw_core/Envelope/Envelope.fromBuffer.html">Envelope.fromBuffer</a></span><span class="signature">(<span class="parameter" id="fromBuffer-param-data"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span>&gt;</span></span> <span class="parameter-name">data</span>, [</span><span class="parameter" id="fromBuffer-param-registry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/ExtensionRegistry-class.html">ExtensionRegistry</a></span> <span class="parameter-name">registry</span> = <span class="default-value">$pb.ExtensionRegistry.EMPTY</span></span>])</span>
+        </dt>
+        <dd>
+          
+            <div class="constructor-modifier features">factory</div>
+        </dd>
+        <dt id="Envelope.fromJson" class="callable">
+          <span class="name"><a href="../littlelaw_core/Envelope/Envelope.fromJson.html">Envelope.fromJson</a></span><span class="signature">(<span class="parameter" id="fromJson-param-json"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span> <span class="parameter-name">json</span>, [</span><span class="parameter" id="fromJson-param-registry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/ExtensionRegistry-class.html">ExtensionRegistry</a></span> <span class="parameter-name">registry</span> = <span class="default-value">$pb.ExtensionRegistry.EMPTY</span></span>])</span>
+        </dt>
+        <dd>
+          
+            <div class="constructor-modifier features">factory</div>
+        </dd>
+    </dl>
+  </section>
+    
+  <section
+      class="summary offset-anchor"
+      id="instance-properties">
+    <h2>Properties</h2>
+    <dl class="properties">
+        <dt id="callAnswer" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/callAnswer.html">callAnswer</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/CallAnswer-class.html">CallAnswer</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="callCandidate" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/callCandidate.html">callCandidate</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/CallCandidate-class.html">CallCandidate</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="callEnd" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/callEnd.html">callEnd</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/CallEnd-class.html">CallEnd</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="callOffer" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/callOffer.html">callOffer</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/CallOffer-class.html">CallOffer</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="chat" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/chat.html">chat</a></span>
+  <span class="signature">&#8596; ChatMessage</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="chatDeleted" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/chatDeleted.html">chatDeleted</a></span>
+  <span class="signature">&#8596; ChatDeleted</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="clipboard" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/clipboard.html">clipboard</a></span>
+  <span class="signature">&#8596; ClipboardSync</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="fileAnswer" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/fileAnswer.html">fileAnswer</a></span>
+  <span class="signature">&#8596; FileAnswer</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="fileCancel" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/fileCancel.html">fileCancel</a></span>
+  <span class="signature">&#8596; FileCancel</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="fileData" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/fileData.html">fileData</a></span>
+  <span class="signature">&#8596; FileData</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="fileDataAck" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/fileDataAck.html">fileDataAck</a></span>
+  <span class="signature">&#8596; FileDataAck</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="fileFetch" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/fileFetch.html">fileFetch</a></span>
+  <span class="signature">&#8596; FileFetchRequest</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="fileOffer" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/fileOffer.html">fileOffer</a></span>
+  <span class="signature">&#8596; FileOffer</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="groupSync" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/groupSync.html">groupSync</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/GroupSync-class.html">GroupSync</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="hashCode" class="property inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/hashCode.html">hashCode</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  Calculates a hash code based on the contents of the protobuf.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="heartbeat" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/heartbeat.html">heartbeat</a></span>
+  <span class="signature">&#8596; Heartbeat</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="hello" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/hello.html">hello</a></span>
+  <span class="signature">&#8596; Hello</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="id" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/id.html">id</a></span>
+  <span class="signature">&#8596; <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="info_" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/info_.html">info_</a></span>
+  <span class="signature">&#8594; <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/BuilderInfo-class.html">BuilderInfo</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">no setter</span><span class="feature">override</span></div>
+
+</dd>
+
+        <dt id="isFrozen" class="property inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/isFrozen.html">isFrozen</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns <code>true</code> if this message is marked read-only. Otherwise <code>false</code>.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="linkAuth" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/linkAuth.html">linkAuth</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/LinkAuth-class.html">LinkAuth</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="profileUpdate" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/profileUpdate.html">profileUpdate</a></span>
+  <span class="signature">&#8596; ProfileUpdate</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="reaction" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/reaction.html">reaction</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/ReactionUpdate-class.html">ReactionUpdate</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="readReceipt" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/readReceipt.html">readReceipt</a></span>
+  <span class="signature">&#8596; <a href="../littlelaw_core/ReadReceipt-class.html">ReadReceipt</a></span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="runtimeType" class="property inherited">
+  <span class="name"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object/runtimeType.html">runtimeType</a></span>
+  <span class="signature">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/Type-class.html">Type</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  A representation of the runtime type of the object.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="syncAck" class="property">
+  <span class="name"><a href="../littlelaw_core/Envelope/syncAck.html">syncAck</a></span>
+  <span class="signature">&#8596; SyncAck</span>
+  
+
+</dt>
+<dd>
+  
+  <div class="features"><span class="feature">getter/setter pair</span></div>
+
+</dd>
+
+        <dt id="unknownFields" class="property inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/unknownFields.html">unknownFields</a></span>
+  <span class="signature">&#8594; <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/UnknownFieldSet-class.html">UnknownFieldSet</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+
+    
+  <section
+      class="summary offset-anchor"
+      id="instance-methods">
+    <h2>Methods</h2>
+    <dl class="callables">
+        <dt id="addExtension" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/addExtension.html">addExtension</a></span><span class="signature">(<wbr><span class="parameter" id="addExtension-param-extension"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/Extension-class.html">Extension</a></span> <span class="parameter-name">extension</span>, </span><span class="parameter" id="addExtension-param-value"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object-class.html">Object</a>?</span> <span class="parameter-name">value</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Adds an extension field value to a repeated field.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="check" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/check.html">check</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Throws a <a href="https://api.dart.dev/stable/3.12.2/dart-core/StateError-class.html">StateError</a> if the message has required fields without a value.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="clear" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/clear.html">clear</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Clears all data that was set in this message.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="clearCallAnswer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearCallAnswer.html">clearCallAnswer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearCallCandidate" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearCallCandidate.html">clearCallCandidate</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearCallEnd" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearCallEnd.html">clearCallEnd</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearCallOffer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearCallOffer.html">clearCallOffer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearChat" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearChat.html">clearChat</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearChatDeleted" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearChatDeleted.html">clearChatDeleted</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearClipboard" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearClipboard.html">clearClipboard</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearExtension" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/clearExtension.html">clearExtension</a></span><span class="signature">(<wbr><span class="parameter" id="clearExtension-param-extension"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/Extension-class.html">Extension</a></span> <span class="parameter-name">extension</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Clears an extension field and also removes the extension.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="clearField" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/clearField.html">clearField</a></span><span class="signature">(<wbr><span class="parameter" id="clearField-param-tagNumber"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">tagNumber</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Clears the contents of a given field.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="clearFileAnswer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearFileAnswer.html">clearFileAnswer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearFileCancel" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearFileCancel.html">clearFileCancel</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearFileData" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearFileData.html">clearFileData</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearFileDataAck" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearFileDataAck.html">clearFileDataAck</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearFileFetch" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearFileFetch.html">clearFileFetch</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearFileOffer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearFileOffer.html">clearFileOffer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearGroupSync" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearGroupSync.html">clearGroupSync</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearHeartbeat" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearHeartbeat.html">clearHeartbeat</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearHello" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearHello.html">clearHello</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearId" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearId.html">clearId</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearLinkAuth" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearLinkAuth.html">clearLinkAuth</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearPayload" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearPayload.html">clearPayload</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearProfileUpdate" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearProfileUpdate.html">clearProfileUpdate</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearReaction" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearReaction.html">clearReaction</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearReadReceipt" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearReadReceipt.html">clearReadReceipt</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clearSyncAck" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/clearSyncAck.html">clearSyncAck</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="clone" class="callable">
+  <span class="name deprecated"><a class="deprecated" href="../littlelaw_core/Envelope/clone.html">clone</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/Envelope-class.html">Envelope</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates a deep copy of the fields in this message.
+  <div class="features"><span class="feature">override</span></div>
+
+</dd>
+
+        <dt id="copyWith" class="callable">
+  <span class="name deprecated"><a class="deprecated" href="../littlelaw_core/Envelope/copyWith.html">copyWith</a></span><span class="signature">(<wbr><span class="parameter" id="copyWith-param-updates"><span class="type-annotation">void</span> <span class="parameter-name">updates</span>(<span class="parameter" id="param-"><span class="type-annotation"><a href="../littlelaw_core/Envelope-class.html">Envelope</a></span></span>)</span>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/Envelope-class.html">Envelope</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Apply <code>updates</code> to a copy of this message.
+  <div class="features"><span class="feature">override</span></div>
+
+</dd>
+
+        <dt id="createEmptyInstance" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/createEmptyInstance.html">createEmptyInstance</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/Envelope-class.html">Envelope</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Creates an empty instance of the same message type as this.
+  <div class="features"><span class="feature">override</span></div>
+
+</dd>
+
+        <dt id="deepCopy" class="callable">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessageGenericExtensions/deepCopy.html">deepCopy</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; T</span>
+  </span>
+  
+
+</dt>
+<dd>
+      <p class="from-extension">
+        <span>Available on T,
+        provided by the <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessageGenericExtensions.html">GeneratedMessageGenericExtensions</a> extension</span>
+      </p>
+  Returns a writable deep copy of this message.
+  
+
+</dd>
+
+        <dt id="ensureCallAnswer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureCallAnswer.html">ensureCallAnswer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/CallAnswer-class.html">CallAnswer</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureCallCandidate" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureCallCandidate.html">ensureCallCandidate</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/CallCandidate-class.html">CallCandidate</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureCallEnd" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureCallEnd.html">ensureCallEnd</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/CallEnd-class.html">CallEnd</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureCallOffer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureCallOffer.html">ensureCallOffer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/CallOffer-class.html">CallOffer</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureChat" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureChat.html">ensureChat</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; ChatMessage</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureChatDeleted" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureChatDeleted.html">ensureChatDeleted</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; ChatDeleted</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureClipboard" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureClipboard.html">ensureClipboard</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; ClipboardSync</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureFileAnswer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureFileAnswer.html">ensureFileAnswer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; FileAnswer</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureFileCancel" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureFileCancel.html">ensureFileCancel</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; FileCancel</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureFileData" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureFileData.html">ensureFileData</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; FileData</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureFileDataAck" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureFileDataAck.html">ensureFileDataAck</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; FileDataAck</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureFileFetch" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureFileFetch.html">ensureFileFetch</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; FileFetchRequest</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureFileOffer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureFileOffer.html">ensureFileOffer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; FileOffer</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureGroupSync" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureGroupSync.html">ensureGroupSync</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/GroupSync-class.html">GroupSync</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureHeartbeat" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureHeartbeat.html">ensureHeartbeat</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; Heartbeat</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureHello" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureHello.html">ensureHello</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; Hello</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureLinkAuth" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureLinkAuth.html">ensureLinkAuth</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/LinkAuth-class.html">LinkAuth</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureProfileUpdate" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureProfileUpdate.html">ensureProfileUpdate</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; ProfileUpdate</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureReaction" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureReaction.html">ensureReaction</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/ReactionUpdate-class.html">ReactionUpdate</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureReadReceipt" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureReadReceipt.html">ensureReadReceipt</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/ReadReceipt-class.html">ReadReceipt</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="ensureSyncAck" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/ensureSyncAck.html">ensureSyncAck</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; SyncAck</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="extensionsAreInitialized" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/extensionsAreInitialized.html">extensionsAreInitialized</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="freeze" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/freeze.html">freeze</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage-class.html">GeneratedMessage</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Make this message read-only.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getDefaultForField" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/getDefaultForField.html">getDefaultForField</a></span><span class="signature">(<wbr><span class="parameter" id="getDefaultForField-param-tagNumber"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">tagNumber</span></span>)
+    <span class="returntype parameter">&#8594; dynamic</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns the default value for the given field.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getExtension" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/getExtension.html">getExtension</a></span><span class="signature">(<wbr><span class="parameter" id="getExtension-param-extension"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/Extension-class.html">Extension</a></span> <span class="parameter-name">extension</span></span>)
+    <span class="returntype parameter">&#8594; dynamic</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns the value of <code>extension</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getField" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/getField.html">getField</a></span><span class="signature">(<wbr><span class="parameter" id="getField-param-tagNumber"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">tagNumber</span></span>)
+    <span class="returntype parameter">&#8594; dynamic</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns the value of the field associated with <code>tagNumber</code>, or the
+default value if it is not set.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getFieldOrNull" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/getFieldOrNull.html">getFieldOrNull</a></span><span class="signature">(<wbr><span class="parameter" id="getFieldOrNull-param-tagNumber"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">tagNumber</span></span>)
+    <span class="returntype parameter">&#8594; dynamic</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns the value of a field, ignoring any defaults.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="getTagNumber" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/getTagNumber.html">getTagNumber</a></span><span class="signature">(<wbr><span class="parameter" id="getTagNumber-param-fieldName"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span> <span class="parameter-name">fieldName</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="hasCallAnswer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasCallAnswer.html">hasCallAnswer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasCallCandidate" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasCallCandidate.html">hasCallCandidate</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasCallEnd" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasCallEnd.html">hasCallEnd</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasCallOffer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasCallOffer.html">hasCallOffer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasChat" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasChat.html">hasChat</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasChatDeleted" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasChatDeleted.html">hasChatDeleted</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasClipboard" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasClipboard.html">hasClipboard</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasExtension" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/hasExtension.html">hasExtension</a></span><span class="signature">(<wbr><span class="parameter" id="hasExtension-param-extension"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/Extension-class.html">Extension</a></span> <span class="parameter-name">extension</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns <code>true</code> if a value of <code>extension</code> is present.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="hasField" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/hasField.html">hasField</a></span><span class="signature">(<wbr><span class="parameter" id="hasField-param-tagNumber"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">tagNumber</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Whether this message has a field associated with <code>tagNumber</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="hasFileAnswer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasFileAnswer.html">hasFileAnswer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasFileCancel" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasFileCancel.html">hasFileCancel</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasFileData" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasFileData.html">hasFileData</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasFileDataAck" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasFileDataAck.html">hasFileDataAck</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasFileFetch" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasFileFetch.html">hasFileFetch</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasFileOffer" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasFileOffer.html">hasFileOffer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasGroupSync" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasGroupSync.html">hasGroupSync</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasHeartbeat" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasHeartbeat.html">hasHeartbeat</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasHello" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasHello.html">hasHello</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasId" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasId.html">hasId</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasLinkAuth" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasLinkAuth.html">hasLinkAuth</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasProfileUpdate" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasProfileUpdate.html">hasProfileUpdate</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasReaction" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasReaction.html">hasReaction</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasReadReceipt" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasReadReceipt.html">hasReadReceipt</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="hasRequiredFields" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/hasRequiredFields.html">hasRequiredFields</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Whether the message has required fields.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="hasSyncAck" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/hasSyncAck.html">hasSyncAck</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="isInitialized" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/isInitialized.html">isInitialized</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Whether all required fields in the message and embedded messages are set.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="mergeFromBuffer" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeFromBuffer.html">mergeFromBuffer</a></span><span class="signature">(<wbr><span class="parameter" id="mergeFromBuffer-param-input"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span>&gt;</span></span> <span class="parameter-name">input</span>, [</span><span class="parameter" id="mergeFromBuffer-param-extensionRegistry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/ExtensionRegistry-class.html">ExtensionRegistry</a></span> <span class="parameter-name">extensionRegistry</span> = <span class="default-value">ExtensionRegistry.EMPTY</span></span>])
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Merges serialized protocol buffer data into this message.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="mergeFromCodedBufferReader" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeFromCodedBufferReader.html">mergeFromCodedBufferReader</a></span><span class="signature">(<wbr><span class="parameter" id="mergeFromCodedBufferReader-param-input"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/CodedBufferReader-class.html">CodedBufferReader</a></span> <span class="parameter-name">input</span>, [</span><span class="parameter" id="mergeFromCodedBufferReader-param-extensionRegistry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/ExtensionRegistry-class.html">ExtensionRegistry</a></span> <span class="parameter-name">extensionRegistry</span> = <span class="default-value">ExtensionRegistry.EMPTY</span></span>])
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Same as <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeFromBuffer.html">mergeFromBuffer</a>, but takes a <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/CodedBufferReader-class.html">CodedBufferReader</a> input.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="mergeFromJson" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeFromJson.html">mergeFromJson</a></span><span class="signature">(<wbr><span class="parameter" id="mergeFromJson-param-data"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span> <span class="parameter-name">data</span>, [</span><span class="parameter" id="mergeFromJson-param-extensionRegistry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/ExtensionRegistry-class.html">ExtensionRegistry</a></span> <span class="parameter-name">extensionRegistry</span> = <span class="default-value">ExtensionRegistry.EMPTY</span></span>])
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Merges field values from <code>data</code>, a JSON object, encoded as described by
+<a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/writeToJson.html">GeneratedMessage.writeToJson</a>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="mergeFromJsonMap" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeFromJsonMap.html">mergeFromJsonMap</a></span><span class="signature">(<wbr><span class="parameter" id="mergeFromJsonMap-param-json"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Map-class.html">Map</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span>, <span class="type-parameter">dynamic</span>&gt;</span></span> <span class="parameter-name">json</span>, [</span><span class="parameter" id="mergeFromJsonMap-param-extensionRegistry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/ExtensionRegistry-class.html">ExtensionRegistry</a></span> <span class="parameter-name">extensionRegistry</span> = <span class="default-value">ExtensionRegistry.EMPTY</span></span>])
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Merges field values from a JSON object represented as a Dart map.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="mergeFromMessage" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeFromMessage.html">mergeFromMessage</a></span><span class="signature">(<wbr><span class="parameter" id="mergeFromMessage-param-other"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage-class.html">GeneratedMessage</a></span> <span class="parameter-name">other</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Merges the contents of the <code>other</code> into this message.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="mergeFromProto3Json" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeFromProto3Json.html">mergeFromProto3Json</a></span><span class="signature">(<wbr><span class="parameter" id="mergeFromProto3Json-param-json"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object-class.html">Object</a>?</span> <span class="parameter-name">json</span>, {</span><span class="parameter" id="mergeFromProto3Json-param-typeRegistry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/TypeRegistry-class.html">TypeRegistry</a></span> <span class="parameter-name">typeRegistry</span> = <span class="default-value">const TypeRegistry.empty()</span>, </span><span class="parameter" id="mergeFromProto3Json-param-ignoreUnknownFields"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">ignoreUnknownFields</span> = <span class="default-value">false</span>, </span><span class="parameter" id="mergeFromProto3Json-param-supportNamesWithUnderscores"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">supportNamesWithUnderscores</span> = <span class="default-value">true</span>, </span><span class="parameter" id="mergeFromProto3Json-param-permissiveEnums"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">permissiveEnums</span> = <span class="default-value">false</span></span>})
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Merges field values from <code>json</code>, a JSON object using proto3 encoding.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="mergeUnknownFields" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/mergeUnknownFields.html">mergeUnknownFields</a></span><span class="signature">(<wbr><span class="parameter" id="mergeUnknownFields-param-unknownFieldSet"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/UnknownFieldSet-class.html">UnknownFieldSet</a></span> <span class="parameter-name">unknownFieldSet</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="noSuchMethod" class="callable inherited">
+  <span class="name"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object/noSuchMethod.html">noSuchMethod</a></span><span class="signature">(<wbr><span class="parameter" id="noSuchMethod-param-invocation"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Invocation-class.html">Invocation</a></span> <span class="parameter-name">invocation</span></span>)
+    <span class="returntype parameter">&#8594; dynamic</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Invoked when a nonexistent method or property is accessed.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="rebuild" class="callable">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessageGenericExtensions/rebuild.html">rebuild</a></span><span class="signature">(<wbr><span class="parameter" id="rebuild-param-updates"><span class="type-annotation">void</span> <span class="parameter-name">updates</span>(<span class="parameter" id="param-"><span class="type-annotation">T</span></span>)</span>)
+    <span class="returntype parameter">&#8594; T</span>
+  </span>
+  
+
+</dt>
+<dd>
+      <p class="from-extension">
+        <span>Available on T,
+        provided by the <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessageGenericExtensions.html">GeneratedMessageGenericExtensions</a> extension</span>
+      </p>
+  Apply <code>updates</code> to a copy of this message.
+  
+
+</dd>
+
+        <dt id="setExtension" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/setExtension.html">setExtension</a></span><span class="signature">(<wbr><span class="parameter" id="setExtension-param-extension"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/Extension-class.html">Extension</a></span> <span class="parameter-name">extension</span>, </span><span class="parameter" id="setExtension-param-value"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object-class.html">Object</a></span> <span class="parameter-name">value</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Sets the value of a non-repeated extension field to <code>value</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="setField" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/setField.html">setField</a></span><span class="signature">(<wbr><span class="parameter" id="setField-param-tagNumber"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/int-class.html">int</a></span> <span class="parameter-name">tagNumber</span>, </span><span class="parameter" id="setField-param-value"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object-class.html">Object</a></span> <span class="parameter-name">value</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Sets the value of a field by its <code>tagNumber</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="toBuilder" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/toBuilder.html">toBuilder</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage-class.html">GeneratedMessage</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Creates a writable, shallow copy of this message.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="toDebugString" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/toDebugString.html">toDebugString</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns a <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a> representation of this message.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="toProto3Json" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/toProto3Json.html">toProto3Json</a></span><span class="signature">(<wbr>{<span class="parameter" id="toProto3Json-param-typeRegistry"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/TypeRegistry-class.html">TypeRegistry</a></span> <span class="parameter-name">typeRegistry</span> = <span class="default-value">const TypeRegistry.empty()</span></span>})
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/Object-class.html">Object</a>?</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns an Object representing Proto3 JSON serialization of <code>this</code>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="toString" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/toString.html">toString</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns a <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a> representation of this message.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="toTextFormat" class="callable">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/TextFormatExtension/toTextFormat.html">toTextFormat</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+      <p class="from-extension">
+        <span>Available on <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage-class.html">GeneratedMessage</a>,
+        provided by the <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/TextFormatExtension.html">TextFormatExtension</a> extension</span>
+      </p>
+  Returns a TextFormat <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a> representation of this message.
+  
+
+</dd>
+
+        <dt id="whichPayload" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/whichPayload.html">whichPayload</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; Envelope_Payload</span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="writeTextFormat" class="callable">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/TextFormatExtension/writeTextFormat.html">writeTextFormat</a></span><span class="signature">(<wbr><span class="parameter" id="writeTextFormat-param-sink"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/StringSink-class.html">StringSink</a></span> <span class="parameter-name">sink</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+      <p class="from-extension">
+        <span>Available on <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage-class.html">GeneratedMessage</a>,
+        provided by the <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/TextFormatExtension.html">TextFormatExtension</a> extension</span>
+      </p>
+  Writes a TextFormat <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a> representation of this message to <code>sink</code>.
+  
+
+</dd>
+
+        <dt id="writeToBuffer" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/writeToBuffer.html">writeToBuffer</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-typed_data/Uint8List-class.html">Uint8List</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Serialize the message as the protobuf binary format.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="writeToCodedBufferWriter" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/writeToCodedBufferWriter.html">writeToCodedBufferWriter</a></span><span class="signature">(<wbr><span class="parameter" id="writeToCodedBufferWriter-param-output"><span class="type-annotation"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/CodedBufferWriter-class.html">CodedBufferWriter</a></span> <span class="parameter-name">output</span></span>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Same as <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/writeToBuffer.html">writeToBuffer</a>, but serializes to the given <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/CodedBufferWriter-class.html">CodedBufferWriter</a>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="writeToJson" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/writeToJson.html">writeToJson</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns a JSON string that encodes this message.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="writeToJsonMap" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/writeToJsonMap.html">writeToJsonMap</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/Map-class.html">Map</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.dart.dev/stable/3.12.2/dart-core/String-class.html">String</a></span>, <span class="type-parameter">dynamic</span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Returns the JSON encoding of this message as a Dart <a href="https://api.dart.dev/stable/3.12.2/dart-core/Map-class.html">Map</a>.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+    
+  <section
+      class="summary offset-anchor inherited"
+      id="operators">
+    <h2>Operators</h2>
+    <dl class="callables">
+        <dt id="operator ==" class="callable inherited">
+  <span class="name"><a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage/operator_equals.html">operator ==</a></span><span class="signature">(<wbr><span class="parameter" id="==-param-other"><span class="type-annotation"><a href="https://api.dart.dev/stable/3.12.2/dart-core/Object-class.html">Object</a></span> <span class="parameter-name">other</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.dart.dev/stable/3.12.2/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  The equality operator.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+    
+    
+  <section class="summary offset-anchor" id="static-methods">
+    <h2>Static Methods</h2>
+    <dl class="callables">
+        <dt id="$_createMessage" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/$_createMessage.html">$_createMessage</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://pub.dev/documentation/protobuf/6.1.0/protobuf/GeneratedMessage-class.html">GeneratedMessage</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="create" class="callable">
+  <span class="name deprecated"><a class="deprecated" href="../littlelaw_core/Envelope/create.html">create</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/Envelope-class.html">Envelope</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+        <dt id="getDefault" class="callable">
+  <span class="name"><a href="../littlelaw_core/Envelope/getDefault.html">getDefault</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="../littlelaw_core/Envelope-class.html">Envelope</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+    </dl>
+  </section>
+    
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">littlelaw_core</a></li>
+    <li><a href="../littlelaw_core/">littlelaw_core</a></li>
+    <li class="self-crumb">Envelope class</li>
+</ol>
+
+    <h5>littlelaw_core library</h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div>
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+  </div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    littlelaw_core
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

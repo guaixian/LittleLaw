@@ -151,11 +151,15 @@ class DiscoveryPacket extends $pb.GeneratedMessage {
     $core.int? magic,
     DeviceInfo? device,
     $fixnum.Int64? timestampMs,
+    $core.List<$core.int>? certDer,
+    $core.List<$core.int>? signature,
   }) {
     final result = DiscoveryPacket._();
     if (magic != null) result.magic = magic;
     if (device != null) result.device = device;
     if (timestampMs != null) result.timestampMs = timestampMs;
+    if (certDer != null) result.certDer = certDer;
+    if (signature != null) result.signature = signature;
     return result;
   }
 
@@ -176,6 +180,10 @@ class DiscoveryPacket extends $pb.GeneratedMessage {
     ..aOM<DeviceInfo>(2, _omitFieldNames ? '' : 'device',
         subBuilder: DeviceInfo.$_createMessage)
     ..aInt64(3, _omitFieldNames ? '' : 'timestampMs')
+    ..a<$core.List<$core.int>>(
+        4, _omitFieldNames ? '' : 'certDer', $pb.PbFieldType.OY)
+    ..a<$core.List<$core.int>>(
+        5, _omitFieldNames ? '' : 'signature', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -228,6 +236,24 @@ class DiscoveryPacket extends $pb.GeneratedMessage {
   $core.bool hasTimestampMs() => $_has(2);
   @$pb.TagNumber(3)
   void clearTimestampMs() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get certDer => $_getN(3);
+  @$pb.TagNumber(4)
+  set certDer($core.List<$core.int> value) => $_setBytes(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasCertDer() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCertDer() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.List<$core.int> get signature => $_getN(4);
+  @$pb.TagNumber(5)
+  set signature($core.List<$core.int> value) => $_setBytes(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasSignature() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearSignature() => $_clearField(5);
 }
 
 class DeliverAnswerRequest extends $pb.GeneratedMessage {

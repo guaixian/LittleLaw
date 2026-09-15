@@ -562,5 +562,6 @@ class PairingManager extends pbg.PairingServiceBase {
 
 /// 发现层协议常量(避免循环依赖)。
 class DiscoveryProtocol {
-  static const version = '1';
+  /// v2:发现层宣告强制签名 + 时间戳新鲜度校验(v1 明文已弃用)。
+  static const version = '2';
 }

@@ -35,6 +35,8 @@ message DiscoveryPacket {
   fixed32 magic = 1;        // 协议指纹 "LLAW" = 0x4C4C4157,不匹配直接丢弃
   DeviceInfo device = 2;
   int64 timestamp_ms = 3;
+  bytes cert_der = 4;       // 宣告者证书 DER(接收方取公钥验签,防伪造)
+  bytes signature = 5;      // ECDSA-P256(SHA-256(timestamp||device)) r||s
 }
 
 // 局域网 OOB 引导内容(二维码/NFC NDEF 文本载荷,JSON 编码):

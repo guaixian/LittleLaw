@@ -390,7 +390,7 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
                 subtitle: Text(
                   d.info.deviceModel.isNotEmpty
                       ? d.info.deviceModel
-                      : d.info.platform,
+                      : (d.info.platform.isNotEmpty ? d.info.platform : d.host),
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: FilledButton.tonal(

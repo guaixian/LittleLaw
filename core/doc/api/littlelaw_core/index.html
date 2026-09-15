@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="littlelaw_core library API docs, for the Dart programming language.">
+  <title>littlelaw_core library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../index.html">littlelaw_core</a></li>
+    <li class="self-crumb">littlelaw_core.dart</li>
+  </ol>
+  <div class="self-name">littlelaw_core</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content"
+    class="main-content"
+    data-above-sidebar=""
+    data-below-sidebar="littlelaw_core&#47;littlelaw_core-library-sidebar.html">
+  
+    <div>
+      
+
+      <h1>
+        <span class="kind-library">littlelaw_core</span>
+        library 
+ 
+
+      </h1>
+    </div>
+
+    
+<section class="desc markdown">
+  <p>LittleLaw 核心引擎:局域网 NoServer 端到端加密通讯。</p>
+<p>架构:</p>
+<ul>
+<li>每个设备 = gRPC Server + Client,固定端口,TLS + 证书指纹 pinning;</li>
+<li>发现:UDP 组播 + 子网扫描;</li>
+<li>配对:TOFU + 6 位 PIN(SAS)人工核对,签发共享会话令牌;</li>
+<li>同步:1:1 会话 ops 日志 + Lamport 时钟,删除双端同步(Telegram 模式);</li>
+<li>文件:元数据走消息通道,数据由接收方拉取,断点续传 + SHA-256 校验。</li>
+</ul>
+</section>
+
+
+    <section class="summary offset-anchor" id="classes">
+      <h2>Classes</h2>
+      <dl>
+          <dt id="Auth">
+  <span class="name "><a href="../littlelaw_core/Auth-class.html">Auth</a></span> 
+
+</dt>
+<dd>
+  应用层鉴权:共享会话令牌(配对时经 PIN 验证的通道协商)。
+</dd>
+
+          <dt id="BackupCodec">
+  <span class="name "><a href="../littlelaw_core/BackupCodec-class.html">BackupCodec</a></span> 
+
+</dt>
+<dd>
+  备份文件加密封装(口令派生密钥)。
+</dd>
+
+          <dt id="Base45">
+  <span class="name "><a href="../littlelaw_core/Base45-class.html">Base45</a></span> 
+
+</dt>
+<dd>
+  Base45 编解码(RFC 9285)。
+</dd>
+
+          <dt id="CallAnswer">
+  <span class="name "><a href="../littlelaw_core/CallAnswer-class.html">CallAnswer</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="CallAnswerReceived">
+  <span class="name "><a href="../littlelaw_core/CallAnswerReceived-class.html">CallAnswerReceived</a></span> 
+
+</dt>
+<dd>
+  收到通话应答。
+</dd>
+
+          <dt id="CallCandidate">
+  <span class="name "><a href="../littlelaw_core/CallCandidate-class.html">CallCandidate</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="CallCandidateReceived">
+  <span class="name "><a href="../littlelaw_core/CallCandidateReceived-class.html">CallCandidateReceived</a></span> 
+
+</dt>
+<dd>
+  收到通话 ICE 候选。
+</dd>
+
+          <dt id="CallEnd">
+  <span class="name "><a href="../littlelaw_core/CallEnd-class.html">CallEnd</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="CallEndReceived">
+  <span class="name "><a href="../littlelaw_core/CallEndReceived-class.html">CallEndReceived</a></span> 
+
+</dt>
+<dd>
+  收到通话结束(挂断/拒绝/失败)。
+</dd>
+
+          <dt id="CallOffer">
+  <span class="name "><a href="../littlelaw_core/CallOffer-class.html">CallOffer</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="CallOfferReceived">
+  <span class="name "><a href="../littlelaw_core/CallOfferReceived-class.html">CallOfferReceived</a></span> 
+
+</dt>
+<dd>
+  收到通话发起。
+</dd>
+
+          <dt id="ClipboardReceived">
+  <span class="name "><a href="../littlelaw_core/ClipboardReceived-class.html">ClipboardReceived</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="ConvSummary">
+  <span class="name "><a href="../littlelaw_core/ConvSummary-class.html">ConvSummary</a></span> 
+
+</dt>
+<dd>
+  会话摘要(最近会话列表)。
+</dd>
+
+          <dt id="DiscoveredDevice">
+  <span class="name "><a href="../littlelaw_core/DiscoveredDevice-class.html">DiscoveredDevice</a></span> 
+
+</dt>
+<dd>
+  发现到的局域网设备。
+</dd>
+
+          <dt id="EngineEvent">
+  <span class="name "><a href="../littlelaw_core/EngineEvent-class.html">EngineEvent</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="Envelope">
+  <span class="name "><a href="../littlelaw_core/Envelope-class.html">Envelope</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="FileCancelled">
+  <span class="name "><a href="../littlelaw_core/FileCancelled-class.html">FileCancelled</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="FileDataAcked">
+  <span class="name "><a href="../littlelaw_core/FileDataAcked-class.html">FileDataAcked</a></span> 
+
+</dt>
+<dd>
+  收到信封式文件数据回执(窗口背压)。
+</dd>
+
+          <dt id="FileDataReceived">
+  <span class="name "><a href="../littlelaw_core/FileDataReceived-class.html">FileDataReceived</a></span> 
+
+</dt>
+<dd>
+  收到信封式文件数据帧。
+</dd>
+
+          <dt id="FileFetchRequested">
+  <span class="name "><a href="../littlelaw_core/FileFetchRequested-class.html">FileFetchRequested</a></span> 
+
+</dt>
+<dd>
+  对端请求拉取文件(信封式,传输层无关,WebRTC 链路等场景使用)。
+</dd>
+
+          <dt id="FileMessageArrived">
+  <span class="name "><a href="../littlelaw_core/FileMessageArrived-class.html">FileMessageArrived</a></span> 
+
+</dt>
+<dd>
+  文件消息到达(供传输层决定是否自动拉取)。
+</dd>
+
+          <dt id="FileVault">
+  <span class="name "><a href="../littlelaw_core/FileVault-class.html">FileVault</a></span> 
+
+</dt>
+<dd>
+  文件落盘加密:收到的图片/视频/语音/文件以密文形式存放在收件目录,
+防止文件被直接拷走(共享目录、网盘同步、备份泄露等场景)。
+</dd>
+
+          <dt id="Group">
+  <span class="name "><a href="../littlelaw_core/Group-class.html">Group</a></span> 
+
+</dt>
+<dd>
+  群聊。
+</dd>
+
+          <dt id="GroupSync">
+  <span class="name "><a href="../littlelaw_core/GroupSync-class.html">GroupSync</a></span> 
+
+</dt>
+<dd>
+  群定义:建群或修改群时扇出给全体成员 + 我的设备。
+</dd>
+
+          <dt id="GroupSynced">
+  <span class="name "><a href="../littlelaw_core/GroupSynced-class.html">GroupSynced</a></span> 
+
+</dt>
+<dd>
+  收到群定义(建群/改群/解散)。
+</dd>
+
+          <dt id="Identity">
+  <span class="name "><a href="../littlelaw_core/Identity-class.html">Identity</a></span> 
+
+</dt>
+<dd>
+  设备身份:首次启动生成,终身不变。
+</dd>
+
+          <dt id="LanOobPayload">
+  <span class="name "><a href="../littlelaw_core/LanOobPayload-class.html">LanOobPayload</a></span> 
+
+</dt>
+<dd>
+  局域网 OOB 载荷(二维码 / NFC NDEF 文本):读取方拿到地址与一次性
+tap 令牌后,直连对方 gRPC 并调 PairWithTap 完成免 PIN 配对。
+</dd>
+
+          <dt id="LinkAuth">
+  <span class="name "><a href="../littlelaw_core/LinkAuth-class.html">LinkAuth</a></span> 
+
+</dt>
+<dd>
+  外部传输链路(WebRTC DataChannel 等)的第一个信封:
+携带设备 ID + 配对令牌,等价于 gRPC 元数据鉴权。校验不过立即断链。
+</dd>
+
+          <dt id="LittleLawEngine">
+  <span class="name "><a href="../littlelaw_core/LittleLawEngine-class.html">LittleLawEngine</a></span> 
+
+</dt>
+<dd>
+  引擎门面:Flutter UI 只与这个类交互。
+</dd>
+
+          <dt id="Message">
+  <span class="name "><a href="../littlelaw_core/Message-class.html">Message</a></span> 
+
+</dt>
+<dd>
+  聊天消息(两端内容一致;file_path/file_state 为本端簿记,不同步)。
+</dd>
+
+          <dt id="MessageAdded">
+  <span class="name "><a href="../littlelaw_core/MessageAdded-class.html">MessageAdded</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="MessagesDeleted">
+  <span class="name "><a href="../littlelaw_core/MessagesDeleted-class.html">MessagesDeleted</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="MessageStateChanged">
+  <span class="name "><a href="../littlelaw_core/MessageStateChanged-class.html">MessageStateChanged</a></span> 
+
+</dt>
+<dd>
+  本端消息发送状态变化(发送中/成功/失败)。
+</dd>
+
+          <dt id="OobBlob">
+  <span class="name "><a href="../littlelaw_core/OobBlob-class.html">OobBlob</a></span> 
+
+</dt>
+<dd>
+  OOB(带外)引导包:通过二维码 / NFC / 复制粘贴等带外通道交换,
+用于远程配对与 WebRTC 信令。物理/人工通道天然抗中间人,
+包内证书指纹成为之后所有连接的信任锚。
+</dd>
+
+          <dt id="PairRequestEvent">
+  <span class="name "><a href="../littlelaw_core/PairRequestEvent-class.html">PairRequestEvent</a></span> 
+
+</dt>
+<dd>
+  待用户批准的配对请求(UI 弹出 PIN 核对框)。
+</dd>
+
+          <dt id="PairResult">
+  <span class="name "><a href="../littlelaw_core/PairResult-class.html">PairResult</a></span> 
+
+</dt>
+<dd>
+  主动发起配对的结果。
+</dd>
+
+          <dt id="Peer">
+  <span class="name "><a href="../littlelaw_core/Peer-class.html">Peer</a></span> 
+
+</dt>
+<dd>
+  已配对(可信)设备。
+</dd>
+
+          <dt id="PeerStatusChanged">
+  <span class="name "><a href="../littlelaw_core/PeerStatusChanged-class.html">PeerStatusChanged</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="ProfileUpdated">
+  <span class="name "><a href="../littlelaw_core/ProfileUpdated-class.html">ProfileUpdated</a></span> 
+
+</dt>
+<dd>
+  对端资料(名称/头像)到达。
+</dd>
+
+          <dt id="QrChunker">
+  <span class="name "><a href="../littlelaw_core/QrChunker-class.html">QrChunker</a></span> 
+
+</dt>
+<dd>
+  分片二维码工具:超长内容切成多个小帧,每帧都是独立可扫的小二维码,
+接收方逐帧扫描后按序拼回原内容。
+</dd>
+
+          <dt id="QrReassembler">
+  <span class="name "><a href="../littlelaw_core/QrReassembler-class.html">QrReassembler</a></span> 
+
+</dt>
+<dd>
+  重组器:收集帧直到齐套,输出原内容。顺序无关、可去重。
+</dd>
+
+          <dt id="ReactionsChanged">
+  <span class="name "><a href="../littlelaw_core/ReactionsChanged-class.html">ReactionsChanged</a></span> 
+
+</dt>
+<dd>
+  表情回应更新(单条消息)。
+</dd>
+
+          <dt id="ReactionUpdate">
+  <span class="name "><a href="../littlelaw_core/ReactionUpdate-class.html">ReactionUpdate</a></span> 
+
+</dt>
+<dd>
+  / 表情回应:单设备单 emoji 的增量更新(设/取消),天然可交换、幂等,
+/ 无需 LWW 冲突消解。emoji 为空 = 取消该设备的回应。
+</dd>
+
+          <dt id="ReadReceipt">
+  <span class="name "><a href="../littlelaw_core/ReadReceipt-class.html">ReadReceipt</a></span> 
+
+</dt>
+<dd>
+  / 已读回执:接收方告知原作者"这些消息我已读"。
+/ 原作者按 msg_id 置 read 标记(仅自己发的消息生效)。
+</dd>
+
+          <dt id="ReceiptsUpdated">
+  <span class="name "><a href="../littlelaw_core/ReceiptsUpdated-class.html">ReceiptsUpdated</a></span> 
+
+</dt>
+<dd>
+  已读回执到达(自己发出的消息被对方读了)。
+</dd>
+
+          <dt id="RendezvousClient">
+  <span class="name "><a href="../littlelaw_core/RendezvousClient-class.html">RendezvousClient</a></span> 
+
+</dt>
+<dd>
+  Rendezvous 客户端:连接可选的公网中转服务器。
+</dd>
+
+          <dt id="RendezvousMail">
+  <span class="name "><a href="../littlelaw_core/RendezvousMail-class.html">RendezvousMail</a></span> 
+
+</dt>
+<dd>
+  经服务器收到的离线信封(已解密,反序列化前)。
+</dd>
+
+          <dt id="RendezvousPeerOnline">
+  <span class="name "><a href="../littlelaw_core/RendezvousPeerOnline-class.html">RendezvousPeerOnline</a></span> 
+
+</dt>
+<dd>
+  对端上线事件(可携带公网直连端点)。
+</dd>
+
+          <dt id="RendezvousSignal">
+  <span class="name "><a href="../littlelaw_core/RendezvousSignal-class.html">RendezvousSignal</a></span> 
+
+</dt>
+<dd>
+  经服务器收到的信令(已解密)。
+</dd>
+
+          <dt id="Store">
+  <span class="name "><a href="../littlelaw_core/Store-class.html">Store</a></span> 
+
+</dt>
+<dd>
+  SQLite 持久层。同步协议见 sync_engine.dart。
+</dd>
+
+          <dt id="TransferProgress">
+  <span class="name "><a href="../littlelaw_core/TransferProgress-class.html">TransferProgress</a></span> 
+
+</dt>
+<dd>
+  传输进度事件(UI 进度条)。
+</dd>
+
+          <dt id="UpnpMapper">
+  <span class="name "><a href="../littlelaw_core/UpnpMapper-class.html">UpnpMapper</a></span> 
+
+</dt>
+<dd>
+  UPnP(IGD)端口映射:在家庭路由器上映射本机 gRPC 端口,
+获得公网直连端点,绕开 WebRTC 直接建立 gRPC 通道。
+</dd>
+
+      </dl>
+    </section>
+
+
+
+
+
+
+
+
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">littlelaw_core</a></li>
+    <li class="self-crumb">littlelaw_core.dart</li>
+</ol>
+
+    <h5><span class="package-name">littlelaw_core</span> <span class="package-kind">package</span></h5>
+    <ol>
+      <li class="section-title">Libraries</li>
+      <li><a href="../littlelaw_core/">littlelaw_core</a></li>
+</ol>
+
+  </div>
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+    <h5>littlelaw_core library</h5>
+  </div><!--/sidebar-offcanvas-right-->
+</main>
+<footer>
+  <span class="no-break">
+    littlelaw_core
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

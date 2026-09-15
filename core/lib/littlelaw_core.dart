@@ -260,9 +260,15 @@ class LittleLawEngine {
     }
 
     // 发现到可信设备 → 刷新地址并确保会话在线。
+    // 已配对设备的宣告指纹必须与本地信任记录一致(防冒充已配对身份:
+    // 同 deviceId + 不同证书的报文直接忽略)。
     engine._discoverySub = discovery.devices.listen((d) {
       final peer = store.getPeer(d.deviceId);
       if (peer != null) {
+        if (d.info.certFingerprint.isNotEmpty &&
+            d.info.certFingerprint != peer.certFingerprint) {
+          return;
+        }
         sync.notePeerAddress(peer, d.host, d.port);
       }
     });
