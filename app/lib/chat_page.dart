@@ -1078,7 +1078,9 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
         // 远程设备(WebRTC 配对,无局域网地址)且离线:提供重连入口。
+        // 已解绑的墓碑会话不再显示(对方已删除信任,重连必败)。
         if (!_isGroup &&
+            !_peerGone &&
             !_online &&
             (widget.peer.lastHost == null || widget.peer.lastHost!.isEmpty))
           IconButton(

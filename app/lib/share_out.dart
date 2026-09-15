@@ -106,7 +106,17 @@ class ShareOut {
   static Future<void> revealInFolder(String path) async {
     try {
       if (Platform.isWindows) {
-        await Process.run('explorer.exe', ['/select,', path]);
+        // explorer 的 /select 语法要求 "/select,<完整路径>" 是【单个】
+        // 参数;拆成两个参数时 explorer 无法解析,回退打开默认位置
+        // (桌面)——旧版 bug。路径统一反斜杠并先确认存在。
+        final norm = path.replaceAll('/', r'\');
+        final exists = File(norm).existsSync() || Directory(norm).existsSync();
+        if (!exists) {
+          showToast('文件不存在(可能已被清理): ${norm.split(r'\').last}',
+              type: ToastType.info);
+          return;
+        }
+        await Process.run('explorer.exe', ['/select,$norm']);
       } else if (Platform.isMacOS) {
         await Process.run('open', ['-R', path]);
       } else if (Platform.isLinux) {
@@ -114,6 +124,29 @@ class ShareOut {
         await Process.run('xdg-open', [dir]);
       }
     } catch (_) {}
+  }
+
+  /// 打开数据目录:桌面在文件管理器中定位;Android 优先经系统文件应用
+  /// 定位(仅外部存储目录可达),应用私有内部目录文件管理器无法访问,
+  /// 回退为复制路径提示;iOS 无文件管理器概念,同样复制路径。
+  static Future<void> openDataDir(String path) async {
+    if (Platform.isAndroid) {
+      try {
+        await _channel.invokeMethod('openDirectory', {'path': path});
+        return;
+      } on PlatformException catch (_) {
+        await Clipboard.setData(ClipboardData(text: path));
+        showToast('应用私有目录无法直接打开,路径已复制:\n$path',
+            type: ToastType.info);
+        return;
+      }
+    }
+    if (Platform.isIOS) {
+      await Clipboard.setData(ClipboardData(text: path));
+      showToast('路径已复制:$path', type: ToastType.info);
+      return;
+    }
+    await revealInFolder(path);
   }
 
   /// 手机:用其他应用打开(系统"打开方式"选择器)。

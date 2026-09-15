@@ -579,6 +579,13 @@ class Store {
     _db.execute('DELETE FROM lamport_watermarks WHERE conv_id=?', [convId]);
   }
 
+  /// 清除会话内的解绑墓碑系统消息:重新配对成功时调用——旧墓碑
+  /// "已与 X 解除配对…"残留会在新会话顶部冒出,误导用户。
+  void purgeTombstones(String convId) {
+    _db.execute('DELETE FROM messages WHERE conv_id=? AND kind=?',
+        [convId, Message.kindSystem]);
+  }
+
   void updateFileState(String msgId, int state, {String? filePath}) {
     if (filePath != null) {
       _db.execute('UPDATE messages SET file_state=?, file_path=? WHERE msg_id=?',

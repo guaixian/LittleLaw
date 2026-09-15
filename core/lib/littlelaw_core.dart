@@ -215,9 +215,12 @@ class LittleLawEngine {
     transfer.start();
 
     // 资料/头像同步接线:会话建立互推 + 变更广播;收到即落盘并通知 UI。
+    // 头像双档:me.png = 原图(本机显示,不压缩);me.sync.png = 同步档
+    // (≤96KB,传输用)——压缩发生在【设置头像时】(app 层生成 sync 档),
+    // 互传时直接读档,接收端展示发送方的 sync 档。
     sync.profileProvider = () {
       try {
-        final f = File('${engine.avatarDir}/me.png');
+        final f = File('${engine.avatarDir}/me.sync.png');
         if (f.existsSync() && f.lengthSync() <= 96 * 1024) {
           return pb.ProfileUpdate(
               deviceName: identity.deviceName,
@@ -587,19 +590,26 @@ class LittleLawEngine {
   String get avatarDir => '$dataDir/avatars';
 
   String myAvatarPath() => '$avatarDir/me.png';
+
+  /// 我的头像同步档(≤96KB,互传用;原图保留在 me.png 仅供本机显示)。
+  String myAvatarSyncPath() => '$avatarDir/me.sync.png';
   String peerAvatarPath(String deviceId) => '$avatarDir/peer_$deviceId.png';
   String groupAvatarPath(String groupId) => '$avatarDir/group_$groupId.png';
 
-  /// 设置我的头像(PNG ≤96KB)并广播。
-  /// 超限直接抛错而不是静默拒发(旧版超限头像经 profileProvider
-  /// 静默只发名字,对端永远收不到且双方均无提示)。
-  Future<void> setMyAvatar(List<int> pngBytes, {bool silent = false}) async {
-    if (pngBytes.length > 96 * 1024) {
-      throw StateError('头像超过 96KB 上限(当前 ${(pngBytes.length / 1024).toStringAsFixed(0)}KB),请先压缩');
+  /// 群头像同步档(扇出用;原图保留在 group_<id>.png)。
+  String groupAvatarSyncPath(String groupId) =>
+      '$avatarDir/group_$groupId.sync.png';
+
+  /// 设置我的头像:原图落 me.png(本机显示),[syncBytes] 落 me.sync.png
+  /// (互传档,由 app 层在设置时压缩生成;缺省原样落档)。
+  Future<void> setMyAvatar(List<int> pngBytes, {List<int>? syncBytes}) async {
+    if (pngBytes.length > 8 * 1024 * 1024) {
+      throw StateError('头像原图过大(${(pngBytes.length / 1048576).toStringAsFixed(1)}MB)');
     }
-    final f = File(myAvatarPath());
-    await f.parent.create(recursive: true);
-    await f.writeAsBytes(pngBytes);
+    final dir0 = File(myAvatarPath()).parent;
+    if (!dir0.existsSync()) await dir0.create(recursive: true);
+    await File(myAvatarPath()).writeAsBytes(pngBytes);
+    await File(myAvatarSyncPath()).writeAsBytes(syncBytes ?? pngBytes);
     sync.broadcastProfile();
     // 本地事件:自己的头像变更也让 UI 各处(左栏/会话列表)立即重建
     //(旧版只广播不发事件,左栏要重启才更新)。
@@ -610,24 +620,30 @@ class LittleLawEngine {
   Future<void> removeMyAvatar() async {
     final f = File(myAvatarPath());
     if (await f.exists()) await f.delete();
+    final fs = File(myAvatarSyncPath());
+    if (await fs.exists()) await fs.delete();
     sync.broadcastProfile();
     sync.emitLocal(ProfileUpdated(identity.deviceId));
   }
 
-  /// 设置群头像并扇出群定义。
-  Future<void> setGroupAvatar(String groupId, List<int> pngBytes) async {
+  /// 设置群头像:原图落 group_<id>.png,[syncBytes] 为扇出档
+  /// (设置时压缩生成)。
+  Future<void> setGroupAvatar(String groupId, List<int> pngBytes,
+      {List<int>? syncBytes}) async {
     final g = store.getGroup(groupId);
     if (g == null) return;
-    final f = File(groupAvatarPath(groupId));
-    await f.parent.create(recursive: true);
-    await f.writeAsBytes(pngBytes);
-    sync.broadcastGroupSync(g, avatarPng: pngBytes);
+    final dir0 = File(groupAvatarPath(groupId)).parent;
+    if (!dir0.existsSync()) await dir0.create(recursive: true);
+    await File(groupAvatarPath(groupId)).writeAsBytes(pngBytes);
+    await File(groupAvatarSyncPath(groupId))
+        .writeAsBytes(syncBytes ?? pngBytes);
+    sync.broadcastGroupSync(g, avatarPng: syncBytes ?? pngBytes);
   }
 
-  /// 当前群头像字节(扇出用),无则 null。
+  /// 群头像扇出字节(同步档),无则 null。
   List<int>? _groupAvatarBytes(String groupId) {
     try {
-      final f = File(groupAvatarPath(groupId));
+      final f = File(groupAvatarSyncPath(groupId));
       if (f.existsSync() && f.lengthSync() <= 96 * 1024) {
         return f.readAsBytesSync();
       }

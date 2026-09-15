@@ -455,6 +455,8 @@ class _AdaptiveHomeShellState extends State<AdaptiveHomeShell> {
       Message.kindVoice => '[${L10n.t('chat.voiceMsg')}]',
       Message.kindFile =>
         '[${L10n.t('chat.file')}] ${s.fileName ?? s.text}',
+      // 解绑墓碑:列表预览用短标签(完整句子在列表里又长又扎眼)。
+      Message.kindSystem => '[已解除配对]',
       _ => s.text,
     };
   }

@@ -98,6 +98,12 @@ class PairingManager extends pbg.PairingServiceBase {
 
   void _notifyPeersChanged() => onPeersChanged?.call();
 
+  /// 配对成功入库前清理上次解绑留下的墓碑系统消息
+  /// (旧墓碑残留会在新会话顶部冒出"已与 X 解除配对…")。
+  void _purgeTombstoneFor(String deviceId) {
+    store.purgeTombstones(Store.convIdFor(identity.deviceId, deviceId));
+  }
+
   static const _maxPending = 3;
 
   final _pending = <String, PairRequestEvent>{};
@@ -266,6 +272,7 @@ class PairingManager extends pbg.PairingServiceBase {
     // 落库令牌 = 轮换值(ECDH 派生),配对会话令牌不再兼任长期凭据。
     final rotated = rotateSessionToken(staged.token, certDer);
     final p = staged.peer;
+    _purgeTombstoneFor(p.deviceId);
     store.upsertPeer(Peer(
       deviceId: p.deviceId,
       deviceName: p.deviceName,
@@ -428,6 +435,7 @@ class PairingManager extends pbg.PairingServiceBase {
         final rotated =
             rotateSessionToken(offerToken, resp.responder.certDer);
         final r = resp.responder;
+        _purgeTombstoneFor(r.deviceId);
         store.upsertPeer(Peer(
           deviceId: r.deviceId,
           deviceName: r.deviceName,
@@ -521,6 +529,7 @@ class PairingManager extends pbg.PairingServiceBase {
           blob.certDer.isEmpty ? '' : base64Encode(blob.certDer),
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
+    _purgeTombstoneFor(peer.deviceId);
     store.upsertPeer(peer);
     _notifyPeersChanged();
     return peer;
@@ -558,6 +567,7 @@ class PairingManager extends pbg.PairingServiceBase {
           blob.certDer.isEmpty ? '' : base64Encode(blob.certDer),
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
+    _purgeTombstoneFor(peer.deviceId);
     store.upsertPeer(peer);
     _notifyPeersChanged();
     return peer;
@@ -620,6 +630,7 @@ class PairingManager extends pbg.PairingServiceBase {
 
     final offerToken = Auth.newToken();
     // 落库令牌 = ECDH 轮换值;响应里仍回原始 offer 令牌,对方轮换后一致。
+    _purgeTombstoneFor(requester.deviceId);
     store.upsertPeer(Peer(
       deviceId: requester.deviceId,
       deviceName: requester.deviceName,
@@ -667,6 +678,7 @@ class PairingManager extends pbg.PairingServiceBase {
       final offerToken = String.fromCharCodes(resp.sessionToken);
       final rotated = rotateSessionToken(offerToken, resp.responder.certDer);
       final r = resp.responder;
+      _purgeTombstoneFor(r.deviceId);
       store.upsertPeer(Peer(
         deviceId: r.deviceId,
         deviceName: r.deviceName,

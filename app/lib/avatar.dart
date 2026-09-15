@@ -62,12 +62,9 @@ class Avatars {
   static ImageProvider _provider(File f) =>
       ResizeImage.resizeIfNeeded(128, null, FileImage(f));
 
-  /// 解码原始字节并缩放为 PNG,逐步降分辨率直到 ≤96KB(信封上限,
-  /// 超过引擎会拒发头像)。返回 null 表示无法编码。
-  ///
-  /// 尺寸探测用 ImageDescriptor(只解析头部,不解码像素);旧版
-  /// instantiateImageCodec 全量解码,50MP 照片 ~200MB RGBA 低端机 OOM。
-  static Future<Uint8List?> _encodeCapped(Uint8List raw) async {
+  /// 压缩头像为 ≤96KB 的 PNG(逐步降分辨率)。设置头像时生成【同步档】,
+  /// 原图保留本地显示——压缩只发生在设置时,互传时直接读档。
+  static Future<Uint8List?> encodeCapped(Uint8List raw) async {
     const cap = 96 * 1024;
     var longest = 256;
     final buf = await ui.ImmutableBuffer.fromUint8List(raw);
@@ -93,17 +90,8 @@ class Avatars {
     }
   }
 
-  /// 选一张图片并缩放为 PNG 字节(≤96KB)。用户取消返回 null。
-  static Future<Uint8List?> pickResized() async {
-    final files = await FilePicker.pickFiles(type: FileType.image);
-    if (files.isEmpty) return null;
-    final path = files.single.path;
-    if (path == null) return null;
-    final raw = await File(path).readAsBytes();
-    return _encodeCapped(raw);
-  }
-
-  /// 选图 → 方形裁剪(拖动/缩放,圆形预览)→ 编码 ≤96KB。
+  /// 选图 → 方形裁剪(拖动/缩放,圆形预览)→ 返回 512×512 原图 PNG。
+  /// 同步档(≤96KB)由调用方经 [encodeCapped] 另行生成——原图保留本地显示。
   /// 用户在裁剪页取消返回 null。
   static Future<Uint8List?> pickAndCropped(BuildContext context) async {
     final files = await FilePicker.pickFiles(type: FileType.image);
@@ -118,17 +106,29 @@ class Avatars {
     return cropped;
   }
 
-  /// 旧版本选的头像可能超过 96KB(引擎拒发,对端永远收不到)。
-  /// 启动时检查一次:超限则原地降分辨率重存,并触发广播。
+  /// 启动维护:确保同步档 me.sync.png 存在且与原图匹配
+  /// (缺失/比原图旧/仍超 96KB 时重新生成)。
+  /// 旧版本把原图直接压成 ≤96KB 覆盖 me.png(原图丢失);双档模型下
+  /// 原图不动,只重生成同步档。
   static Future<void> ensureMyAvatarSendable(LittleLawEngine engine) async {
     try {
-      final f = File(engine.myAvatarPath());
-      if (!f.existsSync() || f.lengthSync() <= 96 * 1024) return;
-      final bytes = await _encodeCapped(f.readAsBytesSync());
+      final orig = File(engine.myAvatarPath());
+      if (!orig.existsSync()) return;
+      final sync = File(engine.myAvatarSyncPath());
+      final stale = !sync.existsSync() ||
+          sync.lengthSync() > 96 * 1024 ||
+          sync.lastModifiedSync().isBefore(orig.lastModifiedSync());
+      if (!stale) return;
+      // 旧单档迁移:me.png 本身 ≤96KB 且无 sync 档 → 直接当同步档用。
+      if (!sync.existsSync() && orig.lengthSync() <= 96 * 1024) {
+        await sync.writeAsBytes(orig.readAsBytesSync(), flush: true);
+        return;
+      }
+      final bytes = await encodeCapped(orig.readAsBytesSync());
       if (bytes == null) return;
-      await f.writeAsBytes(bytes, flush: true);
+      await sync.writeAsBytes(bytes, flush: true);
       invalidate();
-      await engine.setMyAvatar(bytes);
+      engine.sync.broadcastProfile();
     } catch (_) {}
   }
 }
@@ -203,10 +203,9 @@ class _AvatarCropPageState extends State<AvatarCropPage> {
       rendered.dispose();
       final png = data?.buffer.asUint8List();
       if (png == null) throw StateError('encode failed');
-      // 512×512 照片 PNG 仍可能超 96KB 信封上限,统一再过压缩循环。
-      final capped = await Avatars._encodeCapped(png);
+      // 返回 512×512 原图;同步档(≤96KB)由调用方生成,原图不再被压缩覆盖。
       if (!mounted) return;
-      Navigator.of(context).pop(capped ?? png);
+      Navigator.of(context).pop(png);
     } catch (_) {
       if (mounted) {
         setState(() {

@@ -1427,10 +1427,14 @@ class _ProfilePageState extends State<ProfilePage> {
                     onTap: _avatarBusy ? null : () async {
                       setState(() => _avatarBusy = true);
                       try {
-                        final bytes = await Avatars.pickAndCropped(context);
-                        if (bytes != null) {
+                        // 裁剪返回 512×512 原图;同步档(≤96KB)在设置时
+                        // 生成,原图保留本机显示。
+                        final original = await Avatars.pickAndCropped(context);
+                        if (original != null) {
+                          final syncBytes = await Avatars.encodeCapped(original);
                           Avatars.invalidate();
-                          await engine.setMyAvatar(bytes);
+                          await engine.setMyAvatar(original,
+                              syncBytes: syncBytes);
                           setState(() {});
                         }
                       } finally {
@@ -1538,7 +1542,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             isThreeLine: true,
             trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => ShareOut.revealInFolder(engine.dataDir),
+            onTap: () => ShareOut.openDataDir(engine.dataDir),
           ),
         ),
         const SizedBox(height: 14),

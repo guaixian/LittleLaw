@@ -168,15 +168,17 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // 群头像:点击更换(扇出给全体成员)。
+                  // 群头像:点击更换(扇出给全体成员)。原图本地保留,
+                  // 扇出走设置时生成的同步档(≤96KB)。
                   GestureDetector(
                     onTap: () async {
-                      final bytes = await Avatars.pickResized();
-                      if (bytes != null) {
-                        Avatars.invalidate();
-                        await engine.setGroupAvatar(widget.groupId, bytes);
-                        if (mounted) setState(() {});
-                      }
+                      final original = await Avatars.pickAndCropped(context);
+                      if (original == null) return;
+                      final syncBytes = await Avatars.encodeCapped(original);
+                      Avatars.invalidate();
+                      await engine.setGroupAvatar(widget.groupId, original,
+                          syncBytes: syncBytes);
+                      if (mounted) setState(() {});
                     },
                     child: Container(
                       width: 56,

@@ -11,6 +11,7 @@ import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
@@ -69,27 +70,6 @@ class MainActivity : FlutterActivity() {
                         nfcPayloadText = ""
                         result.success(true)
                     }
-                // ---- 用其他应用打开(系统"打开方式"选择器) ----
-                "openFile" -> {
-                    val path = call.argument<String>("path") ?: ""
-                    try {
-                        val file = File(path)
-                        val uri = FileProvider.getUriForFile(
-                            this, "$packageName.fileprovider", file)
-                        val ext = file.extension.lowercase()
-                        val mime =
-                            MimeTypeMap.getSingleton()
-                                .getMimeTypeFromExtension(ext) ?: "*/*"
-                        val view = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, mime)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivity(Intent.createChooser(view, "打开方式"))
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("OPEN", e.message, null)
-                    }
-                }
                 else -> result.notImplemented()
                 }
             }
@@ -138,6 +118,40 @@ class MainActivity : FlutterActivity() {
                         result.error("SHARE", e.message, null)
                     }
                 }
+                // ---- 用其他应用打开(系统"打开方式"选择器) ----
+                // 注意:此方法必须在 share 通道(Dart 侧 ShareOut 走
+                // dev.littlelaw/share);旧版误挂在 hotspot 通道上,
+                // Dart 调用落到 notImplemented,选择器永远不弹。
+                "openFile" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    try {
+                        val file = File(path)
+                        val uri = FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", file)
+                        val ext = file.extension.lowercase()
+                        val mime =
+                            MimeTypeMap.getSingleton()
+                                .getMimeTypeFromExtension(ext) ?: "*/*"
+                        val view = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, mime)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(view, "打开方式"))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("OPEN", e.message, null)
+                    }
+                }
+                // ---- 打开数据目录(文件管理器定位) ----
+                "openDirectory" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    try {
+                        openDirectory(path)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("DIR", e.message, null)
+                    }
+                }
                 // ---- 应用内更新:下载完成后拉起系统安装器 ----
                 "installApk" -> {
                     val path = call.argument<String>("path") ?: ""
@@ -168,6 +182,31 @@ class MainActivity : FlutterActivity() {
     }
 
     // ------------------------------------------------------------ 分享面板
+
+    /// 打开数据目录:优先用系统文件应用定位(externalstorage documents);
+    /// 应用私有内部目录(/data/user/0/…)文件管理器无法访问,直接报错,
+    /// Dart 侧会回退为复制路径。
+    private fun openDirectory(path: String) {
+        val dir = File(path)
+        if (!dir.isDirectory) throw IllegalArgumentException("not a directory: $path")
+        // 外部可见目录(/storage/emulated/0/...)可经 documents UI 定位。
+        if (dir.absolutePath.startsWith("/storage/") &&
+            !dir.absolutePath.contains("/Android/data")
+        ) {
+            val rel = dir.absolutePath.removePrefix("/storage/emulated/0/")
+                .removePrefix("/sdcard/")
+            val docId = if (rel.isEmpty() || rel == ".") "primary:" else "primary:$rel"
+            val uri = DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", docId)
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "vnd.android.document/directory")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(view)
+            return
+        }
+        throw IllegalArgumentException("应用私有目录无法被文件管理器访问")
+    }
 
     private fun handleShareIntent(intent: Intent?) {
         when (intent?.action) {
