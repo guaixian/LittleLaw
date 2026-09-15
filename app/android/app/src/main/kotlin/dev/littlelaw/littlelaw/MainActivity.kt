@@ -138,6 +138,24 @@ class MainActivity : FlutterActivity() {
                         result.error("SHARE", e.message, null)
                     }
                 }
+                // ---- 应用内更新:下载完成后拉起系统安装器 ----
+                "installApk" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    try {
+                        val file = File(path)
+                        val uri = FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", file)
+                        val i = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(i)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("INSTALL", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

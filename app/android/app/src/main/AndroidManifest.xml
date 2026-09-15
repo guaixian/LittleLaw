@@ -19,6 +19,8 @@
     <!-- 音视频通话 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- 应用内更新:安装下载的 APK -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-feature android:name="android.hardware.nfc" android:required="false"/>
     <uses-feature android:name="android.hardware.wifi.direct" android:required="false"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>

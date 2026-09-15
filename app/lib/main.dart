@@ -27,6 +27,7 @@ import 'settings_page.dart';
 import 'share_handler.dart';
 import 'theme/app_theme.dart';
 import 'toast.dart';
+import 'updater.dart';
 import 'webrtc_link.dart';
 
 /// 命令行参数(便于同机多实例测试):
@@ -1112,6 +1113,122 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  AppUpdate? _update;
+  bool _checkingUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUpdate(silent: true); // 进入设置页静默检查一次
+  }
+
+  Future<void> _checkUpdate({bool silent = false}) async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    final u = await Updater.checkLatest();
+    if (!mounted) return;
+    setState(() {
+      _update = u;
+      _checkingUpdate = false;
+    });
+    if (!silent && u == null) {
+      showToast('当前已是最新版本', type: ToastType.success);
+    }
+  }
+
+  Future<void> _onCheckUpdate() async {
+    if (_update != null) {
+      await _confirmUpdate(_update!);
+      return;
+    }
+    await _checkUpdate();
+    if (!mounted) return;
+    if (_update != null) await _confirmUpdate(_update!);
+  }
+
+  /// 更新确认 → 下载(进度) → 安装。
+  Future<void> _confirmUpdate(AppUpdate u) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        scrollable: true,
+        title: Text('发现新版本 v${u.version}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                '当前 v${Updater.currentVersion} → 最新 v${u.version}',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (u.notes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(u.notes,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dctx, false),
+              child: const Text('暂不更新')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: const Text('立即更新')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!mounted) return;
+
+    // 下载进度弹窗。
+    var done = 0, total = u.sizeBytes;
+    late StateSetter setDlg;
+    final nav = Navigator.of(context);
+    unawaited(showDialog<void>(
+      // ignore: use_build_context_synchronously
+      // ignore: use_build_context_synchronously
+      context: context,
+      barrierDismissible: false,
+      builder: (dctx) => StatefulBuilder(
+        builder: (dctx, set) {
+          setDlg = set;
+          return AlertDialog(
+            title: const Text('正在下载更新'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(
+                  value: total > 0 ? done / total : null,
+                ),
+                const SizedBox(height: 8),
+                Text('${(done / 1048576).toStringAsFixed(1)} / '
+                    '${(total / 1048576).toStringAsFixed(1)} MB',
+                    style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+          );
+        },
+      ),
+    ));
+    try {
+      final path = await Updater.download(u, (d, t) {
+        done = d;
+        total = t;
+        setDlg(() {});
+      });
+      if (!mounted) return;
+      nav.pop(); // 关进度弹窗
+      await Updater.install(path);
+      showToast('已开始安装,请按提示完成', type: ToastType.success);
+    } catch (e) {
+      if (!mounted) return;
+      nav.pop();
+      showToast('下载失败: $e', type: ToastType.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final engine = _engine!;
@@ -1332,10 +1449,38 @@ class _ProfilePageState extends State<ProfilePage> {
                 onTap: () {},
               ),
               const Divider(indent: 16, endIndent: 16),
+              // 关于 + 检查更新:有新版本时右侧冒红点,点击提示更新。
+              ListTile(
+                leading: const Icon(Icons.system_update_outlined),
+                title: const Text('检查更新'),
+                subtitle: Text(
+                    _update == null ? '当前 v${Updater.currentVersion},已是最新'
+                        : '发现新版本 v${_update!.version}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: _update == null
+                            ? Theme.of(context).colorScheme.onSurfaceVariant
+                            : Theme.of(context).colorScheme.primary)),
+                trailing: _update == null
+                    ? (_checkingUpdate
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2))
+                        : null)
+                    : Badge(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.error,
+                        child: const Icon(Icons.download_rounded)),
+                onTap: _onCheckUpdate,
+              ),
+              const Divider(indent: 16, endIndent: 16),
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('关于 LittleLaw'),
-                subtitle: const Text('v2.4.0 · NoServer 架构 · 协议 v1'),
+                subtitle: const Text(
+                    'v${Updater.currentVersion} · NoServer 架构 · 协议 v1'),
                 onTap: () {},
               ),
             ],
