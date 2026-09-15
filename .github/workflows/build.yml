@@ -173,7 +173,7 @@ jobs:
           flutter-version: "3.44.8"
           channel: stable
           cache: true
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest 自带 Android SDK 与许可;setup-android@v3 近期故障,不再需要。
       - run: flutter pub get
         working-directory: app
       - name: 解码签名密钥(无效则用固定凭据现场生成)
