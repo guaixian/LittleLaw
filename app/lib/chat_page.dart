@@ -188,6 +188,7 @@ class _ChatPageState extends State<ChatPage> {
     if (_scroll.position.pixels > 120) return;
     if (_messages.isEmpty) return;
     _loadingMore = true;
+    final firstMsgId = _messages.first.msgId;
     final firstLamport = _messages.first.lamport;
     Future<void>.microtask(() async {
       try {
@@ -197,6 +198,11 @@ class _ChatPageState extends State<ChatPage> {
             : widget.engine.loadMessages(_convKey,
                 limit: _pageLimit, beforeLamport: firstLamport);
         if (!mounted || older.isEmpty) return;
+        // 读取期间列表被事件重载过(新消息到达等):放弃本次拼接,
+        // 否则会把重载后已包含的旧页重复插入,出现消息重复/错位。
+        if (_messages.first.msgId != firstMsgId) {
+          return;
+        }
         // 记录加载前的滚动几何,加载后补偿高度差,阅读位置不跳。
         final oldMax =
             _scroll.hasClients ? _scroll.position.maxScrollExtent : 0.0;

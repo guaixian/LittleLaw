@@ -603,24 +603,28 @@ class Store {
 
   /// 会话内下一条消息的 Lamport 时钟值。
   ///
-  /// 使用持久水位(lamport_watermarks)而不是 MAX(messages.lamport)+1:
-  /// 删除最高位消息后取 MAX 会回退复用旧值;清空会话后归零会让
-  /// 离线对端的新消息排在旧消息之下,聊天记录次序错乱。
+  /// 分配值 = max(持久水位, 库内 MAX(lamport)+1):
+  ///  - 水位(≥ 已分配值)防"删除最高位消息后取 MAX 回退复用旧号";
+  ///  - 取 MAX+1 兜住【对端/镜像消息带来的更高号】——双方各自独立
+  ///    分配 lamport,若只看本机水位,本地新消息会拿到旧号,
+  ///    排序时插进历史中间(发送顺序错乱的根因)。
   int nextLamport(String convId) {
     return _tx(() {
+      final maxRows = _db.select(
+          'SELECT COALESCE(MAX(lamport), 0) AS m FROM messages WHERE conv_id=?',
+          [convId]);
+      var next = (maxRows.first['m'] as int) + 1;
       final rows = _db.select(
           'SELECT next FROM lamport_watermarks WHERE conv_id=?', [convId]);
-      int next;
+      if (rows.isNotEmpty) {
+        final w = rows.first['next'] as int;
+        if (w > next) next = w;
+      }
       if (rows.isEmpty) {
-        final maxRows = _db.select(
-            'SELECT COALESCE(MAX(lamport), 0) AS m FROM messages WHERE conv_id=?',
-            [convId]);
-        next = (maxRows.first['m'] as int) + 1;
         _db.execute(
             'INSERT INTO lamport_watermarks (conv_id, next) VALUES (?,?)',
             [convId, next + 1]);
       } else {
-        next = rows.first['next'] as int;
         _db.execute(
             'UPDATE lamport_watermarks SET next=? WHERE conv_id=?',
             [next + 1, convId]);

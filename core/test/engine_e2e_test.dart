@@ -113,8 +113,28 @@ void main() {
     expect(onB.lamport, sent.lamport);
     expect(onB.senderId, idA());
 
+    // 4b. 双向收发顺序:双方交替发送,各自的新消息必须排在列表最后
+    //(lamport 水位须顶到对端消息带来的更高号,否则本地新消息拿旧号
+    // 插进历史中间——发送顺序错乱)。
+    final b1 = await b.sendText(idA(), 'B 的回复1');
+    final a2 = await a.sendText(idB(), 'A 的回复2');
+    await waitFor(
+      () => a.loadMessages(idB()).any((m) => m.msgId == b1.msgId) &&
+          b.loadMessages(idA()).any((m) => m.msgId == a2.msgId),
+      description: '双向消息互达',
+    );
+    final orderOnA =
+        a.loadMessages(idB()).map((m) => m.msgId).toList();
+    expect(orderOnA.last, a2.msgId, reason: 'A 侧最新消息在最后');
+    expect(orderOnA.contains(b1.msgId), isTrue);
+    final orderOnB =
+        b.loadMessages(idA()).map((m) => m.msgId).toList();
+    expect(orderOnB.last, a2.msgId, reason: 'B 侧最新消息在最后');
+    // A 自己两条消息的先后关系保持。
+    expect(orderOnA.indexOf(sent.msgId) < orderOnA.indexOf(a2.msgId), isTrue);
+
     // -------------------------------------------------- 5. 双端删除(在线)
-    await b.deleteMessages(idA(), [sent.msgId]);
+    await b.deleteMessages(idA(), [sent.msgId, b1.msgId, a2.msgId]);
     await waitFor(
       () => a.loadMessages(idB()).isEmpty && b.loadMessages(idA()).isEmpty,
       description: '双端消息已删除',
