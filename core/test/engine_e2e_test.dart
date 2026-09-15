@@ -117,21 +117,26 @@ void main() {
     //(lamport 水位须顶到对端消息带来的更高号,否则本地新消息拿旧号
     // 插进历史中间——发送顺序错乱)。
     final b1 = await b.sendText(idA(), 'B 的回复1');
+    // 等 A 收到 b1 再发:严格验证水位被对端高位号顶上去(λ 必然更大)。
+    await waitFor(
+      () => a.loadMessages(idB()).any((m) => m.msgId == b1.msgId),
+      description: 'A 收到 B 的回复1',
+    );
     final a2 = await a.sendText(idB(), 'A 的回复2');
     await waitFor(
-      () => a.loadMessages(idB()).any((m) => m.msgId == b1.msgId) &&
-          b.loadMessages(idA()).any((m) => m.msgId == a2.msgId),
-      description: '双向消息互达',
+      () => b.loadMessages(idA()).any((m) => m.msgId == a2.msgId),
+      description: 'B 收到 A 的回复2',
     );
     final orderOnA =
         a.loadMessages(idB()).map((m) => m.msgId).toList();
     expect(orderOnA.last, a2.msgId, reason: 'A 侧最新消息在最后');
-    expect(orderOnA.contains(b1.msgId), isTrue);
     final orderOnB =
         b.loadMessages(idA()).map((m) => m.msgId).toList();
     expect(orderOnB.last, a2.msgId, reason: 'B 侧最新消息在最后');
     // A 自己两条消息的先后关系保持。
     expect(orderOnA.indexOf(sent.msgId) < orderOnA.indexOf(a2.msgId), isTrue);
+    expect(a2.lamport, greaterThan(b1.lamport),
+        reason: '水位被对端高位号顶上去');
 
     // -------------------------------------------------- 5. 双端删除(在线)
     await b.deleteMessages(idA(), [sent.msgId, b1.msgId, a2.msgId]);

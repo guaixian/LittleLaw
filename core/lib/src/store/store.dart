@@ -518,13 +518,18 @@ class Store {
     return rows.isEmpty ? null : _messageFromRow(rows.first);
   }
 
+  /// 消息列表排序:lamport 为主(因果一致);lamport 并列(双方各自
+  /// 独立分配,因果上本就并发)按 created_at_ms 决胜,再按 msg_id 兜底
+  /// ——纯 msg_id(随机 UUID)决胜会让"自己刚发的消息"在对端同号
+  /// 消息到达后跳到上面(发送顺序错乱)。
   List<Message> listMessages(String convId, {int limit = 200, int? beforeLamport}) {
+    const orderDesc = 'ORDER BY lamport DESC, created_at_ms DESC, msg_id DESC';
     final rows = beforeLamport == null
         ? _db.select(
-            'SELECT * FROM messages WHERE conv_id=? ORDER BY lamport DESC, msg_id DESC LIMIT ?',
+            'SELECT * FROM messages WHERE conv_id=? $orderDesc LIMIT ?',
             [convId, limit])
         : _db.select(
-            'SELECT * FROM messages WHERE conv_id=? AND lamport<? ORDER BY lamport DESC, msg_id DESC LIMIT ?',
+            'SELECT * FROM messages WHERE conv_id=? AND lamport<? $orderDesc LIMIT ?',
             [convId, beforeLamport, limit]);
     return rows.map(_messageFromRow).toList().reversed.toList();
   }
