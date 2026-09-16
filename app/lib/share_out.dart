@@ -106,9 +106,11 @@ class ShareOut {
   static Future<void> revealInFolder(String path) async {
     try {
       if (Platform.isWindows) {
-        // explorer 的 /select 语法要求 "/select,<完整路径>" 是【单个】
-        // 参数;拆成两个参数时 explorer 无法解析,回退打开默认位置
-        // (桌面)——旧版 bug。路径统一反斜杠并先确认存在。
+        // explorer 解析的是【原始命令行】而非 argv:单参数合并形式
+        // "/select,C:\a b.jpg"(dart 对含空格参数整体加引号)explorer
+        // 无法识别,会打开默认目录(文档);必须拆成两个参数——
+        // '/select,' 与路径分开传,dart 只给路径加引号,explorer 才能
+        // 正确解析(实测:合并形式开"文档",拆分形式正确定位)。
         final norm = path.replaceAll('/', r'\');
         final exists = File(norm).existsSync() || Directory(norm).existsSync();
         if (!exists) {
@@ -116,7 +118,7 @@ class ShareOut {
               type: ToastType.info);
           return;
         }
-        await Process.run('explorer.exe', ['/select,$norm']);
+        await Process.run('explorer.exe', ['/select,', norm]);
       } else if (Platform.isMacOS) {
         await Process.run('open', ['-R', path]);
       } else if (Platform.isLinux) {

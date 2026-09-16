@@ -29,6 +29,7 @@ class TransferProgress {
     required this.direction,
     required this.state,
     this.error,
+    this.via = '',
   });
 
   static const stateRunning = 'running';
@@ -48,6 +49,10 @@ class TransferProgress {
   final String direction;
   final String state;
   final String? error;
+
+  /// 实际数据路径:'grpc'=直连拉取,'envelope'=信封回退(中继/慢链路
+  /// 场景)。UI 据此提示用户当前链路质量。
+  final String via;
 }
 
 /// 文件传输管理:拉取式数据面。
@@ -98,8 +103,10 @@ class TransferManager extends pbg.TransferServiceBase {
   /// fileId → 信封式数据帧暂存(接收侧)。
   final _envelopeData = <String, StreamController<pb.FileData>>{};
 
-  /// 窗口背压:发送侧等待 ACK 状态。
-  static const _ackWindowFrames = 8;
+  /// 窗口背压:发送侧等待 ACK 状态(在途未确认字节上限)。
+  /// 4MB:旧值 8 帧×64KB=512KB 在跨网/中继链路上严重限制吞吐
+  /// (实测回环也只有 1.5MB/s);放大窗口让长 RTT 链路也能跑满。
+  static const _ackWindowBytes = 4 * 1024 * 1024;
   final _lastAck = <String, int>{};
   final _ackNotifiers = <String, Completer<void>>{};
 
@@ -266,6 +273,12 @@ class TransferManager extends pbg.TransferServiceBase {
   Future<void> receiveFile(String peerId, Message msg) async {
     final fileId = msg.fileId;
     if (fileId == null) return;
+    // 已完成的消息不重复拉取:信封双路投递(活链路+邮箱轮询)会让
+    // FileMessageArrived 触发多次,旧版会对已完成的文件【整包重拉】
+    // ——用户看到的就是"78MB 传了半小时"(第一遍早已完成)。
+    // (transferring 状态不受影响:那是进程中断残留,仍允许续传。)
+    final cur = store.getMessage(msg.msgId)?.fileState ?? msg.fileState;
+    if (cur == Message.fileStateDone) return;
     if (msg.convId.startsWith('g:')) {
       return _guardReceiving(fileId,
           () => _receiveGroupFileMulti(msg.convId.substring(2), peerId, msg));
@@ -361,6 +374,7 @@ class TransferManager extends pbg.TransferServiceBase {
             doneBytes: received,
             direction: TransferProgress.directionReceive,
             state: TransferProgress.stateRunning,
+            via: 'grpc',
           ));
         }
       }
@@ -503,6 +517,7 @@ class TransferManager extends pbg.TransferServiceBase {
           doneBytes: received,
           direction: TransferProgress.directionReceive,
           state: TransferProgress.stateRunning,
+          via: 'envelope',
         ));
         if (frame.last) break;
       }
@@ -560,8 +575,7 @@ class TransferManager extends pbg.TransferServiceBase {
     try {
       while (offset < total) {
         // 背压:在途未确认字节达到窗口上限时等待 ACK。
-        while (offset - (_lastAck[req.fileId] ?? offset) >=
-            _ackWindowFrames * envelopeChunkSize) {
+        while (offset - (_lastAck[req.fileId] ?? offset) >= _ackWindowBytes) {
           if ((_serveGen[req.fileId] ?? gen) != gen) return; // 已被新请求取代
           if (_cancelled.contains(req.fileId)) return;
           final notifier = Completer<void>();

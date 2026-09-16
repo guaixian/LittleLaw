@@ -1981,15 +1981,40 @@ class _MessageBubble extends StatelessWidget {
               ),
             ],
           ),
-          if (transferring)
+          if (transferring) ...[
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (progress?.via == 'envelope') ...[
+                    Icon(Icons.cloud_sync_outlined,
+                        size: 11, color: fgDim),
+                    const SizedBox(width: 2),
+                    Text(
+                      '中继传输',
+                      style: TextStyle(fontSize: 10, color: fgDim),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (progress!.totalBytes > 0)
+                    Text(
+                      '${(progress!.doneBytes / 1024 / 1024).toStringAsFixed(1)}'
+                      '/${(progress!.totalBytes / 1024 / 1024).toStringAsFixed(1)}MB',
+                      style: TextStyle(fontSize: 10, color: fgDim),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: LinearProgressIndicator(
                 value: progress!.totalBytes > 0
                     ? progress!.doneBytes / progress!.totalBytes
                     : null,
               ),
-            )
+            ),
+          ]
           else
             Padding(
               padding: const EdgeInsets.only(top: 4),
